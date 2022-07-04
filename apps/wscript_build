@@ -1,0 +1,61 @@
+#! /usr/bin/env python
+import os
+daoRandWriterSync = bld.program(
+	source = 'daoRandWriterSync.c',
+	target = 'daoRandWriterSync',
+	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+	linkflags = ['-L'+os.getenv('DAOROOT')+'/lib64/'],
+	ldflags = ['-ldaoBase' , '-lpthread', '-lrt', '-lm'],
+	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe'],
+	use = 'daoBase'
+	)
+
+daoClock = bld.program(
+	source = 'daoClock.c',
+	target = 'daoClock',
+	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+	linkflags = ['-L'+os.getenv('DAOROOT')+'/lib64/'],
+	ldflags = ['-ldaoBase' , '-lpthread', '-lrt', '-lm'],
+	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe'],
+	use = 'daoBase'
+	)
+
+daoTimeDiff = bld.program(
+	source = 'daoTimeDiff.c',
+	target = 'daoTimeDiff',
+	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+	linkflags = ['-L'+os.getenv('DAOROOT')+'/lib64/'],
+	ldflags = ['-ldaoBase' , '-lpthread', '-lrt', '-lm'],
+	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe'],
+	use = 'daoBase'
+	)
+
+daoReadWrite = bld.program(
+	source = 'daoReadWrite.c',
+	target = 'daoReadWrite',
+	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+	linkflags = ['-L'+os.getenv('DAOROOT')+'/lib64/'],
+	ldflags = ['-ldaoBase' , '-lpthread', '-lrt', '-lm'],
+	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe'],
+	use = 'daoBase'
+	)
+
+daoTimeDiffStat = bld.program(
+	source = 'daoTimeDiffStat.c',
+	target = 'daoTimeDiffStat',
+	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+	linkflags = ['-L'+os.getenv('DAOROOT')+'/lib64/'],
+	ldflags = ['-ldaoBase' , '-lpthread', '-lrt', '-lm'],
+	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe'],
+	use = 'daoBase'
+	)
+
+daoCommandFilter = bld.program(
+	source = 'daoCommandFilter.c',
+	target = 'daoCommandFilter',
+	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+	linkflags = ['-L'+os.getenv('DAOROOT')+'/lib64/'],
+	ldflags = ['-ldaoBase' , '-lpthread', '-lrt', '-lm'],
+	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe'],
+	use = 'daoBase'
+	)
