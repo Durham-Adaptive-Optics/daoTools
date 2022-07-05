@@ -130,7 +130,7 @@ static int realTimeLoop()
                     {
                         printf("\n");
                     }
-                    printf("\r    sync frame %ld %ld delta = %ld, %12ld-%12ld=%ld -> dt = %.3f us",
+                    printf("\r    sync frame %ld %ld delta = %ld, %12ld-%12ld=%6ld -> dt = %7.3f us",
                            frameId0, frameId1, frameIdDiff, t[0], t[1], elapsedTimeNs, (double)elapsedTimeNs / 1e3);
                     last = 1;
                 }

@@ -175,7 +175,7 @@ static int realTimeLoop()
 
             daoImage2Shm(avgValue, nbValue, &shmAvg[0]);
             daoImage2Shm(rmsValue, nbValue, &shmRms[0]);
-            printf("\r(%.3f,%.3f) -> AVG(%.3f,%.3f), RMS(%.3f,%.3f)",
+            printf("\r(%8.3f,%8.3f) -> AVG(%8.3f,%8.3f), RMS(%8.3f,%8.3f)",
                    shm[0].array.F[0], shm[0].array.F[1],
                    shmAvg[0].array.F[0], shmAvg[0].array.F[1],
                    shmRms[0].array.F[0], shmRms[0].array.F[1]);

@@ -111,7 +111,7 @@ static int realTimeLoop()
         clock_gettime(CLOCK_REALTIME, &t[1]);
         elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
         elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
-        printf("\r fps = %.3f Hz, %d pixels=[%u,%u,...,%u], cmd[%6.3f, %6.3f,...,%6.3f]", 1e6/(1000*elapsedTime), 
+        printf("\r fps = %.3f Hz, %d pixels=[%6u,%6u,...,%6u], cmd[%6.3f, %6.3f,...,%6.3f]", 1e6/(1000*elapsedTime), 
                                                                               nbInVal, inShm[0].array.UI16[0],
                                                                               inShm[0].array.UI16[1],
                                                                               inShm[0].array.UI16[nbInVal],
