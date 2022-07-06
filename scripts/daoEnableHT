@@ -1,6 +1,6 @@
 #!/bin/bash
-
+# to be run as root
 for i in {0..47}; do
    echo "Enabling logical HT core $i."
-   sudo echo 1 > /sys/devices/system/cpu/cpu${i}/online;
+   echo 1 > /sys/devices/system/cpu/cpu${i}/online;
 done
