@@ -2,7 +2,14 @@
 Useful tools using daoBase
 
 # Prerequiries
+## daoBase
 daoBase should be installed. See https://github.com/Durham-Adaptive-Optics/daoBase
+
+## ncurses
+on centos:
+````
+sudo yum install ncurses-devel
+````
 
 # Build
 ```

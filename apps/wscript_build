@@ -59,3 +59,13 @@ daoCommandFilter = bld.program(
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe'],
 	use = 'daoBase'
 	)
+
+daoShmMonitoring = bld.program(
+	source = 'daoShmMonitoring.c',
+	target = 'daoShmMonitoring',
+	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+	linkflags = ['-L'+os.getenv('DAOROOT')+'/lib64/'],
+	ldflags = ['-ldaoBase' , '-lpthread', '-lrt', '-lm', '-lncurses'],
+	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe'],
+	use = 'daoBase'
+	)
