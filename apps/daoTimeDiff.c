@@ -111,24 +111,28 @@ static int realTimeLoop()
     struct timespec timeout;
     int missedFrameShm0=0;
     int missedFrameShm1=0;
+    int nbNegTs=0;
+    int validFrames=0;
     while (end ==0)
     {
         mvprintw(0, 0, "Measure timing script between\n");
         printw("SHM0 %s/%s.im.shm\n", SHAREDMEMDIR, shm0[0].md[0].name);
         printw("SHM1 %s/%s.im.shm\n", SHAREDMEMDIR, shm1[0].md[0].name);
-        clock_gettime(CLOCK_REALTIME, &timeout);
-        timeout.tv_sec += 1; // 1 second timeout
-        // Wait for new image
-        if (sem_timedwait(shm0[0].semptr[sem0], &timeout) != -1)
-        {
+        //clock_gettime(CLOCK_REALTIME, &timeout);
+        //timeout.tv_sec += 1; // 1 second timeout
+        //// Wait for new image
+        //if (sem_timedwait(shm0[0].semptr[sem0], &timeout) != -1)
+        //{
             //sem_wait(shm0[0].semptr[sem0]);
-            t[0] = shm0[0].md[0].atime.tsfixed.secondlong;
-            frameId0 = shm0[0].md[0].cnt2;
+            //t[0] = shm0[0].md[0].atime.tsfixed.secondlong;
+            //frameId0 = shm0[0].md[0].cnt2;
             clock_gettime(CLOCK_REALTIME, &timeout);
             timeout.tv_sec += 1; // 1 second timeout
             // wait for 2nd shm
             if (sem_timedwait(shm1[0].semptr[sem1], &timeout) != -1)
             {
+            t[0] = shm0[0].md[0].atime.tsfixed.secondlong;
+            frameId0 = shm0[0].md[0].cnt2;
                 // sem_wait(shm1[0].semptr[sem1]);
                 t[1] = shm1[0].md[0].atime.tsfixed.secondlong;
                 frameId1 = shm1[0].md[0].cnt2;
@@ -138,69 +142,66 @@ static int realTimeLoop()
                 elapsedTimeNs = t[1] - t[0];
                 latency[0] = (float)elapsedTimeNs / 1e3;
                 frameIdDiff = frameId1-frameId0;
-                if (frameId0 == frameId1)
+                if (frameIdDiff == 0)
                 {
                     printw("Synchronized True\n");
                     printw("Missed Frames SHM0 = %d\n", missedFrameShm0);
                     printw("Missed Frames SHM1 = %d\n", missedFrameShm1);
+                    printw("Negative TS = %d\n", nbNegTs);
+                    printw("Valid Frames = %d\n", validFrames);
                     if (elapsedTimeNs < 0)
                     {
-                        missedFrameShm1++;
+                        nbNegTs++;
                     }
                     else
                     {
+                        validFrames++;
                         daoImage2Shm((float *)latency, 1, &latencyShm[0]);
-                        printw("frame ID SHM0 = %ld\n", frameId0);
-                        printw("frame ID SHM1 = %ld\n", frameId0);
-                        printw(" -> frame ID diff: %ld\n", frameIdDiff);
-                        printw("timeStamp SHM0 = %12ld\n", t[0]);
-                        printw("timeStamp SHM1 = %12ld\n", t[1]);
-                        printw(" -> time difference ns = %ld\n", elapsedTimeNs);
-                        printw(" -> time difference us = %7.3f\n", (double)elapsedTimeNs / 1e3);
-                        refresh();
                     }
-                    //if (last == 0)
-                    //{
-                    //    printf("\n");
-                    //}
-                    //printf("\r    sync frame %ld %ld delta = %ld, %12ld-%12ld=%6ld -> dt = %7.3f us",
-                    //       frameId0, frameId1, frameIdDiff, t[0], t[1], elapsedTimeNs, (double)elapsedTimeNs / 1e3);
-                    //last = 1;
+                    printw("frame ID SHM0 = %ld\n", frameId0);
+                    printw("frame ID SHM1 = %ld\n", frameId0);
+                    printw(" -> frame ID diff: %ld\n", frameIdDiff);
+                    printw("timeStamp SHM0 = %12ld\n", t[0]);
+                    printw("timeStamp SHM1 = %12ld\n", t[1]);
+                    printw(" -> time difference ns = %8ld\n", elapsedTimeNs);
+                    printw(" -> time difference us = %8.3f\n", (double)elapsedTimeNs / 1e3);
+                    refresh();
                 }
                 else
                 {
-                    //if (last == 1)
-                    //{
-                    //    printf("\n");
-                    //}
-                    //printf("\r de-sync frame %ld %ld, delta = %ld                 -> dt = %.3f us",
-                    //       frameId0, frameId1, frameIdDiff, (double)elapsedTimeNs / 1e3);
                     printw("Synchronized False\n");
-                    refresh();
-                    // try to resync
-                    if (frameIdDiff > 0)
-                    {
-                        missedFrameShm0++;
-                        //clock_gettime(CLOCK_REALTIME, &timeout);
-                        //timeout.tv_sec += 1; // 1 second timeout
-                        //// Wait for new image
-                        //if (sem_timedwait(shm0[0].semptr[sem0], &timeout) == -1)
-                        //{
-                        //    daoWarning("Cannot resync input...\n");
-                        //}
-                    }
-                    else
-                    {
-                        missedFrameShm1++;
-                        //clock_gettime(CLOCK_REALTIME, &timeout);
-                        //timeout.tv_sec += 1; // 1 second timeout
-                        //// Wait for new image
-                        //if (sem_timedwait(shm1[0].semptr[sem1], &timeout) == -1)
-                        //{
-                        //    daoWarning("Cannot resync ouput...\n");
-                        //}
-                    }
-                    //last = 0;
+                //    // try to resync
+                //    if (frameIdDiff > 0)
+                //    {
+                //        missedFrameShm0++;
+                //        clock_gettime(CLOCK_REALTIME, &timeout);
+                //        timeout.tv_sec += 1; // 1 second timeout
+                //        // Wait for new image
+                //        if (sem_timedwait(shm0[0].semptr[sem0], &timeout) == -1)
+                //        {
+                //            printw("Cannot resync input...\n");
+                //        }
+                //        else
+                //        {
+                //            printw("Synchronized input done\n");
+                //        }
+                //    }
+                //    else
+                //    {
+                //        missedFrameShm1++;
+                //        clock_gettime(CLOCK_REALTIME, &timeout);
+                //        timeout.tv_sec += 1; // 1 second timeout
+                //        // Wait for new image
+                //        if (sem_timedwait(shm1[0].semptr[sem1], &timeout) == -1)
+                //        {
+                //            printw("Cannot resync ouput...\n");
+                //        }
+                //        {
+                //            printw("Synchronized input done\n");
+                //        }
+                //    }
+                //    refresh();
+                //    //last = 0;
                 }
                 //fflush(stdout);
             }
@@ -211,14 +212,14 @@ static int realTimeLoop()
                 printw("Timeout: shm1, error:%s\n", strerror(errno));
                 refresh();
             }
-        }
-        else
-        {
-            //printf("\rTimeout: shm0, error:%s", strerror(errno));
-            //fflush(stdout);
-            printw("Timeout: shm1, error:%s\n", strerror(errno));
-            refresh();
-        }
+        //}
+        //else
+        //{
+        //    //printf("\rTimeout: shm0, error:%s", strerror(errno));
+        //    //fflush(stdout);
+        //    printw("Timeout: shm0, error:%s\n", strerror(errno));
+        //    refresh();
+        //}
     }
     endwin();
     daoInfo("EXITING MAIN LOOP\n");
