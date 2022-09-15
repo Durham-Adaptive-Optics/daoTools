@@ -46,7 +46,7 @@ shm=shmlib.shm('/tmp/demoShm.im.shm',np.zeros((100,100)).astype(np.float32))
 clockShm=shmlib.shm('/tmp/demoClockShm.im.shm',np.zeros((1,1)).astype(np.uint32))
 ``` 
 ### run example
-Now run in a new console the program writing at the in the share memory random values
+Now run in a new console the program writing at the clock rate in the share memory random values
 ```
-daoRandWriter -L demoShm demoClockShm
+daoRandWriterSync -L demoShm demoClockShm
 ```
