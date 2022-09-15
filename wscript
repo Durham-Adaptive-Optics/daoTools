@@ -25,5 +25,6 @@ def configure(conf):
 def build(bld):
 	bld.env.DEFINES=['WAF=1']
 	bld.recurse('apps')
+	bld.install_files(bld.env.PREFIX+'/bin', 'apps/daoImageRTD.py', chmod=0o755, relative_trick=False)
 	bld.install_files(bld.env.PREFIX+'/bin', 'scripts/daoEnableHT', chmod=0o755, relative_trick=False)
 	bld.install_files(bld.env.PREFIX+'/bin', 'scripts/daoDisableHT', chmod=0o755, relative_trick=False)

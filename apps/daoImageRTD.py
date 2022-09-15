@@ -21,14 +21,16 @@ if __name__ == '__main__':
         elif opt in ("-s", "--shm"):
             shmimName = str(arg)
     shm = shmlib.shm(shmimName)
+    imageSizeX = shm.get_data().shape[0]
+    imageSizeY = shm.get_data().shape[1]
     plt.ion()
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    a=plt.imshow(shm.get_data())
+    a=plt.imshow(shm.get_data().flatten().reshape((imageSizeY,imageSizeX)))
     plt.colorbar()
     plt.show()
     while True:
-        a.set_data(shm.get_data())
+        a.set_data(shm.get_data().flatten().reshape((imageSizeY,imageSizeX)))
         fig.canvas.draw()
         fig.canvas.flush_events()
         time.sleep(0.05)
