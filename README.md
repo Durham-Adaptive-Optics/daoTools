@@ -11,6 +11,11 @@ on centos:
 sudo yum install ncurses-devel
 ````
 
+## pyqtgraph
+````
+pip3 install pyqtgraph
+````
+
 # Build
 ```
 waf configure --prefix=$DAOROOT
