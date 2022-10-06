@@ -48,6 +48,7 @@ IMAGE *outShm;
 
 char inShmName[32];
 char outShmName[32];
+float offset;
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -104,7 +105,7 @@ static int realTimeLoop()
         // the esoM4 controller thread will take care of sending
         for (k=0; k<nbOutVal; k++)
         {
-             outCmd[k] = 1 - 2 * (float)rand()/(float)RAND_MAX;
+             outCmd[k] = offset + 1 - 2 * (float)rand()/(float)RAND_MAX;
         }
         daoImage2Shm((float*)outCmd, nbOutVal, &outShm[0]);
 
@@ -170,6 +171,7 @@ static void DecodeArgs(int argc, char **argv)
                         daoInfo("Simple SHM Reader and Writer from SHM real time control\n");
                     	(void)sscanf(*argv++,"%s",inShmName); argc -= 1;
                     	(void)sscanf(*argv++,"%s",outShmName); argc -= 1;
+                    	(void)sscanf(*argv++,"%f",&offset); argc -= 1;
                         realTimeLoop();
                         break;
             default:
