@@ -25,6 +25,8 @@ def configure(conf):
 def build(bld):
 	bld.env.DEFINES=['WAF=1']
 	bld.recurse('apps')
+	bld.recurse('src')
+	bld.install_files(bld.env.PREFIX+'/include', 'include/daoTools.h', relative_trick=False)
 	bld.install_files(bld.env.PREFIX+'/bin', 'apps/daoImageRTD.py', chmod=0o755, relative_trick=False)
 	bld.install_files(bld.env.PREFIX+'/bin', 'gui/daoImDisp.py', chmod=0o755, relative_trick=False)
 	bld.install_files(bld.env.PREFIX+'/bin', 'gui/daoImDisp.ui', relative_trick=False)
