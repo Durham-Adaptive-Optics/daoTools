@@ -7,7 +7,7 @@
 /*==========================================================================*/
 #include "daoTools.h"
 
-unsigned int daoToolsIp2Int (const char * ip)
+unsigned daoToolsIp2Int (const char * ip)
 {
     /* The return value. */
     unsigned v = 0;

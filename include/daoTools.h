@@ -14,6 +14,6 @@
 #define _DAOTOOLS_H
 #include "daoBase.h"
 
-unsigned int daoToolsIp2Int(const char * ip); 
+unsigned daoToolsIp2Int(const char * ip); 
 
 #endif
