@@ -31,7 +31,7 @@
 #include <ncurses.h>
 
 // DAO header
-#include "daoBase.h" 
+#include "daoShm.h" 
 
 typedef int bool_t;
 #ifndef TRUE
@@ -160,7 +160,7 @@ static int realTimeLoop()
 
     for (shmCnt = 0; shmCnt < nbShm; shmCnt++)
     {
-        daoShm2Img(shmName[shmCnt], "", &shm[shmCnt]);
+        daoShmShm2Img(shmName[shmCnt], "", &shm[shmCnt]);
     }
 
     clock_t launch, done;

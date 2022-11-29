@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import numpy as np
-import shmlib
+import daoShm
 import getopt
 import sys
 import time

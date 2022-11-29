@@ -28,7 +28,7 @@
 #include <sys/time.h>
 #include <pthread.h>
 
-#include "daoBase.h"
+#include "daoShm.h"
 
 /*==========================================================================*/
 static int	sNdx=0;							/* board index */
@@ -92,9 +92,9 @@ static int realTimeLoop()
     shm = (IMAGE*) malloc(sizeof(IMAGE));
     shmAvg = (IMAGE*) malloc(sizeof(IMAGE));
     shmRms = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShm2Img(shmName, "", &shm[0]);
-    daoShm2Img(shmNameAvg, "", &shmAvg[0]);
-    daoShm2Img(shmNameRms, "", &shmRms[0]);
+    daoShmShm2Img(shmName, "", &shm[0]);
+    daoShmShm2Img(shmNameAvg, "", &shmAvg[0]);
+    daoShmShm2Img(shmNameRms, "", &shmRms[0]);
 
     int nbValue = shm[0].md[0].size[0]*shm[0].md[0].size[1];
     float *avgValue = malloc(nbValue*sizeof(float));
@@ -173,8 +173,8 @@ static int realTimeLoop()
             }
             head = (head + 1) % (popSize + 1);
 
-            daoImage2Shm(avgValue, nbValue, &shmAvg[0]);
-            daoImage2Shm(rmsValue, nbValue, &shmRms[0]);
+            daoShmImage2Shm(avgValue, nbValue, &shmAvg[0]);
+            daoShmImage2Shm(rmsValue, nbValue, &shmRms[0]);
             printf("\r(%8.3f,%8.3f) -> AVG(%8.3f,%8.3f), RMS(%8.3f,%8.3f)",
                    shm[0].array.F[0], shm[0].array.F[1],
                    shmAvg[0].array.F[0], shmAvg[0].array.F[1],

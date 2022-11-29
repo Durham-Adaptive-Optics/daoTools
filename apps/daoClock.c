@@ -31,7 +31,7 @@
 #include <pthread.h>
 
 // DAO header
-#include "daoBase.h" 
+#include "daoShm.h" 
 
 typedef int bool_t;
 #ifndef TRUE
@@ -110,7 +110,7 @@ void * clockRealTimeLoop(void *thread_data)
         usleep(pauseTime);
         clock[0]++;// = clock[0] + 1;
         shm[0].md[0].cnt2++; 
-        daoImage2ShmUI32((unsigned int*)clock, 1, &shm[0]);
+        daoShmImage2Shm((unsigned int*)clock, 1, &shm[0]);
         t[0]=t[1];
         clock_gettime(CLOCK_REALTIME, &t[1]);
         elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;    // sec to ms
@@ -134,7 +134,7 @@ static int realTimeLoop()
     signal(SIGINT, endme);
 
     shm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShm2Img(clockName, "", &shm[0]);
+    daoShmShm2Img(clockName, "", &shm[0]);
 
     clock_t launch, done;
     double diff;

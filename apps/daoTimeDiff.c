@@ -29,7 +29,7 @@
 #include <pthread.h>
 #include <ncurses.h>
 
-#include "daoBase.h"
+#include "daoShm.h"
 
 /*==========================================================================*/
 static int	sNdx=0;							/* board index */
@@ -88,9 +88,9 @@ static int realTimeLoop()
     shm0 = (IMAGE*) malloc(sizeof(IMAGE));
     shm1 = (IMAGE*) malloc(sizeof(IMAGE));
     latencyShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShm2Img(shm0Name, "", &shm0[0]);
-    daoShm2Img(shm1Name, "", &shm1[0]);
-    daoShm2Img(latencyShmName, "", &latencyShm[0]);
+    daoShmShm2Img(shm0Name, "", &shm0[0]);
+    daoShmShm2Img(shm1Name, "", &shm1[0]);
+    daoShmShm2Img(latencyShmName, "", &latencyShm[0]);
 
     WINDOW * mainwin;
     mainwin = initscr();
@@ -156,7 +156,7 @@ static int realTimeLoop()
                     else
                     {
                         validFrames++;
-                        daoImage2Shm((float *)latency, 1, &latencyShm[0]);
+                        daoShmImage2Shm((float *)latency, 1, &latencyShm[0]);
                     }
                     printw("frame ID SHM0 = %ld\n", frameId0);
                     printw("frame ID SHM1 = %ld\n", frameId0);
