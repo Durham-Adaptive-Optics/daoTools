@@ -30,9 +30,9 @@ This software clock can be used to synchronize different program using built-in 
 ### create SHM
 can be skipped if SHM already created
 ```
-import shmlib
+import daoShm
 import numpy as np
-clockShm=shmlib.shm('/tmp/demoClockShm.im.shm',np.zeros((1,1)).astype(np.uint32))
+clockShm=daoShm.shm('/tmp/demoClockShm.im.shm',np.zeros((1,1)).astype(np.uint32))
 ``` 
 ### run example
 Now let's run the clock at 1.5kHz in a new console
@@ -45,10 +45,10 @@ The program is waiting for a new value in another shared memory. We can use the 
 ### create SHM
 can be skipped if SHM already created
 ```
-import shmlib
+import daoShm
 import numpy as np
-shm=shmlib.shm('/tmp/demoShm.im.shm',np.zeros((100,100)).astype(np.float32))
-clockShm=shmlib.shm('/tmp/demoClockShm.im.shm',np.zeros((1,1)).astype(np.uint32))
+shm=daoShm.shm('/tmp/demoShm.im.shm',np.zeros((100,100)).astype(np.float32))
+clockShm=daoShm.shm('/tmp/demoClockShm.im.shm',np.zeros((1,1)).astype(np.uint32))
 ``` 
 ### run example
 Now run in a new console the program writing at the clock rate in the share memory random values

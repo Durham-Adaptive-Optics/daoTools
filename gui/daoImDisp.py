@@ -11,7 +11,7 @@ import pyqtgraph.ptime as ptime
 import time
 import os
 
-import shmlib
+import daoShm
 import krtc
 
 # get the directory of ui files
@@ -34,7 +34,7 @@ class Main(QMainWindow, Ui_MainWindow):
         self.graphicsView_2.setCentralItem(self.hist)        
         # Create SHM object
         print(shmimName)
-        self.shmim = shmlib.shm(shmimName)
+        self.shmim = daoShm.shm(shmimName)
         # set display according to SHM size
         print(str(self.shmim.mtdata['size'][0])+','+str(self.shmim.mtdata['size'][1]))
         self.vb.setRange(QtCore.QRectF(0, 0, self.shmim.mtdata['size'][0], self.shmim.mtdata['size'][1]))

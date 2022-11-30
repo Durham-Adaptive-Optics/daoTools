@@ -23,7 +23,7 @@ if __name__ == '__main__':
             shmimName = str(arg)
         elif opt in ("-a", "--axisFlip"):
             axisFlip = True
-    shm = shmlib.shm(shmimName)
+    shm = daoShm.shm(shmimName)
     imageSizeX = shm.get_data().shape[0]
     imageSizeY = shm.get_data().shape[1]
     if axisFlip == True:
