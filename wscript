@@ -30,6 +30,6 @@ def build(bld):
 	bld.install_files(bld.env.PREFIX+'/bin', 'apps/daoImageRTD.py', chmod=0o755, relative_trick=False)
 	bld.install_files(bld.env.PREFIX+'/bin', 'gui/daoImDisp.py', chmod=0o755, relative_trick=False)
 	bld.install_files(bld.env.PREFIX+'/bin', 'gui/daoImDisp.ui', relative_trick=False)
-	bld.install_files(bld.env.PREFIX+'/bin', 'gui/daoRTDMagic.py', relative_trick=False)
+	bld.install_files(bld.env.PREFIX+'/bin', 'gui/daoRTDMagic.py', chmod=0o755, relative_trick=False)
 	bld.install_files(bld.env.PREFIX+'/bin', 'scripts/daoEnableHT', chmod=0o755, relative_trick=False)
 	bld.install_files(bld.env.PREFIX+'/bin', 'scripts/daoDisableHT', chmod=0o755, relative_trick=False)
