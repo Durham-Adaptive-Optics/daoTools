@@ -22,7 +22,7 @@ class UpdateThread(QtCore.QThread):
     def __init__(self, shm_filename, sempahore_number, display=1):
         super(UpdateThread, self).__init__()
         self.shm_filename = shm_filename
-        self.shm = shmlib.shm(self.shm_filename)
+        self.shm = daoShm.shm(self.shm_filename)
         self.start_time = time.time()
         self.end_time = time.time()
         self.semaphore_number = sempahore_number
