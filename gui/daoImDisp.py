@@ -12,7 +12,6 @@ import time
 import os
 
 import daoShm
-import krtc
 
 # get the directory of ui files
 path = os.getenv('DAOROOT')+'/bin/'
