@@ -44,7 +44,6 @@ class UpdateThread(QtCore.QThread):
                 print(f"setting frame: {self.frame_number:08},  avg_frame_time: {avg_frame_time*1000:.2f} ms frame rate: {frame_rate:.2f} Hz", end="\r")
                 self.work_time = 0
             self.start_time = time.time()
-            
 
     # This function is called by the RTC everytime new data is ready:
     def emitUpdateSignal(self, data ):
