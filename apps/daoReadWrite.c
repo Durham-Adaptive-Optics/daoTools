@@ -97,7 +97,7 @@ static int realTimeLoop()
     {
         t[0] = t[1];
         // Wait for new image
-        sem_wait(inShm[0].semptr[1]);
+        sem_wait(inShm[0].semptr[2]);
 
         // New image, insert something here
         outShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;

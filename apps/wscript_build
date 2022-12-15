@@ -71,3 +71,12 @@ daoShmMonitoring1Value = bld.program(
 	ldflags = ['-ldaoBase', '-ldaoShm' , '-lpthread', '-lrt', '-lm', '-lncurses'],
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe'],
 	)
+
+daoPixelCalibrate = bld.program(
+	source = 'daoPixelCalibrate.c',
+	target = 'daoPixelCalibrate',
+	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+	linkflags = ['-L'+os.getenv('DAOROOT')+'/lib64/'],
+	ldflags = ['-ldaoBase', '-ldaoShm' , '-lpthread', '-lrt', '-lm', '-lncurses'],
+	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe'],
+	)
