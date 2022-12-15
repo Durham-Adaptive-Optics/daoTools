@@ -89,15 +89,20 @@ static int realTimeLoop()
     int nbInVal = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
     int nbOutVal = outShm[0].md[0].size[0]*outShm[0].md[0].size[1];
     struct timespec t[3];
+    struct timespec timeout;
     double elapsedTime;
     clock_gettime(CLOCK_REALTIME, &t[1]);
     int k;
     float outCmd[nbOutVal];
+    int waitCounter = 0;
     while (end ==0)
     {
         t[0] = t[1];
         // Wait for new image
-        sem_wait(inShm[0].semptr[2]);
+        clock_gettime(CLOCK_REALTIME, &timeout);
+        timeout.tv_sec += 1; // 1 second timeout
+        if (sem_timedwait(inShm[0].semptr[2], &timeout) != -1)
+        {
 
         // New image, insert something here
         outShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
@@ -119,6 +124,12 @@ static int realTimeLoop()
                                                                               outShm[0].array.F[0],
                                                                               outShm[0].array.F[1],
                                                                               outShm[0].array.F[nbOutVal]);
+        }
+        else
+        {
+            waitCounter += 1;
+            printf("\rWAIT %d", waitCounter);
+        }
         fflush(stdout);
     }
 
