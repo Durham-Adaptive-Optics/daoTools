@@ -29,6 +29,7 @@
 #include <pthread.h>
 
 #include "daoShm.h"
+#include "daoTools.h"
 
 /*==========================================================================*/
 static int	sNdx=0;							/* board index */
@@ -100,7 +101,7 @@ static int realTimeLoop()
     double elapsedTime;
     double calTime;
     clock_gettime(CLOCK_REALTIME, &t[1]);
-    int k;
+
     int waitCounter = 0;
     while (end ==0)
     {
@@ -110,80 +111,9 @@ static int realTimeLoop()
         if (sem_timedwait(inShm[0].semptr[2], &timeout) != -1)
         {
             clock_gettime(CLOCK_REALTIME, &t[2]);
+            daoToolsShmCalibrate(inShm, ffShm, bgShm, calShm);
 
-            // New image, insert something here
-            calShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
-            if (inShm[0].md[0].atype == _DATATYPE_UINT8)
-            {
-                for (k = 0; k < calSize; k++)
-                {
-                    calShm[0].array.F[k] = ((float)inShm[0].array.UI8[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
-                }
-            }
-            else if (inShm[0].md[0].atype == _DATATYPE_INT8)
-            {
-                for (k = 0; k < calSize; k++)
-                {
-                    calShm[0].array.F[k] = ((float)inShm[0].array.SI8[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
-                }
-            }
-            else if (inShm[0].md[0].atype == _DATATYPE_UINT16)
-            {
-                for (k = 0; k < calSize; k++)
-                {
-                    calShm[0].array.F[k] = ((float)inShm[0].array.UI16[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
-                }
-            }
-            else if (inShm[0].md[0].atype == _DATATYPE_INT16)
-            {
-                for (k = 0; k < calSize; k++)
-                {
-                    calShm[0].array.F[k] = ((float)inShm[0].array.SI16[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
-                }
-            }
-            else if (inShm[0].md[0].atype == _DATATYPE_INT32)
-            {
-                for (k = 0; k < calSize; k++)
-                {
-                    calShm[0].array.F[k] = ((float)inShm[0].array.UI32[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
-                }
-            }
-            else if (inShm[0].md[0].atype == _DATATYPE_UINT32)
-            {
-                for (k = 0; k < calSize; k++)
-                {
-                    calShm[0].array.F[k] = ((float)inShm[0].array.SI32[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
-                }
-            }
-            else if (inShm[0].md[0].atype == _DATATYPE_UINT64)
-            {
-                for (k = 0; k < calSize; k++)
-                {
-                    calShm[0].array.F[k] = ((float)inShm[0].array.UI64[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
-                }
-            }
-            else if (inShm[0].md[0].atype == _DATATYPE_INT64)
-            {
-                for (k = 0; k < calSize; k++)
-                {
-                    calShm[0].array.F[k] = ((float)inShm[0].array.SI64[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
-                }
-            }
-            else if (inShm[0].md[0].atype == _DATATYPE_FLOAT)
-            {
-                for (k = 0; k < calSize; k++)
-                {
-                    calShm[0].array.F[k] = ((float)inShm[0].array.F[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
-                }
-            }
-            else if (inShm[0].md[0].atype == _DATATYPE_DOUBLE)
-            {
-                for (k = 0; k < calSize; k++)
-                {
-                    calShm[0].array.F[k] = ((float)inShm[0].array.D[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
-                }
-            }
-            daoShmImagePart2ShmFinalize(&inShm[0]);
+
             clock_gettime(CLOCK_REALTIME, &t[1]);
             elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
             elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;

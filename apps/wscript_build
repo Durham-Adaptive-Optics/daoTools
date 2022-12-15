@@ -77,6 +77,6 @@ daoPixelCalibrate = bld.program(
 	target = 'daoPixelCalibrate',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = ['-L'+os.getenv('DAOROOT')+'/lib64/'],
-	ldflags = ['-ldaoBase', '-ldaoShm' , '-lpthread', '-lrt', '-lm', '-lncurses'],
+	ldflags = ['-ldaoBase', '-ldaoShm', '-ldaoTools', '-lpthread', '-lrt', '-lm', '-lncurses'],
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe'],
 	)
