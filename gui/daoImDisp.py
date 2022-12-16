@@ -14,7 +14,7 @@ import os
 import daoShm
 
 # get the directory of ui files
-path = os.getenv('DAOROOT')+'/bin/'
+path = os.getenv('DAOROOT')+'/data/'
 Ui_MainWindow, QMainWindow = loadUiType(os.path.join(path,'daoImDisp.ui'))
 
 class Main(QMainWindow, Ui_MainWindow):
