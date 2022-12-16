@@ -113,7 +113,6 @@ static int realTimeLoop()
             clock_gettime(CLOCK_REALTIME, &t[2]);
             daoToolsShmCalibrate(inShm, ffShm, bgShm, calShm);
 
-
             clock_gettime(CLOCK_REALTIME, &t[1]);
             elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
             elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;

@@ -54,6 +54,7 @@ int_fast8_t daoToolsShmCalibrate(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IMAGE
     daoTrace("\n");
     int k;
     int calSize = calShm[0].md[0].size[0] * calShm[0].md[0].size[1];
+    calShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
     if (inShm[0].md[0].atype == _DATATYPE_UINT8)
     {
         for (k = 0; k < calSize; k++)
