@@ -37,6 +37,9 @@ def build(bld):
 	for file in files:
 		bld.install_files(bld.env.PREFIX+'/include', file, relative_trick=False)
 	# src
+	files = glob.glob('src/*.py')
+	for file in files:
+		bld.install_files(bld.env.PREFIX+'/python', file, relative_trick=False)
 	files = glob.glob('src/python/*.py')
 	for file in files:
 		bld.install_files(bld.env.PREFIX+'/python', file, relative_trick=False)

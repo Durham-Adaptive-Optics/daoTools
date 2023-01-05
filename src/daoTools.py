@@ -89,8 +89,8 @@ def cog(im):
     [X,Y] = np.meshgrid(np.linspace(0,nx-1,nx),np.linspace(0,ny-1,ny))
 
     # Compute centre of gravity
-    x0 = (np.round(np.sum(X*im)/np.sum(im))).astype(np.int32)
-    y0 = (np.round(np.sum(Y*im)/np.sum(im))).astype(np.int32)
+    x0 = np.sum(X*im)/np.sum(im)
+    y0 = np.sum(Y*im)/np.sum(im)
 
     return x0, y0
 

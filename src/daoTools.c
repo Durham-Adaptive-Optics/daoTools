@@ -1,12 +1,18 @@
 /*****************************************************************************
   DAO project
-  RTC library funciton
+  RTC library tools
   S.Cetre
  *****************************************************************************/
 
 /*==========================================================================*/
 #include "daoTools.h"
 
+/**
+ * @brief convert IP address (AAA.BBB.CCC.DDD) to integer
+ * 
+ * @param ip 
+ * @return unsigned 
+ */
 unsigned daoToolsIp2Int (const char * ip)
 {
     /* The return value. */
@@ -49,6 +55,15 @@ unsigned daoToolsIp2Int (const char * ip)
 }
 
 
+/**
+ * @brief Calibrate an image by applying flatfield and background
+ * 
+ * @param inShm raw image 
+ * @param ffShm flat field
+ * @param bgShm background
+ * @param calShm output calibrated image
+ * @return int_fast8_t 
+ */
 int_fast8_t daoToolsShmCalibrate(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IMAGE *calShm)
 {
     daoTrace("\n");
@@ -129,3 +144,34 @@ int_fast8_t daoToolsShmCalibrate(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IMAGE
 
     return DAO_SUCCESS;
 }
+
+/**
+ * @brief compute 
+ * 
+ * @param img 
+ * @param height 
+ * @param width 
+ * @return int_fast8_t 
+ */
+int_fast8_t daoToolCog(float *img, int height, int width) 
+{
+	float sumX;
+	float sumY;
+	float sumPix;
+
+	for (y=0; y < height; y++) 
+    {
+		for (x=0; x < width; x++) 
+        {
+			A =  img[x*widht + y];
+			sumPix += A;
+			sumX += (x * A);
+			sumY += (y * A);
+		}
+	}
+	daoInfo("Center X:" + img.width/2 + " Centroid X:" + sumX / sum_pix);
+	daoInfo("Center Y:" + img.height/2 + " Centroid Y:" + sum_y / sum_pix);
+
+    return DAO_SUCCESS;
+}
+
