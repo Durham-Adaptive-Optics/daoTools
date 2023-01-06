@@ -6,7 +6,7 @@ daoRandWriterSync = bld.program(
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = ['-L'+os.getenv('DAOROOT')+'/lib64/'],
 	ldflags = ['-ldaoBase', '-ldaoShm', '-lpthread', '-lrt', '-lm'],
-	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe'],
+	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
 daoClock = bld.program(
@@ -15,7 +15,7 @@ daoClock = bld.program(
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = ['-L'+os.getenv('DAOROOT')+'/lib64/'],
 	ldflags = ['-ldaoBase', '-ldaoShm', '-lpthread', '-lrt', '-lm'],
-	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe'],
+	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
 daoTimeDiff = bld.program(
@@ -24,7 +24,7 @@ daoTimeDiff = bld.program(
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = ['-L'+os.getenv('DAOROOT')+'/lib64/'],
 	ldflags = ['-ldaoBase', '-ldaoShm' , '-lpthread', '-lrt', '-lm', '-lncurses'],
-	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe'],
+	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
 daoReadWrite = bld.program(
@@ -33,7 +33,7 @@ daoReadWrite = bld.program(
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = ['-L'+os.getenv('DAOROOT')+'/lib64/'],
 	ldflags = ['-ldaoBase', '-ldaoShm' , '-lpthread', '-lrt', '-lm'],
-	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe'],
+	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
 daoTimeDiffStat = bld.program(
@@ -42,7 +42,7 @@ daoTimeDiffStat = bld.program(
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = ['-L'+os.getenv('DAOROOT')+'/lib64/'],
 	ldflags = ['-ldaoBase', '-ldaoShm' , '-lpthread', '-lrt', '-lm'],
-	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe'],
+	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
 daoCommandFilter = bld.program(
@@ -51,7 +51,7 @@ daoCommandFilter = bld.program(
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = ['-L'+os.getenv('DAOROOT')+'/lib64/'],
 	ldflags = ['-ldaoBase', '-ldaoShm' , '-lpthread', '-lrt', '-lm'],
-	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe'],
+	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
 daoShmMonitoring = bld.program(
@@ -60,7 +60,7 @@ daoShmMonitoring = bld.program(
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = ['-L'+os.getenv('DAOROOT')+'/lib64/'],
 	ldflags = ['-ldaoBase', '-ldaoShm' , '-lpthread', '-lrt', '-lm', '-lncurses'],
-	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe'],
+	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
 daoShmMonitoring1Value = bld.program(
@@ -69,7 +69,7 @@ daoShmMonitoring1Value = bld.program(
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = ['-L'+os.getenv('DAOROOT')+'/lib64/'],
 	ldflags = ['-ldaoBase', '-ldaoShm' , '-lpthread', '-lrt', '-lm', '-lncurses'],
-	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe'],
+	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
 daoPixelCalibrate = bld.program(
@@ -78,5 +78,14 @@ daoPixelCalibrate = bld.program(
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = ['-L'+os.getenv('DAOROOT')+'/lib64/'],
 	ldflags = ['-ldaoBase', '-ldaoShm', '-ldaoTools', '-lpthread', '-lrt', '-lm', '-lncurses'],
-	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe'],
+	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
+	)
+
+daoShmCombiner = bld.program(
+	source = 'daoShmCombiner.c',
+	target = 'daoShmCombiner',
+	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+	linkflags = ['-L'+os.getenv('DAOROOT')+'/lib64/'],
+	ldflags = ['-ldaoBase', '-ldaoShm', '-ldaoTools', '-lpthread', '-lrt', '-lm', '-lncurses'],
+	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)

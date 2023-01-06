@@ -62,6 +62,7 @@ char shmName[32];
 int nbShm;
 // Max 16 different SHM to combine
 IMAGE *shmIn[COMBINE_MAX];
+int updateCnt[COMBINE_MAX];
 
 float frequency;
 
@@ -106,60 +107,43 @@ static void ShowHelp(void)
 void * shmNRealTimeLoop(void *thread_data)
 {
     struct arg_struct *args = (struct arg_struct *)thread_data;
-    daoInfo("ThreadId=%d\n", args->shmId);
+    daoInfo("ThreadId=%d ENTERING LOOP\n", args->shmId);
 
-    // MAIN LOOP
-    daoInfo("ENTERING LOOP\n");
     fflush(stdout);
     struct timespec t[2];
     double elapsedTime;
     clock_gettime(CLOCK_REALTIME, &t[1]);
-    float pauseTime;
-    pauseTime = 1e6/frequency-50;
     int nbVal = shm[0].md[0].size[0] * shm[0].md[0].size[1];
-    // timing emulation there is a small offset of about 50 us...
-    // probalby due to the usleep function... not very accurate.
-    WINDOW * mainwin;
-    mainwin = initscr();
-    /*  Initialize ncurses  */
-    if ( mainwin  == NULL ) 
-    {
-	    daoError("Error initialising ncurses.\n");
-        return (void *)DAO_ERROR;
-    }
     struct timespec timeout;
+    int k;
     while (end==0) 
     {
         // Wait for SHM semaphore
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec +=1;
-        if (sem_timedwait(shmIn[0][args->shmId].semptr[0], &timeout) != -1)
+        if (sem_timedwait(shmIn[args->shmId][0].semptr[0], &timeout) != -1)
         {
             if (daoShmCombineShm2Shm(shmIn, shm, nbShm, nbVal) == DAO_ERROR)
             {
                 daoError("Combiner failed for thread %d\n", args->shmId);
             }
+            updateCnt[args->shmId] ++;
         }
-        // Update main SHM
-        usleep(pauseTime);
-        mvprintw(0, 0, "Shared Memory monitoring: %s/%s.im.shm\n", SHAREDMEMDIR, shm[0].md[0].name);
-        printw("-------------------------------------------------------------------\n"); 
-        printw("naxis       %d\n", shm[0].md[0].naxis); 
-        printw("size        %d, %d, %d\n", shm[0].md[0].size[0], shm[0].md[0].size[1], shm[0].md[0].size[2]); 
-        printw("nelement    %d\n", shm[0].md[0].nelement); 
-        printw("atype       %d\n", shm[0].md[0].atype); 
-        printw("cnt1        %d\n", shm[0].md[0].cnt1); 
-        printw("cnt2        %d\n", shm[0].md[0].cnt2); 
-        printw("timestamp   %ld\n", shm[0].md[0].atime.tsfixed.secondlong); 
-        printw("-------------------------------------------------------------------\n"); 
-        refresh();
         t[0]=t[1];
         clock_gettime(CLOCK_REALTIME, &t[1]);
         elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;    // sec to ms
         elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6; // us to ms
         elapsedTime = elapsedTime; // in sec... :-)
+        if (args->shmId == 0)
+        { 
+            printf("\r");
+            for (k=0; k< nbShm; k++)
+            {
+                printf("%10d ", updateCnt[k]);
+            }
+            fflush(stdout);
+        }
     }
-    endwin();
 
     daoInfo("EXITING MAIN LOOP\n");
     fflush(stdout);
@@ -177,6 +161,8 @@ static int prepRealTime()
 
     shm = (IMAGE*) malloc(sizeof(IMAGE));
     daoShmShm2Img(shmName, "", &shm[0]);
+    daoInfo("%s shm created", shmName);
+    
     char nameId[32];
     // create shm (/tmp/<shmName><nameId>.im.shm)
     for (k=0; k<nbShm; k++)
@@ -184,6 +170,8 @@ static int prepRealTime()
         sprintf(nameId, "%02d", k);
         shmIn[k] = (IMAGE *)malloc(sizeof(IMAGE));
         daoShmShm2Img(nameId, shmName, &shmIn[k][0]);
+        daoInfo("%s%s shm created\n", shmName, nameId);
+        updateCnt[k] = 0;
     }
 
     clock_t launch, done;

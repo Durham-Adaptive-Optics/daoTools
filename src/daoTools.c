@@ -155,22 +155,27 @@ int_fast8_t daoToolsShmCalibrate(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IMAGE
  */
 int_fast8_t daoToolCog(float *img, int height, int width) 
 {
-	float sumX;
-	float sumY;
-	float sumPix;
+	float sumX=0;
+	float sumY=0;
+	float sumPix=0;
+    float A;
+    int x,y;
 
 	for (y=0; y < height; y++) 
     {
 		for (x=0; x < width; x++) 
         {
-			A =  img[x*widht + y];
+			A =  img[x*width + y];
 			sumPix += A;
 			sumX += (x * A);
 			sumY += (y * A);
 		}
 	}
-	daoInfo("Center X:" + img.width/2 + " Centroid X:" + sumX / sum_pix);
-	daoInfo("Center Y:" + img.height/2 + " Centroid Y:" + sum_y / sum_pix);
+    if (sumPix != 0)
+    {
+        daoInfo("Center X: %d  Centroid X: %f\n", width / 2, sumX / sumPix);
+        daoInfo("Center Y: %d  Centroid Y: %f\n", height / 2, sumY / sumPix);
+    }
 
     return DAO_SUCCESS;
 }
