@@ -116,6 +116,7 @@ void * shmNRealTimeLoop(void *thread_data)
     int nbVal = shm[0].md[0].size[0] * shm[0].md[0].size[1];
     struct timespec timeout;
     int k;
+    clock_gettime(CLOCK_REALTIME, &t[0]);
     while (end==0) 
     {
         // Wait for SHM semaphore
@@ -123,20 +124,21 @@ void * shmNRealTimeLoop(void *thread_data)
         timeout.tv_sec +=1;
         if (sem_timedwait(shmIn[args->shmId][0].semptr[0], &timeout) != -1)
         {
+            clock_gettime(CLOCK_REALTIME, &t[0]);
             if (daoShmCombineShm2Shm(shmIn, shm, nbShm, nbVal) == DAO_ERROR)
             {
                 daoError("Combiner failed for thread %d\n", args->shmId);
             }
             updateCnt[args->shmId] ++;
         }
-        t[0]=t[1];
+        //t[0]=t[1];
         clock_gettime(CLOCK_REALTIME, &t[1]);
         elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;    // sec to ms
         elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6; // us to ms
-        elapsedTime = elapsedTime; // in sec... :-)
         if (args->shmId == 0)
         { 
-            printf("\r");
+            shm[0].md[0].cnt2 = shmIn[0][0].md[0].cnt2;
+            printf("\r combine time = %.3f", elapsedTime);
             for (k=0; k< nbShm; k++)
             {
                 printf("%10d ", updateCnt[k]);

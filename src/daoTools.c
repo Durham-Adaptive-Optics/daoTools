@@ -5,6 +5,11 @@
  *****************************************************************************/
 
 /*==========================================================================*/
+#include <stdio.h>
+#include <string.h>
+#include <math.h>
+
+
 #include "daoTools.h"
 
 /**
@@ -146,14 +151,14 @@ int_fast8_t daoToolsShmCalibrate(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IMAGE
 }
 
 /**
- * @brief compute 
+ * @brief compute centroif of an image 
  * 
  * @param img 
  * @param height 
  * @param width 
  * @return int_fast8_t 
  */
-int_fast8_t daoToolCog(float *img, int height, int width) 
+int_fast8_t daoToolCog(float *img, int height, int width, float *centX, float *centY) 
 {
 	float sumX=0;
 	float sumY=0;
@@ -173,10 +178,75 @@ int_fast8_t daoToolCog(float *img, int height, int width)
 	}
     if (sumPix != 0)
     {
-        daoInfo("Center X: %d  Centroid X: %f\n", width / 2, sumX / sumPix);
-        daoInfo("Center Y: %d  Centroid Y: %f\n", height / 2, sumY / sumPix);
+        *centX = sumX/sumPix;
+        *centY = sumY/sumPix;
+        daoDebug("Center X: %d  Centroid X: %f\n", width / 2, sumX / sumPix);
+        daoDebug("Center Y: %d  Centroid Y: %f\n", height / 2, sumY / sumPix);
+    }
+    else
+    {
+        daoError("Not enought flux to compute centroid");
+        return DAO_ERROR;
     }
 
     return DAO_SUCCESS;
 }
 
+/*
+ * Apply 3rd order filter to command
+ */
+int_fast8_t daoToolsCommandFilter(float *command, int nbVal, daoFilterHistory *filterHistory, float *servoFilter, float *commandOffset, float *filteredCommand)
+{
+    daoTrace("\n");
+    // 
+    float commandMoff[nbVal];
+    int c=0;
+    int pp;
+    for(pp = 0; pp < nbVal; pp++)
+    {
+        // Check that values to filter are
+        // number... safety check to stop propagating nan
+        if (isnan(command[pp]))
+        {
+            command[pp] = 0.0;
+        }
+        // Substract command offset
+        commandMoff[c] = command[c] - commandOffset[pp];
+        filterHistory->dlCmd[filterHistory->step][c] = filteredCommand[pp] = (filterHistory->precal[c] - servoFilter[0] * commandMoff[c]); // * mixingFactor;
+        filterHistory->precal[c] = 0.0;
+        c += 1;
+    }
+    memcpy(filterHistory->dlRes[filterHistory->step], commandMoff, nbVal);
+
+    filterHistory->step++;
+    if (filterHistory->step==FILTER_ORDER)
+    {
+        filterHistory->step=0;
+    }
+    // precomputation of servo loop filter for next filterHistory->step
+    int i1, i2, i;
+    c=0;
+    for (i=0;i<nbVal;i++)
+    {
+        i2 = 2 * FILTER_ORDER;
+        for (i1 = filterHistory->step; i1 < FILTER_ORDER; i1++, i2--)
+        {
+            filterHistory->precal[c] -= servoFilter[i2] * filterHistory->dlCmd[i1][c];
+        }
+        for (i1 = 0; i1 < filterHistory->step; i1++, i2--)
+        {
+            filterHistory->precal[c] -= servoFilter[i2] * filterHistory->dlCmd[i1][c];
+        }
+        for (i1 = filterHistory->step; i1 < FILTER_ORDER; i1++, i2--)
+        {
+            filterHistory->precal[c] += servoFilter[i2] * filterHistory->dlRes[i1][c];
+        }
+        for (i1 = 0; i1 < filterHistory->step; i1++, i2--)
+        {
+            filterHistory->precal[c] += servoFilter[i2] * filterHistory->dlRes[i1][c];
+        }
+        c++;
+    }
+
+    return DAO_SUCCESS;
+}

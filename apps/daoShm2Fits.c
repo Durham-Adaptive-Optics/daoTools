@@ -28,7 +28,7 @@
 #include <sys/time.h>
 #include <pthread.h>
 
-#include "daoTools.h"
+#include "daoShm.h"
 
 /*==========================================================================*/
 static int	sNdx=0;							/* board index */
@@ -43,10 +43,11 @@ struct timespec tnow;
 double tnowdouble;
 double tlastupdatedouble;
 
-char inShmName[32];
-char servoShmName[32];
-char offsetShmName[32];
-char outShmName[32];
+IMAGE *inShm;
+
+
+char shmName[32];
+char outputPath[32];
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -67,7 +68,7 @@ static void ShowHelp(void)
     /*
      **	Post init tests
      */
-    daoInfo("   -L inShm servoShm offsetShm outShm              real time control loop\n");
+    daoInfo("   -L shm outputPath             real time control loop\n");
     daoInfo("\n");
 }
 
@@ -76,59 +77,38 @@ static int realTimeLoop()
 {
     // register interrupt signal to terminate the main loop
     signal(SIGINT, endme);
-
-    daoInfo("Starting loop, %s/%s/%s/%s \n", inShmName, servoShmName, offsetShmName, outShmName);
+    IMAGE *inShm;
+    daoInfo("Starting loop for SHM = %s \n",shmName);
+    daoInfo("Ouput folder = %s", outputPath);
     fflush(stdout);
-    IMAGE *inShm = (IMAGE*) malloc(sizeof(IMAGE));
-    IMAGE *servoShm = (IMAGE*) malloc(sizeof(IMAGE));
-    IMAGE *offsetShm = (IMAGE*) malloc(sizeof(IMAGE));
-    IMAGE *outShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(inShmName, "", &inShm[0]);
-    daoShmShm2Img(servoShmName, "", &servoShm[0]);
-    daoShmShm2Img(offsetShmName, "", &offsetShm[0]);
-    daoShmShm2Img(outShmName, "", &outShm[0]);
+    inShm = (IMAGE*) malloc(sizeof(IMAGE));
+    daoShmShm2Img(shmName, "", &inShm[0]);
 
-    int inSize = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
-    int outSize = outShm[0].md[0].size[0]*outShm[0].md[0].size[1];
+    //int nbInVal = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
     struct timespec t[3];
+    struct timespec timeout;
     double elapsedTime;
     clock_gettime(CLOCK_REALTIME, &t[1]);
-    daoFilterHistory filterHistory;
-    filterHistory.step = 0;
-    int k,j;
-    for(k=0; k<inSize;k++)
-    {
-        // Use this loop to reset filter to zero
-        filterHistory.precal[k] = 0.0;
-        for (j=0; j< FILTER_ORDER; j++)
-        {
-            filterHistory.dlCmd[j][k] = filterHistory.dlRes[j][k] = 0.0;
-        }
-    }
+    int waitCounter = 0;
     while (end ==0)
     {
         t[0] = t[1];
         // Wait for new image
-        sem_wait(inShm[0].semptr[1]);
-
-        // New image, insert something here
-        outShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
-
-        daoToolsCommandFilter(inShm[0].array.F, inSize, &filterHistory, servoShm[0].array.F, offsetShm[0].array.F, outShm[0].array.F);
-        daoShmImagePart2ShmFinalize(&outShm[0]);
-        //daoShmImage2Shm((float*)outCmd, outSize, &outShm[0]);
-        //ddaoShmmage2Shm(&inShm[0].array.F[0], outSize, &outShm[0]);
-
-        clock_gettime(CLOCK_REALTIME, &t[1]);
-        elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
-        elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
-        printf("\r fps = %8.3f Hz, %d in=[%6.3f,%6.3f,...,%6.3f], out[%6.3f, %6.3f,...,%6.3f]", 1e6/(1000*elapsedTime), 
-                                                                              inSize, inShm[0].array.F[0],
-                                                                              inShm[0].array.F[1],
-                                                                              inShm[0].array.F[inSize],
-                                                                              outShm[0].array.F[0],
-                                                                              outShm[0].array.F[1],
-                                                                              outShm[0].array.F[outSize]);
+        clock_gettime(CLOCK_REALTIME, &timeout);
+        timeout.tv_sec += 1; // 1 second timeout
+        if (sem_timedwait(inShm[0].semptr[2], &timeout) != -1)
+        {
+            // New image, insert something here
+            clock_gettime(CLOCK_REALTIME, &t[1]);
+            elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
+            elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
+            printf("\r fps %.3f", 1e6/(1000*elapsedTime));
+        }
+        else
+        {
+            waitCounter += 1;
+            printf("\rWAIT %d", waitCounter);
+        }
         fflush(stdout);
     }
 
@@ -178,15 +158,9 @@ static void DecodeArgs(int argc, char **argv)
                         break;
                         break;
             case 'L':
-                        daoInfo("Simple filter from SHM real time control\n");
-                    	(void)sscanf(*argv++,"%s", inShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", servoShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", offsetShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", outShmName); argc -= 1;
-                        daoInfo("inShmName = %s\n", inShmName);
-                        daoInfo("servoShmName = %s\n", inShmName);
-                        daoInfo("offsetShmName = %s\n", inShmName);
-                        daoInfo("outShmName = %s\n", inShmName);
+                        daoInfo("convert SHM to Fits file\n");
+                    	(void)sscanf(*argv++,"%s",shmName); argc -= 1;
+                    	(void)sscanf(*argv++,"%s",outputPath); argc -= 1;
                         realTimeLoop();
                         break;
             default:

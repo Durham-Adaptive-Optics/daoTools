@@ -101,7 +101,6 @@ static int realTimeLoop()
     double elapsedTime;
     double calTime;
     clock_gettime(CLOCK_REALTIME, &t[1]);
-
     int waitCounter = 0;
     while (end ==0)
     {
