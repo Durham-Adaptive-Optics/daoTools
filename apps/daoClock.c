@@ -103,7 +103,7 @@ void * clockRealTimeLoop(void *thread_data)
     unsigned int clock[1]; 
     clock_gettime(CLOCK_REALTIME, &t[1]);
     float pauseTime;
-    pauseTime = 1e6/frequency-50;
+    pauseTime = 1e6/frequency;
     daoInfo("clock @ %.3f Hz, pauseTime of %f\n", frequency, pauseTime);
     // timing emulation there is a small offset of about 50 us...
     // probalby due to the usleep function... not very accurate.
