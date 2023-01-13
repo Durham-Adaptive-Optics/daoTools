@@ -99,7 +99,7 @@ void * clockRealTimeLoop(void *thread_data)
     fflush(stdout);
     struct timespec t[3];
     double elapsedTime;
-    double shmElapsedTime;
+    double shmElapsedTime=0;
     unsigned int clock[1]; 
     clock_gettime(CLOCK_REALTIME, &t[1]);
     float pauseTime;
@@ -109,7 +109,7 @@ void * clockRealTimeLoop(void *thread_data)
     // probalby due to the usleep function... not very accurate.
     while (end==0) 
     {
-        usleep(pauseTime);
+        usleep(pauseTime-1000*shmElapsedTime);
         clock_gettime(CLOCK_REALTIME, &t[2]);
         clock[0]++;// = clock[0] + 1;
         shm[0].md[0].cnt2++; 
