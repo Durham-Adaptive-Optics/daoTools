@@ -120,7 +120,7 @@ void * clockRealTimeLoop(void *thread_data)
         elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6; // us to ms
         shmElapsedTime = (t[2].tv_sec - t[1].tv_sec) * 1e3;    // sec to ms
         shmElapsedTime += (t[2].tv_nsec - t[1].tv_nsec) / 1e6; // us to ms
-        printf("\rfps = %.3f Hz, shmTime=%.2f ms", 1e6/(1000*elapsedTime), 1e6/(1000*shmElapsedTime));
+        printf("\rfps = %.3f Hz, shmTime=%.2f ms", 1e6/(1000*elapsedTime), shmElapsedTime);
         fflush(stdout);
     }
 
