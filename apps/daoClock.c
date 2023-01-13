@@ -97,17 +97,20 @@ void * clockRealTimeLoop(void *thread_data)
     // MAIN LOOP
     daoInfo("ENTERING LOOP\n");
     fflush(stdout);
-    struct timespec t[2];
+    struct timespec t[3];
     double elapsedTime;
+    double shmElapsedTime;
     unsigned int clock[1]; 
     clock_gettime(CLOCK_REALTIME, &t[1]);
     float pauseTime;
     pauseTime = 1e6/frequency-50;
+    daoInfo("clock @ %.3f Hz, pauseTime of %f", frequency, pauseTime);
     // timing emulation there is a small offset of about 50 us...
     // probalby due to the usleep function... not very accurate.
     while (end==0) 
     {
         usleep(pauseTime);
+        clock_gettime(CLOCK_REALTIME, &t[2]);
         clock[0]++;// = clock[0] + 1;
         shm[0].md[0].cnt2++; 
         daoShmImage2Shm((unsigned int*)clock, 1, &shm[0]);
@@ -115,8 +118,9 @@ void * clockRealTimeLoop(void *thread_data)
         clock_gettime(CLOCK_REALTIME, &t[1]);
         elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;    // sec to ms
         elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6; // us to ms
-        elapsedTime = elapsedTime; // in sec... :-)
-        printf("\rfps = %.3f Hz,", 1e6/(1000*elapsedTime));
+        shmElapsedTime = (t[2].tv_sec - t[1].tv_sec) * 1e3;    // sec to ms
+        shmElapsedTime += (t[2].tv_nsec - t[1].tv_nsec) / 1e6; // us to ms
+        printf("\rfps = %.3f Hz, shmTime=%.2f ms", 1e6/(1000*elapsedTime), 1e6/(1000*shmElapsedTime));
         fflush(stdout);
     }
 
