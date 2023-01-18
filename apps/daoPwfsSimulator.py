@@ -32,19 +32,17 @@ if __name__ == '__main__':
             print('daoPwfsSimulator.py -d <dmName> -w <wsName>')
             sys.exit()
         elif opt in ("-d", "--dm"):
-            dmShmName = eval('krtc.'+arg)
-            dmId=dm.suid
+            dmShmName = str(arg)
         elif opt in ("-w", "--ws"):
-            ws=eval('krtc.'+arg)
-            wsId=ws.suid
-    sys.stdout.write("daoPwfsSimulator for %s and %s"%(dmId, wsId))
+            wsShmName=str(arg)
+    sys.stdout.write("daoPwfsSimulator for %s and %s"%(dmShmName, wsShmName))
 
     nPx = int(ws.pupSizeX)
     inf = pf.getdata(krtc.configDir+dmId+'Inf.fits')
     
     # DM and image shared memories
-    dmShm=shmlib.shm('/tmp/'+dmId+'disp.im.shm')
-    imShm=shmlib.shm('/tmp/'+wsId+'image.im.shm')
+    dmShm=shmlib.shm(dmShmName)
+    imShm=shmlib.shm(wsShmName)
     # Pupil positions
     pxShm=shmlib.shm('/tmp/'+wsId+'quadx.im.shm')
     pyShm=shmlib.shm('/tmp/'+wsId+'quady.im.shm')
@@ -52,7 +50,7 @@ if __name__ == '__main__':
     py = pyShm.get_data()
 
     # Pupil
-    pup = krtc.pupil(nPx)
+    pup = daoTools.pupil(nPx)
 
     # First relisation (don't wait for first frame)
     # Get DM commands
@@ -60,7 +58,7 @@ if __name__ == '__main__':
     Z_in = np.squeeze(np.matmul(np.transpose(inf),np.reshape(cmds, [dm.sizeX * dm.sizeY,1])))
 
     # Compute PWS image
-    pwfsFrame = (krtc.pwfsImage(Z_in, wvlngth, mod, pup, ws.cam.sizeX))
+    pwfsFrame = (daoTools.pwfsImage(Z_in, wvlngth, mod, pup, ws.cam.sizeX))
     # Put simulated pupils in location set in shared memory
     spx = np.copy(px)
     spx[:,:] = [[13],[13],[71],[71]]     # Simulated positions
@@ -82,7 +80,7 @@ if __name__ == '__main__':
         Z_in = np.squeeze(np.matmul(np.transpose(inf),np.reshape(cmds,[dm.sizeX * dm.sizeY, 1])))
 
         # Compute PWS image
-        pwfsFrame = (krtc.pwfsImage(Z_in, wvlngth, mod, pup, ws.cam.sizeX))
+        pwfsFrame = (daoTools.pwfsImage(Z_in, wvlngth, mod, pup, ws.cam.sizeX))
         sys.stdout.write("\r%d "%(cnt))
         cnt=cnt+1
         # Put simulated pupils in location set in shared memory
