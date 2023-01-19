@@ -7,6 +7,7 @@ import sys
 from os.path import exists
 import numpy as np
 import argparse
+# from threading import Thread, Event
 
 from PyQt5 import QtCore
 
@@ -19,16 +20,16 @@ class UpdateThread(QtCore.QThread):
     # (a) for updating the plot when new data arrives:
     updateSignal       = QtCore.pyqtSignal(object)
 
-    def __init__(self, shm_filename, refresh=10): #, display=None, sempahore_number=1):
+    def __init__(self, shm_filename, refresh=10):
         super(UpdateThread, self).__init__()
         self.shm_filename = shm_filename
         self.shm = daoShm.shm(self.shm_filename)
         self.refresh =refresh
         self.updateTime = 1/refresh
-#         self.semaphore_number = sempahore_number
-        # self.display=display
-        self.work_time = 0
-        # at minimun display whats in the SHM even if not updating
+        self.counter = self.shm.get_counter()
+        self.newCounter = 0
+        self.cycles = 0
+        self.emitUpdateSignal(self.shm.get_data())
         
         
 
@@ -37,17 +38,15 @@ class UpdateThread(QtCore.QThread):
         while self.isRunning:
             self.emitUpdateSignal(self.shm.get_data())
             time.sleep(self.updateTime)
-
-            # self.end_time = time.time()
-            # self.frame_number = self.shm.get_counter()
-            # self.work_time+=(self.end_time - self.start_time)
-            # if(self.frame_number % self.display == 0):
-            #     self.emitUpdateSignal(frame)
-            #     avg_frame_time = self.work_time/self.display
-            #     frame_rate = 1/avg_frame_time
-            #     print(f"setting frame: {self.frame_number:08},  avg_frame_time: {avg_frame_time*1000:.2f} ms frame rate: {frame_rate:.2f} Hz", end="\r")
-            #     self.work_time = 0
-            # self.start_time = time.time()
+            self.newCounter= self.shm.get_counter()
+            diff = self.newCounter - self.counter
+            if(diff > 10):
+                frameRate = diff/ (self.updateTime*self.cycles)
+                print(f"display@ {self.refresh:0.2f} Hz reception@ {frameRate:0.2f} Hz", end="\r")
+                self.counter = self.newCounter
+                self.cycles = 0
+            else:
+                self.cycles+=1
 
     # This function is called by the RTC everytime new data is ready:
     def emitUpdateSignal(self, data ):
@@ -69,15 +68,7 @@ if __name__=="__main__":
     parser.add_argument('-f', '--filename',
                         dest='shm_filename',
                         default='/tmp/image.im.shm',
-                        help='Shared memory filename to be published into')
-    # parser.add_argument('-s', '--semaphore',
-    #                     dest='semaphore',
-    #                     default='3',
-    #                     help='The semaphore to read 0 - 9')   
-    # parser.add_argument('-d', '--display',
-    #                     dest='display',
-    #                     default='100',
-    #                     help='How often to display to cmd line info')     
+                        help='Shared memory filename to be published into')  
     parser.add_argument('-r', '--refresh',
                         dest='refresh',
                         default='60',
@@ -97,7 +88,7 @@ if __name__=="__main__":
     plt = magicplot.MagicPlot()
     im = plt.getImageItem()
     plt.show()
-    t = UpdateThread(shm_filename,refresh=int(args.refresh)) #sempahore_number=int(args.semaphore), display=int(args.display))
+    t = UpdateThread(shm_filename,refresh=int(args.refresh))
     t.updateSignal.connect(im.setData)
     t.start()
     app.exec_()
