@@ -29,8 +29,8 @@ class UpdateThread(QtCore.QThread):
         self.counter = self.shm.get_counter()
         self.newCounter = 0
         self.cycles = 0
+        self.maxCycles = refresh
         self.emitUpdateSignal(self.shm.get_data())
-        
         
 
     # This function is called when you say "updateThread.start()":
@@ -40,7 +40,7 @@ class UpdateThread(QtCore.QThread):
             time.sleep(self.updateTime)
             self.newCounter= self.shm.get_counter()
             diff = self.newCounter - self.counter
-            if(diff > 10):
+            if(self.cycles >= self.maxCycles):
                 frameRate = diff/ (self.updateTime*self.cycles)
                 print(f"display@ {self.refresh:0.2f} Hz reception@ {frameRate:0.2f} Hz", end="\r")
                 self.counter = self.newCounter
