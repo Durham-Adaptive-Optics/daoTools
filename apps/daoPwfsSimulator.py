@@ -22,30 +22,33 @@ if __name__ == '__main__':
     v2m = 0.6e-6
     dmShmName = '/tmp/dm.im.shm'
     wsShmName = '/tmp/ws.im.shm'
+    infFitsName = 'inf.fits'
     try:
         opts, args = getopt.getopt(sys.argv[1:],"hd:w:",["help", "dm=", "ws="])
     except getopt.GetoptError:
-      print('err, usage: pwfsSimulator.py -d <dmName> -w <wsName>')
+      print('err, usage: pwfsSimulator.py -d <dmName> -w <wsName> -f <infFitsName>')
       sys.exit(2)
     for opt, arg in opts:
         if opt == '-h':
-            print('daoPwfsSimulator.py -d <dmName> -w <wsName>')
+            print('daoPwfsSimulator.py -d <dmName> -w <wsName> -f <infFitsName>')
             sys.exit()
         elif opt in ("-d", "--dm"):
             dmShmName = str(arg)
         elif opt in ("-w", "--ws"):
             wsShmName=str(arg)
+        elif opt in ("-f", "--file"):
+            infFitsName=str(arg)
     sys.stdout.write("daoPwfsSimulator for %s and %s"%(dmShmName, wsShmName))
 
     nPx = int(ws.pupSizeX)
-    inf = pf.getdata(krtc.configDir+dmId+'Inf.fits')
+    inf = pf.getdata(infFitsName)
     
     # DM and image shared memories
     dmShm=shmlib.shm(dmShmName)
     imShm=shmlib.shm(wsShmName)
     # Pupil positions
-    pxShm=shmlib.shm('/tmp/'+wsId+'quadx.im.shm')
-    pyShm=shmlib.shm('/tmp/'+wsId+'quady.im.shm')
+    pxShm=shmlib.shm('/tmp/'+dmShmName+'Quadx.im.shm')
+    pyShm=shmlib.shm('/tmp/'+dmShmName+'Quady.im.shm')
     px = pxShm.get_data()
     py = pyShm.get_data()
 
