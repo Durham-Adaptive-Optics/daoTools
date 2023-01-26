@@ -30,19 +30,19 @@ class network_log:
 
     def level2Text(self, level):
         if level == daoLogging_pb2.LogMessage.NOSET:
-            return "NOSET     "
+            return "NOSET"
         elif level == daoLogging_pb2.LogMessage.TRACE:
-            return "TRACE     "
+            return "TRACE"
         elif level == daoLogging_pb2.LogMessage.DEBUG:
-            return "DEBUG     "
+            return "DEBUG"
         elif level == daoLogging_pb2.LogMessage.INFO:
-            return "INFO      "
+            return "INFO"
         elif level == daoLogging_pb2.LogMessage.WARNING:
-            return "WARNING   "
+            return "WARNING"
         elif level == daoLogging_pb2.LogMessage.ERROR:
-            return "ERROR     "
+            return "ERROR"
         elif level == daoLogging_pb2.LogMessage.CRITICAL:
-            return "CRITICAL  "
+            return "CRITICAL"
         else:
             return "?????"
     
@@ -102,7 +102,7 @@ class network_log:
 
 
     def getString(self, A):
-        return f"[{A.time_stamp}] - {A.machine}({A.component_name}) - [{self.level2Text(A.log_level)}] {A.log_message}"
+        return f"[{A.time_stamp}] - {A.machine} - ({A.component_name}) - [{self.level2Text(A.log_level)}] : {A.log_message}"
 
     def fill_log_queue(self):
         if not self.connected:
@@ -117,7 +117,6 @@ class network_log:
             A = self.process_log(logs)
             self.buffer.append(A)
             string = self.getString(A)
-            #string = f"[{A.time_stamp}] - {A.machine}({A.component_name}) - [{self.level2Text(A.log_level)}] {A.log_message} \n"
             self.file.write(f"{string}\n")
             if self.recv_stopEvent.is_set():
                 running = False

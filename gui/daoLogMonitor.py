@@ -1,6 +1,7 @@
 import sys
 from PyQt5.QtWidgets import QApplication, QTableWidget, QTableWidgetItem, QTextEdit, QHBoxLayout, QVBoxLayout, QWidget, QPushButton, QLineEdit, QFormLayout, QLabel, QHeaderView
-from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import QTimer, Qt
+from PyQt5.QtGui import QColor
 from collections import deque
 from daoRecvLogs import network_log
 
@@ -14,7 +15,7 @@ class TableWidget(QWidget):
         self.table.verticalHeader().setDefaultSectionSize(15)
         self.table.verticalHeader().setSectionResizeMode(QHeaderView.Fixed)
 
-        self.table.setHorizontalHeaderLabels(["Name", "Timestamp", "Machine", "Log Level", "Message"])
+        self.table.setHorizontalHeaderLabels([ "Timestamp", "Machine", "Name", "Log Level", "Message"])
 
         self.filter_name = QTextEdit()
         self.filter_name.setFixedHeight(30)
@@ -39,16 +40,16 @@ class TableWidget(QWidget):
         self.log_port   = QLineEdit("5555")
 
         filter_label_layout = QHBoxLayout()
-        filter_label_layout.addWidget(self.filter_name_label)
         filter_label_layout.addWidget(self.filter_timestamp_label)
         filter_label_layout.addWidget(self.filter_machine_label)
+        filter_label_layout.addWidget(self.filter_name_label)
         filter_label_layout.addWidget(self.filter_log_level_label)
         filter_label_layout.addWidget(self.filter_message_label)
 
         filter_layout = QHBoxLayout()
-        filter_layout.addWidget(self.filter_name)
         filter_layout.addWidget(self.filter_timestamp)
         filter_layout.addWidget(self.filter_machine)
+        filter_layout.addWidget(self.filter_name)
         filter_layout.addWidget(self.filter_log_level)
         filter_layout.addWidget(self.filter_message)
 
@@ -109,7 +110,7 @@ class TableWidget(QWidget):
     def updating(self):
         while len(self.log.buffer) > 0:
             A = self.log.buffer.popleft()
-            self.add_data([(A.component_name,A.time_stamp,A.machine, self.log.level2Text(A.log_level), A.log_message)]) 
+            self.add_data([(A.time_stamp, A.machine, A.component_name, self.log.level2Text(A.log_level), A.log_message)]) 
 
     def clear_table(self):
         self.table.setRowCount(0)
@@ -118,19 +119,33 @@ class TableWidget(QWidget):
         """Add data to the table.
         
         data : List[Tuple[str, str, str, str, str]]
-            List of tuples containing name, timestamp, machine, log_level, message.
+            List of tuples containing timestamp, machine, name, log_level, message.
         """
         for i, row in enumerate(data):
             self.table.insertRow(i)
-            # self.table.setRowHeight(i,15)
             for j, val in enumerate(row):
                 self.table.setItem(i, j, QTableWidgetItem(val))
+
+            if(row[3] == "WARNING"):
+                for column in range(self.table.columnCount()):
+                    self.table.item(i, column).setBackground(QColor(255, 165, 0))
+            elif(row[3] == "ERROR"):
+                for column in range(self.table.columnCount()):
+                    self.table.item(i, column).setBackground(Qt.red)
+            elif(row[3] == "CRITICAL"):
+                for column in range(self.table.columnCount()):
+                    self.table.item(i, column).setBackground(Qt.darkRed)
+                    self.table.item(i, column).setForeground(Qt.white)
+            else:
+                for column in range(self.table.columnCount()):
+                    self.table.item(i, column).setBackground(Qt.green)
         self.table.resizeColumnToContents(0)
         self.table.resizeColumnToContents(1)
         self.table.resizeColumnToContents(2)
         self.table.resizeColumnToContents(3)
         self.table.resizeColumnToContents(4)
         self.filter_table()
+    
 
     def button_start_clicked(self):
         # update text
