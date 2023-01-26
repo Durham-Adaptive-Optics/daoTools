@@ -6,6 +6,7 @@ import collections
 from dataclasses import dataclass
 from threading import Thread
 from threading import Event
+import daoLogging_pb2
 
 import time
 #recv logs
@@ -28,18 +29,20 @@ class network_log:
         self.connected = False
 
     def level2Text(self, level):
-        if level == 0:
-            return "Trace  "
-        elif level == 1:
-            return "Debug  "
-        elif level == 2:
-            return "INFO   "
-        elif level == 3:
-            return "WARNING"
-        elif level == 4:
-            return "ERROR  "
-        elif level == 5:
-            return "FATAL  "
+        if level == daoLogging_pb2.LogMessage.NOSET:
+            return "NOSET     "
+        elif level == daoLogging_pb2.LogMessage.TRACE:
+            return "TRACE     "
+        elif level == daoLogging_pb2.LogMessage.DEBUG:
+            return "DEBUG     "
+        elif level == daoLogging_pb2.LogMessage.INFO:
+            return "INFO      "
+        elif level == daoLogging_pb2.LogMessage.WARNING:
+            return "WARNING   "
+        elif level == daoLogging_pb2.LogMessage.ERROR:
+            return "ERROR     "
+        elif level == daoLogging_pb2.LogMessage.CRITICAL:
+            return "CRITICAL  "
         else:
             return "?????"
     
@@ -90,12 +93,11 @@ class network_log:
         self.connected = False
 
     def process_log(self,log_message):
-        log_message.logs[0].log_level
-        A = LogHolder(  log_message.logs[0].component_name,
-                        log_message.logs[0].time_stamp,
-                        log_message.logs[0].machine,
-                        log_message.logs[0].log_message,
-                        log_message.logs[0].level)
+        A = LogHolder(  log_message.component_name,
+                        log_message.time_stamp,
+                        log_message.machine,
+                        log_message.log_message,
+                        log_message.level)
         return A
 
 
@@ -106,7 +108,7 @@ class network_log:
         if not self.connected:
             print("Error: not connected")
 
-        logs = daoLogging_pb2.Logs()
+        logs = daoLogging_pb2.LogMessage()
 
         running = True
         while  running:
