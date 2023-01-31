@@ -271,3 +271,98 @@ def computePsfRef(wavelength,pupil,res):
     psfRef = np.abs(np.fft.fftshift(np.fft.fft2(pupil,s=[res,res])))**2
 
     return psfRef
+
+class ShackHartmannWFS:
+    """
+    A class to simulate a Shack-Hartmann wavefront sensor (WFS) and compute the centroid of the spots.
+    """
+    def __init__(self, num_subapertures: int, subaperture_size: int):
+        """
+        Initialize the Shack-Hartmann WFS object.
+
+        Parameters:
+        - num_subapertures (int): The number of subapertures in the Shack-Hartmann WFS.
+        - subaperture_size (int): The size of each subaperture.
+        """
+        self.num_subapertures = num_subapertures
+        self.subaperture_size = subaperture_size
+        self.subapertures = np.zeros((num_subapertures, subaperture_size, subaperture_size))
+
+    def measure_wavefront(self, wavefront: np.ndarray):
+        """
+        Measure the wavefront by dividing it into subapertures.
+
+        Parameters:
+        - wavefront (np.ndarray): The wavefront to be measured.
+
+        """
+        for i in range(self.num_subapertures):
+            x, y = np.meshgrid(np.linspace(-1, 1, self.subaperture_size), np.linspace(-1, 1, self.subaperture_size))
+            subaperture = wavefront[i * self.subaperture_size:(i + 1) * self.subaperture_size, i * self.subaperture_size:(i + 1) * self.subaperture_size]
+            self.subapertures[i] = subaperture
+
+    def compute_centroids(self) -> np.ndarray:
+        """
+        Compute the centroid of the spots.
+
+        Returns:
+        - centroids (np.ndarray): The centroids of the spots. The shape of the array is (num_subapertures, 2) where the first column represents the x-coordinate and the second column represents the y-coordinate.
+        """
+        centroids = np.zeros((self.num_subapertures, 2))
+        for i in range(self.num_subapertures):
+            subaperture = self.subapertures[i]
+            x, y = np.meshgrid(np.linspace(-1, 1, self.subaperture_size), np.linspace(-1, 1, self.subaperture_size))
+            centroids[i, 0] = np.sum(x * subaperture) / np.sum(subaperture)
+            centroids[i, 1] = np.sum(y * subaperture) / np.sum(subaperture)
+        return centroids
+
+class PyramidWFS:
+    def __init__(self, pyramid_size, subaperture_size):
+        """
+        Initialize the Pyramid WFS object with pyramid size and subaperture size.
+
+        Parameters:
+        pyramid_size (int): size of the pyramid (number of subapertures along one side)
+        subaperture_size (float): size of the subapertures in meters
+        """
+        self.pyramid_size = pyramid_size
+        self.subaperture_size = subaperture_size
+        self.pyramid = np.zeros((pyramid_size, pyramid_size))
+
+    def measure_wavefront(self, wavefront):
+        """
+        Measure the wavefront and store the values in the pyramid.
+
+        Parameters:
+        wavefront (np.ndarray): 2D array with wavefront values
+        """
+        self.pyramid = wavefront
+
+    def compute_slopes(self):
+        """
+        Compute the slopes (derivatives) of the wavefront.
+
+        Returns:
+        slopes (np.ndarray): 3D array with slopes along x and y axes
+        """
+        slopes = np.zeros((2, self.pyramid_size, self.pyramid_size))
+        for i in range(self.pyramid_size):
+            for j in range(self.pyramid_size):
+                slopes[0, i, j] = (self.pyramid[i, j+1] - self.pyramid[i, j-1])/(2*self.subaperture_size)
+                slopes[1, i, j] = (self.pyramid[i+1, j] - self.pyramid[i-1, j])/(2*self.subaperture_size)
+        # Normalize slopes by the flux
+        slopes /= np.sum(self.pyramid)
+        return slopes
+
+    def compute_intensity(self):
+        """
+        Compute the intensity of the wavefront.
+
+        Returns:
+        intensity (np.ndarray): 2D array with intensity values
+        """
+        intensity = np.zeros((self.pyramid_size, self.pyramid_size))
+        for i in range(self.pyramid_size):
+            for j in range(self.pyramid_size):
+                intensity[i, j] = (self.pyramid[i, j] + self.pyramid[i+1, j] + self.pyramid[i, j+1] + self.pyramid[i+1, j+1])/4
+        return intensity
