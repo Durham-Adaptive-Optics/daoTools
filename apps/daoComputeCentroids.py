@@ -12,17 +12,20 @@ if __name__ == '__main__':
     centroidShmName = '/tmp/centroids.im.sh'
     nbSuba = 1
     subaSize = 10
+    offset = 10
     try:
-        opts, args = getopt.getopt(sys.argv[1:],"hi:s:n:c:",["help", "imShm=", "subaSize=", "nbSUba=","centroidShmName"])
+        opts, args = getopt.getopt(sys.argv[1:],"hi:o:s:n:c:",["help", "imShm=", "offset=", "subaSize=", "nbSuba=","centroidShmName"])
     except getopt.GetoptError:
-      print('err, usage: daoComputeCentroids.py -i <imShm> -s <subaSize> -n <nbSuba> -c <centroidShm>')
+      print('err, usage: daoComputeCentroids.py -i <imShm> -o <offset> -s <subaSize> -n <nbSuba> -c <centroidShm>')
       sys.exit(2)
     for opt, arg in opts:
         if opt == '-h':
-            print('daoComputeCentroids.py -i <imShm>  -s <subaSize> -n <nbSuba> -c <centroidShm>')
+            print('daoComputeCentroids.py -i <imShm> -o <offset> -s <subaSize> -n <nbSuba> -c <centroidShm>')
             sys.exit()
         elif opt in ("-i", "--imShm"):
             imShmName = str(arg)
+        elif opt in ("-o", "--offset"):
+            offset = int(arg)
         elif opt in ("-s", "--subaSize"):
             subaSize = int(arg)
         elif opt in ("-n", "--nbSuba"):
@@ -30,6 +33,7 @@ if __name__ == '__main__':
         elif opt in ("-c", "--centroidShm"):
             centroidShmName = str(arg)
 
+    imSize = nbSuba * subaSize
     imShm = daoShm.shm(imShmName)
     centroid = np.zeros((nbSuba**2, 2))
     # create centroid SHM
@@ -42,7 +46,8 @@ if __name__ == '__main__':
     while 1:
         im = imShm.get_data(check=True)
         t0=t1
-        centroid =  shWfs.compute_centroids(im)
+        centroid =  shWfs.compute_centroids(im[offset:offset+imSize, offset:offset+imSize])
+        #centroid =  shWfs.compute_centroids(im)
         t1 = time.time()
         sys.stdout.write("\rcomp Time = %.6f"%(t1-t0))
         sys.stdout.flush()
