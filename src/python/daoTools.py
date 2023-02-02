@@ -272,97 +272,143 @@ def computePsfRef(wavelength,pupil,res):
 
     return psfRef
 
+# class ShackHartmannWFS:
+#     """
+#     A class to simulate a Shack-Hartmann wavefront sensor (WFS) and compute the centroid of the spots.
+#     """
+#     def __init__(self, num_subapertures, subaperture_size, subaperture_mask):
+#         """
+#         Initialize the Shack-Hartmann WFS object.
+
+#         Parameters:
+#         - num_subapertures (int): The number of subapertures in the Shack-Hartmann WFS.
+#         - subaperture_size (int): The size of each subaperture.
+#         """
+#         self.subaperture_mask = subaperture_mask.flatten().astype(np.int32)
+#         self.nb_suba_in_pupil = subaperture_mask.sum().astype(np.int32)
+#         self.num_subapertures = num_subapertures
+#         self.subaperture_size = subaperture_size
+#         self.subapertures = np.zeros((num_subapertures, subaperture_size, subaperture_size))
+#         x, y = np.meshgrid(np.linspace(-1, 1, self.subaperture_size), np.linspace(-1, 1, self.subaperture_size))
+#         self.x = x
+#         self.y = y
+#         self.image_size = subaperture_size * num_subapertures
+#         # Initialize an array to store the pixel coordinates of the center of each subaperture
+#         self.subaperture_center_on_image = np.zeros((num_subapertures, 2))
+#         # Compute the spacing between each subaperture
+#         self.subaperture_spacing = self.image_size / num_subapertures
+#         # Loop over each subaperture to compute its center on the image
+#         for i in range(num_subapertures):
+#             # Compute the x-coordinate of the subaperture center on the image
+#             self.subaperture_center_on_image[i, 0] = (i + 0.5) * self.subaperture_spacing - 0.5 * self.image_size + 0.5 * subaperture_size
+#             # Compute the y-coordinate of the subaperture center on the image
+#             self.subaperture_center_on_image[i, 1] = (i + 0.5) * self.subaperture_spacing - 0.5 * self.image_size + 0.5 * subaperture_size
+#         self.subaperture_center_coordinates = np.meshgrid(self.subaperture_center_on_image[:,0], self.subaperture_center_on_image[:,1])
+
+#     def load_image(self, image: np.ndarray, offset=np.zeros(2)):
+#         """
+#         load the image by dividing it into subapertures.
+
+#         Parameters:
+#         - image (np.ndarray): The image to be used.
+#         - offset (np.ndarray [2]): offset of the image if we don't use 0,0 as the starting point.
+
+#         """
+#         for i in range(self.num_subapertures):
+#             subaperture = image[i * self.subaperture_size:(i + 1) * self.subaperture_size, i * self.subaperture_size:(i + 1) * self.subaperture_size]
+#             self.subapertures[i] = subaperture
+    
+#     def compute_centroids(self, image: np.ndarray, offset=np.zeros(2)) -> np.ndarray:
+#         """
+#         Compute the centroid of the spots.
+
+#         Returns:
+#         - centroids (np.ndarray): The centroids of the spots. The shape of the array is (num_subapertures, 2) where the first column represents the x-coordinate and the second column represents the y-coordinate.
+#         - offset (np.ndarray [2]): offset of the image if we don't use 0,0 as the starting point.
+
+#         """
+#         self.load_image(image, offset)
+#         self.centroids = np.zeros((self.nb_suba_in_pupil, 2))
+#         c=0
+#         for i in range(self.num_subapertures):
+#             if self.subaperture_mask[i]==1:
+#                 subapertures=self.subapertures[i]
+#                 #x, y = np.meshgrid(np.linspace(-1, 1, self.subaperture_size), np.linspace(-1, 1, self.subaperture_size))
+#                 self.centroids[c, 0] = np.sum(self.x * subapertures) / np.sum(subapertures)
+#                 self.centroids[c, 1] = np.sum(self.y * subapertures) / np.sum(subapertures)
+#                 c=c+1
+#         return self.centroids
+
 class ShackHartmannWFS:
     """
     A class to simulate a Shack-Hartmann wavefront sensor (WFS) and compute the centroid of the spots.
     """
-    def __init__(self, num_subapertures: int, subaperture_size: int):
+    def __init__(self, num_subapertures_x: int, num_subapertures_y: int, subaperture_size: int):
         """
         Initialize the Shack-Hartmann WFS object.
 
         Parameters:
-        - num_subapertures (int): The number of subapertures in the Shack-Hartmann WFS.
+        - num_subapertures_x (int): The number of subapertures in the x direction.
+        - num_subapertures_y (int): The number of subapertures in the y direction.
         - subaperture_size (int): The size of each subaperture.
         """
-        self.num_subapertures = num_subapertures
+        self.num_subapertures_x = num_subapertures_x
+        self.num_subapertures_y = num_subapertures_y
         self.subaperture_size = subaperture_size
-        self.subapertures = np.zeros((num_subapertures, subaperture_size, subaperture_size))
+        self.subapertures = np.zeros((num_subapertures_x, num_subapertures_y, subaperture_size, subaperture_size))
+        x, y = np.meshgrid(np.arange(self.subapertures.shape[2]), np.arange(self.subapertures.shape[3]))
+        self.x = x
+        self.y = y
+        self.image_size = subaperture_size * num_subapertures_x
+        # Initialize an array to store the pixel coordinates of the center of each subaperture
+        self.subaperture_center_on_image = np.zeros((num_subapertures_x, 2))
+        # Compute the spacing between each subaperture
+        self.subaperture_spacing = self.image_size / num_subapertures_x
+        # Loop over each subaperture to compute its center on the image
+        for i in range(num_subapertures_x):
+            # Compute the x-coordinate of the subaperture center on the image
+            self.subaperture_center_on_image[i, 0] = (i + 0.5) * self.subaperture_spacing - 0.5 * self.image_size + 0.5 * subaperture_size
+            # Compute the y-coordinate of the subaperture center on the image
+            self.subaperture_center_on_image[i, 1] = (i + 0.5) * self.subaperture_spacing - 0.5 * self.image_size + 0.5 * subaperture_size
+        self.subaperture_center_coordinates = np.meshgrid(self.subaperture_center_on_image[:,0]+ self.image_size/2 - self.subaperture_size/2-0.5,\
+                                                          self.subaperture_center_on_image[:,1]+ self.image_size/2 - self.subaperture_size/2-0.5)
 
-    def measure_wavefront(self, wavefront: np.ndarray):
+    def load_image(self, image: np.ndarray):
         """
-        Measure the wavefront by dividing it into subapertures.
+        Measure the image by dividing it into subapertures.
 
         Parameters:
-        - wavefront (np.ndarray): The wavefront to be measured.
+        - image (np.ndarray): The image to be measured.
 
         """
-        for i in range(self.num_subapertures):
-            x, y = np.meshgrid(np.linspace(-1, 1, self.subaperture_size), np.linspace(-1, 1, self.subaperture_size))
-            subaperture = wavefront[i * self.subaperture_size:(i + 1) * self.subaperture_size, i * self.subaperture_size:(i + 1) * self.subaperture_size]
-            self.subapertures[i] = subaperture
+        subaperture_x_size = image.shape[0] // self.num_subapertures_x
+        subaperture_y_size = image.shape[1] // self.num_subapertures_y
+        for i in range(self.num_subapertures_x):
+            for j in range(self.num_subapertures_y):
+                x_start = i * subaperture_x_size
+                x_end = (i + 1) * subaperture_x_size
+                y_start = j * subaperture_y_size
+                y_end = (j + 1) * subaperture_y_size
+                subaperture = image[x_start:x_end, y_start:y_end]
+                self.subapertures[i, j] = subaperture
 
-    def compute_centroids(self) -> np.ndarray:
+    def compute_centroids(self, image: np.ndarray) -> np.ndarray:
         """
         Compute the centroid of the spots.
 
         Returns:
         - centroids (np.ndarray): The centroids of the spots. The shape of the array is (num_subapertures, 2) where the first column represents the x-coordinate and the second column represents the y-coordinate.
         """
-        centroids = np.zeros((self.num_subapertures, 2))
-        for i in range(self.num_subapertures):
-            subaperture = self.subapertures[i]
-            x, y = np.meshgrid(np.linspace(-1, 1, self.subaperture_size), np.linspace(-1, 1, self.subaperture_size))
-            centroids[i, 0] = np.sum(x * subaperture) / np.sum(subaperture)
-            centroids[i, 1] = np.sum(y * subaperture) / np.sum(subaperture)
+        self.load_image(image)
+        num_subapertures = self.num_subapertures_x * self.num_subapertures_y
+        centroids = np.zeros((num_subapertures, 2))
+        k = 0
+        for i in range(self.num_subapertures_x):
+            for j in range(self.num_subapertures_y):
+                subaperture = self.subapertures[i, j]
+                centroid_x = np.sum(self.x * subaperture) / np.sum(subaperture)
+                centroid_y = np.sum(self.y * subaperture) / np.sum(subaperture)
+                centroids[k, 0] = centroid_x + i * subaperture.shape[0]
+                centroids[k, 1] = centroid_y + j * subaperture.shape[1]
+                k += 1
         return centroids
-
-class PyramidWFS:
-    def __init__(self, pyramid_size, subaperture_size):
-        """
-        Initialize the Pyramid WFS object with pyramid size and subaperture size.
-
-        Parameters:
-        pyramid_size (int): size of the pyramid (number of subapertures along one side)
-        subaperture_size (float): size of the subapertures in meters
-        """
-        self.pyramid_size = pyramid_size
-        self.subaperture_size = subaperture_size
-        self.pyramid = np.zeros((pyramid_size, pyramid_size))
-
-    def measure_wavefront(self, wavefront):
-        """
-        Measure the wavefront and store the values in the pyramid.
-
-        Parameters:
-        wavefront (np.ndarray): 2D array with wavefront values
-        """
-        self.pyramid = wavefront
-
-    def compute_slopes(self):
-        """
-        Compute the slopes (derivatives) of the wavefront.
-
-        Returns:
-        slopes (np.ndarray): 3D array with slopes along x and y axes
-        """
-        slopes = np.zeros((2, self.pyramid_size, self.pyramid_size))
-        for i in range(self.pyramid_size):
-            for j in range(self.pyramid_size):
-                slopes[0, i, j] = (self.pyramid[i, j+1] - self.pyramid[i, j-1])/(2*self.subaperture_size)
-                slopes[1, i, j] = (self.pyramid[i+1, j] - self.pyramid[i-1, j])/(2*self.subaperture_size)
-        # Normalize slopes by the flux
-        slopes /= np.sum(self.pyramid)
-        return slopes
-
-    def compute_intensity(self):
-        """
-        Compute the intensity of the wavefront.
-
-        Returns:
-        intensity (np.ndarray): 2D array with intensity values
-        """
-        intensity = np.zeros((self.pyramid_size, self.pyramid_size))
-        for i in range(self.pyramid_size):
-            for j in range(self.pyramid_size):
-                intensity[i, j] = (self.pyramid[i, j] + self.pyramid[i+1, j] + self.pyramid[i, j+1] + self.pyramid[i+1, j+1])/4
-        return intensity
