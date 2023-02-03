@@ -372,6 +372,7 @@ class ShackHartmannWFS:
             self.subaperture_center_on_image[i, 1] = (i + 0.5) * self.subaperture_spacing - 0.5 * self.image_size + 0.5 * subaperture_size
         self.subaperture_center_coordinates = np.meshgrid(self.subaperture_center_on_image[:,0]+ self.image_size/2 - self.subaperture_size/2-0.5,\
                                                           self.subaperture_center_on_image[:,1]+ self.image_size/2 - self.subaperture_size/2-0.5)
+        self.threshold = 0
 
     def load_image(self, image: np.ndarray):
         """
@@ -381,6 +382,7 @@ class ShackHartmannWFS:
         - image (np.ndarray): The image to be measured.
 
         """
+        image[image < self.threshold] = 0
         subaperture_x_size = image.shape[0] // self.num_subapertures_x
         subaperture_y_size = image.shape[1] // self.num_subapertures_y
         for i in range(self.num_subapertures_x):

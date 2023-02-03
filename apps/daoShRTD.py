@@ -39,7 +39,6 @@ if __name__ == '__main__':
     ax.set_xticks(np.arange(offset-0.5, 450+offset-0.5+15, 15));
     ax.set_yticks(np.arange(offset-0.5, 450+offset-0.5+15, 15));
 
-
     #fig = plt.figure()
     #ax = fig.add_subplot(111)
     #a=plt.imshow(shmim.get_data())
@@ -47,6 +46,9 @@ if __name__ == '__main__':
     #plt.show()
     while True:
         iref.set_data(shmim.get_data())
+        cent = shmcent.get_data()
+        iref.set_data(shmim.get_data())
+        centh.set_data(cent[:,0]+offset, cent[:,1]+offset)
         fig.canvas.draw()
         fig.canvas.flush_events()
         time.sleep(0.1)
