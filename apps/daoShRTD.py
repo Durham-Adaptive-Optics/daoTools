@@ -48,6 +48,7 @@ if __name__ == '__main__':
         iref.set_data(shmim.get_data())
         cent = shmcent.get_data()
         iref.set_data(shmim.get_data())
+        #centh.set_data(cent[:,0]+offset, cent[:,1]+offset)
         centh.set_data(cent[:,0]+offset, cent[:,1]+offset)
         fig.canvas.draw()
         fig.canvas.flush_events()
