@@ -10,20 +10,23 @@ import time
 if __name__ == '__main__':
     imShmName = '/tmp/image.im.sh'
     centroidShmName = '/tmp/centroids.im.sh'
+    thresholdShmName = '/tmp/threshold.im.shm' 
     nbSuba = 1
     subaSize = 10
     offset = 10
     try:
-        opts, args = getopt.getopt(sys.argv[1:],"hi:o:s:n:c:",["help", "imShm=", "offset=", "subaSize=", "nbSuba=","centroidShmName"])
+        opts, args = getopt.getopt(sys.argv[1:],"hi:t:o:s:n:c:",["help", "imShm=", "thresholdShm=", "offset=", "subaSize=", "nbSuba=","centroidShmName"])
     except getopt.GetoptError:
-      print('err, usage: daoComputeCentroids.py -i <imShm> -o <offset> -s <subaSize> -n <nbSuba> -c <centroidShm>')
+      print('err, usage: daoComputeCentroids.py -i <imShm> -t <thresholdShm> -o <offset> -s <subaSize> -n <nbSuba> -c <centroidShm>')
       sys.exit(2)
     for opt, arg in opts:
         if opt == '-h':
-            print('daoComputeCentroids.py -i <imShm> -o <offset> -s <subaSize> -n <nbSuba> -c <centroidShm>')
+            print('daoComputeCentroids.py -i <imShm> -t <thresholdShm> -o <offset> -s <subaSize> -n <nbSuba> -c <centroidShm>')
             sys.exit()
         elif opt in ("-i", "--imShm"):
             imShmName = str(arg)
+        elif opt in ("-i", "--thresholdShm"):
+            thresholdShmName = str(arg)
         elif opt in ("-o", "--offset"):
             offset = int(arg)
         elif opt in ("-s", "--subaSize"):
@@ -35,6 +38,8 @@ if __name__ == '__main__':
 
     imSize = nbSuba * subaSize
     imShm = daoShm.shm(imShmName)
+    thresholdShm = daoShm.shm(thresholdShmName)
+
     centroid = np.zeros((nbSuba**2, 2))
     # create centroid SHM
     centroidShm = daoShm.shm(centroidShmName, centroid)
@@ -45,6 +50,7 @@ if __name__ == '__main__':
     t1 = time.time()
     while 1:
         im = imShm.get_data(check=True)
+        im[im < thresholdShm.get_data()[0,0]] = 0
         t0=t1
         centroid =  shWfs.compute_centroids(im[offset:offset+imSize, offset:offset+imSize])
         #centroid =  shWfs.compute_centroids(im)
