@@ -109,3 +109,13 @@ daoShm2Fits = bld.program(
 	use= 'daoTools',
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
+
+daoComputeCentroid = bld.program(
+	source = 'daoComputeCentroid.c',
+	target = 'daoComputeCentroid',
+	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+	linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
+	ldflags = ['-ldaoBase', '-ldaoShm' , '-lpthread', '-lrt', '-lm', '-lncurses'],
+	use= 'daoTools',
+	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
+	)

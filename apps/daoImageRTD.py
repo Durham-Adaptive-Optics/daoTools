@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 if __name__ == '__main__':
     shmimName = 'WFSim.im.sh'
-    axisFlip = False 
+    axisFlip = False
     try:
         opts, args = getopt.getopt(sys.argv[1:],"hs:a",["help", "shmimName=", "axisFlip"])
     except getopt.GetoptError:
@@ -37,7 +37,13 @@ if __name__ == '__main__':
     plt.colorbar()
     plt.show()
     while True:
-        a.set_data(shm.get_data().flatten().reshape((imageSizeX,imageSizeY)))
-        fig.canvas.draw()
-        fig.canvas.flush_events()
-        time.sleep(0.01)
+        try:
+            data=shm.get_data().flatten().reshape((imageSizeX,imageSizeY))
+            dmax=data.max()
+            a.set_data(data)
+            a.set_clim(0,dmax)
+            fig.canvas.draw()
+            fig.canvas.flush_events()
+            time.sleep(0.1)
+        except:
+            print('KeyboardInterrupt detected, aborting...')

@@ -51,6 +51,7 @@ if __name__ == '__main__':
     while 1:
         im = imShm.get_data(check=True)
         im[im < thresholdShm.get_data()[0,0]] = 0
+        im=im-thresholdShm.get_data()[0,0]
         t0=t1
         centroid =  shWfs.compute_centroids(im[offset:offset+imSize, offset:offset+imSize])
         #centroid =  shWfs.compute_centroids(im)

@@ -35,4 +35,11 @@ int_fast8_t daoToolsShmCalibrate(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IMAGE
 int_fast8_t daoToolCog(float *img, int height, int width, float *centX, float *centY);
 int_fast8_t daoToolsCommandFilter(float *command, int nbVal, daoFilterHistory *filterHistory, float *servoFilter, float *commandOffset, float *filteredCommand);
 
+int_fast8_t daoCentroidSpots(float * image,
+                             int imageSize,
+                             float * ref,
+                             int boxSize,
+                             int nSuba,
+                             float threshold,
+                             float * cent);
 #endif

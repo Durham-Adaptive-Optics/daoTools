@@ -250,3 +250,73 @@ int_fast8_t daoToolsCommandFilter(float *command, int nbVal, daoFilterHistory *f
 
     return DAO_SUCCESS;
 }
+
+
+
+
+int_fast8_t daoCentroidSpots(float * image,
+                             int imageSize,
+                             float * ref,
+                             int boxSize,
+                             int nSuba,
+                             float threshold,
+                             float * cent)
+{ 
+    // ASSUME centroid organized as follow XYXYXYXY.... (not XXXX...YYYY....)
+    // variables to hold counters and start/end
+    // coordinates for x and y
+    int x, y, x1, x2, y1, y2;
+    
+    // variables to accumulate moment (numerators) and
+    // total energy (denominator)
+    float xNumerator, yNumarator, denominator, pixel;
+    int n=0;
+    // iterate through the search boxes
+    for (n = 0; n < 2*nSuba; n += 2)
+    {
+        //printf("Search box %d computed in thread number %d\n",n,omp_get_thread_num());
+        // floating point accumulators for coordinate*intensity
+        // (x_ and yNumarator) and intensity (denominator)
+        xNumerator = 0.0;
+        yNumarator = 0.0;
+        denominator = 0.0;
+
+        // [x1,x2] and [y1,y2] are closed intervals for
+        // computing center of mass (that is, x2 and y2
+        // are included in the computation; use <= in
+        // associated for loops
+        // 
+        x1 = (unsigned int)round(ref[n]) - boxSize/2; // truncate to int
+        x2 = (unsigned int)round(ref[n]) + boxSize/2;
+        y1 = (unsigned int)round(ref[n+1]) - boxSize/2;
+        y2 = (unsigned int)round(ref[n+1]) + boxSize/2;
+
+        //printf("%d:%d , %d,%d,%d, %d\n", (unsigned int)round(ref[n]), (unsigned int)round(ref[n+1]), x1,x2,y1,y2);
+        for (x = x1; x <= x2; x++)
+        {
+            for (y = y1; y <= y2; y++)
+            {
+                pixel = (float)image[y * imageSize + x];
+                if (pixel < threshold)
+                {
+                    pixel = 0;
+                }
+                //printf("%f\n", pixel);
+                denominator += pixel;
+                xNumerator += pixel*(float)x;
+                yNumarator += pixel*(float)y;
+            }
+        }
+        if (denominator!=0)
+        {
+            cent[n] = xNumerator/denominator - ref[n];
+            cent[n+1] = yNumarator/denominator - ref[n+1];
+        }
+        else
+        {
+            cent[n] = 0;
+            cent[n+1] = 0;
+        }
+    }
+    return DAO_SUCCESS;
+}
