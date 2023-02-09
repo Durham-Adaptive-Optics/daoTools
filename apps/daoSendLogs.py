@@ -2,7 +2,6 @@ import sys, signal
 import daoLogging_pb2
 import zmq
 import time
-import random
 import numpy as np
 import argparse
 from datetime import datetime
@@ -27,13 +26,7 @@ def generate_random_log(frame):
 
 
 if __name__=="__main__":
-
-
     parser = argparse.ArgumentParser(description='Send random network logs to network for testing')
-    parser.add_argument('-f', '--filename',
-                        dest='log_file',
-                        default='logs.log',
-                        help='file to print logs to')  
     parser.add_argument('-i', '--ip',
                         dest='ip',
                         default='127.0.0.1',
@@ -44,19 +37,16 @@ if __name__=="__main__":
                         help='Port to listen on')                     
     args = parser.parse_args()
     # configure the zmq for Pub
-    protocol= 'tcp'
-    ip = '127.0.0.1'
-    port="5454"
+    ip = args.ip
+    port=args.port
 
-    connect_string = protocol + '://'+ ip + ':' + str(port)
+    connect_string = f'tcp://{ip}:{str(port)}'
     print(f"Connecting to : {connect_string}")
     context = zmq.Context()
     socket = context.socket(zmq.PUB)
-    socket.connect(connect_string)
-
+    socket.bind(connect_string)
 
     i = 0
-    
     try:
         while(True):
             # configure some sort log messages
@@ -67,8 +57,6 @@ if __name__=="__main__":
             socket.send(sendString)
             time.sleep(1)
             i+=1
-
-
     except KeyboardInterrupt:
         print("")
         print("Keyboard Interupt caught, exiting program")

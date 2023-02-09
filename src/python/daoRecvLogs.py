@@ -63,7 +63,7 @@ class network_log:
         self.network_context = zmq.Context()
         self.socket = self.network_context.socket(zmq.SUB)
 
-        self.socket.bind (self.connect_string)
+        self.socket.connect (self.connect_string)
         self.socket.subscribe('')
         print(f"Conneted to logs: {self.connect_string}")
         self.connected = True
