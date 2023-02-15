@@ -9,7 +9,7 @@ import time
 import numpy as np
 
 
-class redisCheck(Component):
+class redisCheck(daoComponent):
     def __init__(self, name=__name__, config=None, port=5557):
         super().__init__(name, config, port)
         pass
@@ -80,7 +80,8 @@ class redisCheck(Component):
 if __name__=="__main__":
     name = "redisCheck"
     ip = "127.0.0.1"
-    logger = daoLog(name=name, ip=ip, port=5555)
+    port = 5555
+    logger = daoLog(name=name, addr=f"tcp://{ip}:{port}", filename=f"/tmp/{name}.log")
 
     A = redisCheck(name)
 
