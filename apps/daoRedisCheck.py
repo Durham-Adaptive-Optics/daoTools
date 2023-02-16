@@ -7,10 +7,15 @@ from daoDoubleBuffer import DoubleBuffer
 import time
 
 import numpy as np
+from daoDb import *
 
 
 class redisCheck(Component):
-    def __init__(self, name=__name__, config=None, port=5557):
+    def __init__(self, name=__name__, config=None, port=5557, redisIp='127.0.0.1', redisPort=6379, input_file='/tmp/rec.im.shm', key='test'):
+        self.redisIp=redisIp
+        self.redisPort=redisPort
+        self.input_file=input_file
+        self.redis_key = key
         super().__init__(name, config, port)
         pass
     
@@ -23,17 +28,8 @@ class redisCheck(Component):
         self.log.trace("load_static_config()")
 
         # opening connection to Redit:
-        self.redis = [] 
-        self.redis_key = ''
-
-
-        self.input_file = "/tmp/cal.im.shm"
-        self.input_shm       = daoShm.shm(self.input_file)
-
-
-
-        # self.subApMap   = DoubleBuffer()
-        # self.add_update_map(self.subApMap_shm, self.subApMap)
+        self.redis = redis.Redis(host=self.redisIp, port=self.redisPort)
+        self.input_shm = daoShm.shm(self.input_file)
 
         # add to dictionary for querying
         # we can probably be clever and use the actual variable names to self populate this but for now this will work
@@ -45,6 +41,8 @@ class redisCheck(Component):
         self.log.trace("load_dynamic_config")
     
         # take current Redis data and put into SHM
+        self.val = get_numpy_array_from_redis(self.redis, 'test')
+        self.input_shm.set_data(self.val.astype(np.float32))
 
         return
 
@@ -82,7 +80,9 @@ if __name__=="__main__":
     ip = "127.0.0.1"
     logger = daoLog(name=name, ip=ip, port=5555)
 
-    A = redisCheck(name)
+    redisIp = '192.168.65.2'
+    redisPort = 6379
+    A = redisCheck(name, redisIp=redisIp, redisPort=redisPort, input_file='/tmp/scaoReconstructor.im.shm')
 
     while True:
         try:
