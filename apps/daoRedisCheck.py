@@ -10,7 +10,7 @@ import numpy as np
 from daoDb import *
 
 
-class redisCheck(Component):
+class redisCheck(daoComponent):
     def __init__(self, name=__name__, config=None, port=5557, redisIp='127.0.0.1', redisPort=6379, input_file='/tmp/rec.im.shm', key='test'):
         self.redisIp=redisIp
         self.redisPort=redisPort
@@ -78,7 +78,8 @@ class redisCheck(Component):
 if __name__=="__main__":
     name = "redisCheck"
     ip = "127.0.0.1"
-    logger = daoLog(name=name, ip=ip, port=5555)
+    port = 5555
+    logger = daoLog(name=name, addr=f"tcp://{ip}:{port}", filename=f"/tmp/{name}.log")
 
     redisIp = '192.168.65.2'
     redisPort = 6379
