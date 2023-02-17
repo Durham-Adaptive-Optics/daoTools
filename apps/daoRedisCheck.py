@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from daoComponent import Component
+from daoComponent import daoComponent
 import daoShm
 from daoLog import daoLog
 from daoDoubleBuffer import DoubleBuffer
@@ -41,8 +41,9 @@ class redisCheck(daoComponent):
         self.log.trace("load_dynamic_config")
     
         # take current Redis data and put into SHM
-        self.val = get_numpy_array_from_redis(self.redis, 'test')
+        self.val, self.meta = get_numpy_array_from_redis(self.redis, self.redis_key)
         self.input_shm.set_data(self.val.astype(np.float32))
+        self.input_shm.set_counter(self.meta['uid'])
 
         return
 
@@ -57,18 +58,24 @@ class redisCheck(daoComponent):
             payload =f"\n{e}"
         return payload
 
-
     # here we can allow the user to do processing nothing special
     # this should be over
     def processingThread(self):
         self.log.trace("Entering running thread")
         Running = True
+        # expect a message
+        p = self.redis.pubsub()
+        p.subscribef(f'{self.key}:message')
+
         while Running:
-            # if update on Redis
-
-            # get data
-
-            # save to SHM
+            # if update on message
+            message = p.get_message()
+            if message:
+                # get data
+                self.val, self.meta = get_numpy_array_from_redis(self.redis, self.redis_key)
+                # save to SHM
+                self.input_shm.set_data(self.val)
+                self.input_shm.set_counter(self.meta['uid'])
 
             if self.procThreadStop.is_set():
                 Running = False
@@ -83,7 +90,7 @@ if __name__=="__main__":
 
     redisIp = '192.168.65.2'
     redisPort = 6379
-    A = redisCheck(name, redisIp=redisIp, redisPort=redisPort, input_file='/tmp/scaoReconstructor.im.shm')
+    A = redisCheck(name, redisIp=redisIp, redisPort=redisPort, input_file='/tmp/scaoReconstructor.im.shm', key='recon')
 
     while True:
         try:
