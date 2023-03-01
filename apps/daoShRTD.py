@@ -24,7 +24,7 @@ if __name__ == '__main__':
             shmimName = str(arg)
         elif opt in ("-c", "--shmcentName"):
             shmcentName = str(arg)
-        elif opt in ("-c", "--shmrefName"):
+        elif opt in ("-r", "--shmrefName"):
             shmrefName = str(arg)
     shmim = daoShm.shm(shmimName)
     shmcent = daoShm.shm(shmcentName)
