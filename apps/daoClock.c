@@ -54,8 +54,8 @@ uid_t suid;
 struct timespec tnow;
 double tlastupdatedouble;
 
-IMAGE *shm;
 char clockName[32];
+char freqName[32];
 float frequency;
 
 // Thread
@@ -94,6 +94,16 @@ static void ShowHelp(void)
 void * clockRealTimeLoop(void *thread_data)
 {
     daoInfo("ThreadId=%p\n", thread_data);
+    IMAGE *shm = (IMAGE*) malloc(sizeof(IMAGE));
+    IMAGE *shmFreq = (IMAGE*) malloc(sizeof(IMAGE));
+    // Create size array, using 2D of 1x1... can be change to 1D
+    uint32_t size[2];
+    size[0] = 1;
+    size[1] = 1;
+    // Create SHM
+    daoShmImageCreate(shm, clockName, 2, size, _DATATYPE_UINT32, 1, 0);
+    daoShmImageCreate(shmFreq, freqName, 2, size, _DATATYPE_FLOAT, 1, 0);
+    shmFreq[0].array.F[0] = frequency;
     // MAIN LOOP
     daoInfo("ENTERING LOOP\n");
     fflush(stdout);
@@ -103,13 +113,15 @@ void * clockRealTimeLoop(void *thread_data)
     unsigned int clock[1]; 
     clock_gettime(CLOCK_REALTIME, &t[1]);
     float pauseTime;
-    pauseTime = 1e6/frequency;
-    daoInfo("clock @ %.3f Hz, pauseTime of %f\n", frequency, pauseTime);
+    pauseTime = 1e6/shmFreq[0].array.F[0];
+    daoInfo("clock @ %.3f Hz, pauseTime of %f\n", shmFreq[0].array.F[0], pauseTime);
     // timing emulation there is a small offset of about 50 us...
     // probalby due to the usleep function... not very accurate.
     pauseTime = pauseTime-50;
     while (end==0) 
     {
+    pauseTime = 1e6/shmFreq[0].array.F[0];
+    pauseTime = pauseTime-50;
         usleep(pauseTime-1000*shmElapsedTime);
         clock_gettime(CLOCK_REALTIME, &t[2]);
         clock[0]++;// = clock[0] + 1;
@@ -119,9 +131,7 @@ void * clockRealTimeLoop(void *thread_data)
         clock_gettime(CLOCK_REALTIME, &t[1]);
         elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;    // sec to ms
         elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6; // us to ms
-        shmElapsedTime = (t[2].tv_sec - t[1].tv_sec) * 1e3;    // sec to ms
-        shmElapsedTime += (t[2].tv_nsec - t[1].tv_nsec) / 1e6; // us to ms
-        printf("\rfps = %.3f Hz, shmTime=%.2f ms", 1e6/(1000*elapsedTime), shmElapsedTime);
+        printf("\rfps = %.3f Hz", 1e6/(1000*elapsedTime));
         fflush(stdout);
     }
 
@@ -138,9 +148,7 @@ static int realTimeLoop()
     // register interrupt signal to terminate the main loop
     signal(SIGINT, endme);
 
-    shm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(clockName, "", &shm[0]);
-
+    
     clock_t launch, done;
     double diff;
     launch=clock();
@@ -201,8 +209,10 @@ static void DecodeArgs(int argc, char **argv)
             case 'L':
                         daoInfo("CAM real time control\n");
                         (void)sscanf(*argv++,"%s", clockName);
+                        (void)sscanf(*argv++,"%s", freqName);
                         (void)sscanf(*argv++,"%f", &frequency);
                         daoInfo("%s \n", clockName);
+                        daoInfo("%s \n", freqName);
                         daoInfo("%f \n", frequency);
                         realTimeLoop();
                         break;
