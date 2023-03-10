@@ -271,6 +271,7 @@ int_fast8_t daoCentroidSpots(float * image,
     // total energy (denominator)
     float xNumerator, yNumarator, denominator, pixel;
     int n=0;
+    int count=0;
     // iterate through the search boxes
     for (n = 0; n < 2*nSuba; n += 2)
     {
@@ -309,14 +310,16 @@ int_fast8_t daoCentroidSpots(float * image,
         }
         if (denominator!=0)
         {
-            cent[n] = xNumerator/denominator - ref[n];
-            cent[n+1] = yNumarator/denominator - ref[n+1];
+            cent[n+count] = xNumerator/denominator - ref[n];
+            cent[n+count+1] = yNumarator/denominator - ref[n+1];
         }
         else
         {
-            cent[n] = 0;
-            cent[n+1] = 0;
+            cent[n+count] = 0;
+            cent[n+count+1] = 0;
         }
+        cent[n+count+2] = denominator;
+        count+=1;
     }
     return DAO_SUCCESS;
 }

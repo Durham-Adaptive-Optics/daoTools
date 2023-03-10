@@ -12,13 +12,13 @@ if __name__ == '__main__':
     shmcentName = '/tmp/centroids.im.shm'
     shmrefName = '/tmp/references.im.shm'
     try:
-        opts, args = getopt.getopt(sys.argv[1:],"hi:c:r",["help", "shmimName=", "shmcentName=", "shmrefName="])
+        opts, args = getopt.getopt(sys.argv[1:],"hi:c:r:",["help", "shmimName=", "shmcentName=", "shmrefName="])
     except getopt.GetoptError:
       print('err, usage: doaShRTD.py -i <shmimName> -c <shmcentName> -r <referenceName>')
       sys.exit(2)
     for opt, arg in opts:
         if opt == '-h':
-            print('daoShRTD.py -s <shmimName> -c<shmcentName> - r<shmrefName>')
+            print('daoShRTD.py -s <shmimName> -c <shmcentName> -r <shmrefName>')
             sys.exit()
         elif opt in ("-i", "--shmimName"):
             shmimName = str(arg)
@@ -26,6 +26,9 @@ if __name__ == '__main__':
             shmcentName = str(arg)
         elif opt in ("-r", "--shmrefName"):
             shmrefName = str(arg)
+    print(shmimName)
+    print(shmimName)
+    print(shmrefName)
     shmim = daoShm.shm(shmimName)
     shmcent = daoShm.shm(shmcentName)
     shmref = daoShm.shm(shmrefName)
@@ -36,7 +39,7 @@ if __name__ == '__main__':
     cref=shmref.get_data()
     crefh,=ax.plot(cref[:,0],cref[:,1],'+g')
     #cent = shmcent.get_data()
-    cent=cref+shmcent.get_data();
+    cent=cref+shmcent.get_data()[:,:2];
     centh,=ax.plot(cent[:,0], cent[:,1],'.r')
     
     while True:

@@ -94,13 +94,13 @@ static int realTimeLoop()
     daoShmShm2Img(thresholdShmName, "", &thresholdShm[0]);
 
     int inSize = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
-    int centroidSize = centroidShm[0].md[0].size[0]*centroidShm[0].md[0].size[1];
     struct timespec t[3];
     struct timespec timeout;
     double elapsedTime;
     double compTime;
     int cnt=0;
     clock_gettime(CLOCK_REALTIME, &t[1]);
+    usleep(2000000);
     while (end ==0)
     {
         t[0] = t[1];
@@ -121,6 +121,7 @@ static int realTimeLoop()
                              nbSuba,
                              thresholdShm[0].array.F[0],
                              centroidShm[0].array.F); 
+            daoShmImagePart2ShmFinalize(&centroidShm[0]); 
 
             clock_gettime(CLOCK_REALTIME, &t[1]);
             elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
@@ -133,7 +134,7 @@ static int realTimeLoop()
                                                                                   (float)inShm[0].array.UI8[inSize],
                                                                                   centroidShm[0].array.F[0],
                                                                                   centroidShm[0].array.F[1],
-                                                                                  centroidShm[0].array.F[centroidSize]);
+                                                                                  centroidShm[0].array.F[2]);
             fflush(stdout);
         }
         else
@@ -199,7 +200,7 @@ static void DecodeArgs(int argc, char **argv)
                     	(void)sscanf(*argv++,"%d", &nbSuba); argc -= 1;
                         daoInfo("inShmName = %s\n", inShmName);
                         daoInfo("centroidShmName = %s\n", centroidShmName);
-                        daoInfo("refShmName = %s\n", centroidShmName);
+                        daoInfo("refShmName = %s\n", refShmName);
                         daoInfo("thresholdShmName = %s\n", thresholdShmName);
                         daoInfo("subaSize = %d\n", subaSize);
                         daoInfo("nbSUba = %d\n", nbSuba);

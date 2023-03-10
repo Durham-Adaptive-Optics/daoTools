@@ -102,6 +102,7 @@ static int realTimeLoop()
     double calTime;
     clock_gettime(CLOCK_REALTIME, &t[1]);
     int waitCounter = 0;
+    usleep(2000000);
     while (end ==0)
     {
         t[0] = t[1];
