@@ -90,6 +90,7 @@ static int realTimeLoop()
 
     int inSize = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
     int outSize = outShm[0].md[0].size[0]*outShm[0].md[0].size[1];
+    struct timespec timeout;
     struct timespec t[3];
     double elapsedTime;
     clock_gettime(CLOCK_REALTIME, &t[1]);
@@ -108,6 +109,8 @@ static int realTimeLoop()
     while (end ==0)
     {
         t[0] = t[1];
+        clock_gettime(CLOCK_REALTIME, &timeout);
+        timeout.tv_sec += 1; // 1 second timeout
         // Wait for new image
         sem_wait(inShm[0].semptr[1]);
 
