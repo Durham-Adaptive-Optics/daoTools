@@ -27,6 +27,7 @@
 #include <semaphore.h>
 #include <sys/time.h>
 #include <pthread.h>
+#include <omp.h>
 
 #include "daoTools.h"
 
@@ -44,9 +45,11 @@ double tnowdouble;
 double tlastupdatedouble;
 
 char inShmName[32];
-char servoShmName[32];
-char offsetShmName[32];
-char outShmName[32];
+char refShmName[32];
+char centroidShmName[32];
+char thresholdShmName[32];
+int subaSize;
+int nbSuba;
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -67,9 +70,11 @@ static void ShowHelp(void)
     /*
      **	Post init tests
      */
-    daoInfo("   -L inShm servoShm offsetShm outShm              real time control loop\n");
+    daoInfo("   -L inShm refShm centroidShm thresholdShm subaSize nbSuba              real time control loop\n");
     daoInfo("\n");
 }
+
+
 
 /*--------------------------------------------------------------------------*/
 static int realTimeLoop()
@@ -77,62 +82,66 @@ static int realTimeLoop()
     // register interrupt signal to terminate the main loop
     signal(SIGINT, endme);
 
-    daoInfo("Starting loop, %s/%s/%s/%s \n", inShmName, servoShmName, offsetShmName, outShmName);
+    daoInfo("Starting loop, %s/%s/%s/%s \n", inShmName, refShmName, centroidShmName, thresholdShmName);
     fflush(stdout);
     IMAGE *inShm = (IMAGE*) malloc(sizeof(IMAGE));
-    IMAGE *servoShm = (IMAGE*) malloc(sizeof(IMAGE));
-    IMAGE *offsetShm = (IMAGE*) malloc(sizeof(IMAGE));
-    IMAGE *outShm = (IMAGE*) malloc(sizeof(IMAGE));
+    IMAGE *centroidShm = (IMAGE*) malloc(sizeof(IMAGE));
+    IMAGE *refShm = (IMAGE*) malloc(sizeof(IMAGE));
+    IMAGE *thresholdShm = (IMAGE*) malloc(sizeof(IMAGE));
     daoShmShm2Img(inShmName, "", &inShm[0]);
-    daoShmShm2Img(servoShmName, "", &servoShm[0]);
-    daoShmShm2Img(offsetShmName, "", &offsetShm[0]);
-    daoShmShm2Img(outShmName, "", &outShm[0]);
+    daoShmShm2Img(centroidShmName, "", &centroidShm[0]);
+    daoShmShm2Img(refShmName, "", &refShm[0]);
+    daoShmShm2Img(thresholdShmName, "", &thresholdShm[0]);
 
     int inSize = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
-    int outSize = outShm[0].md[0].size[0]*outShm[0].md[0].size[1];
-    struct timespec timeout;
+    int centroidSize = centroidShm[0].md[0].size[0]*centroidShm[0].md[0].size[1];
     struct timespec t[3];
+    struct timespec timeout;
     double elapsedTime;
+    double compTime;
+    int cnt=0;
     clock_gettime(CLOCK_REALTIME, &t[1]);
-    daoFilterHistory filterHistory;
-    filterHistory.step = 0;
-    int k,j;
-    for(k=0; k<inSize;k++)
-    {
-        // Use this loop to reset filter to zero
-        filterHistory.precal[k] = 0.0;
-        for (j=0; j< FILTER_ORDER; j++)
-        {
-            filterHistory.dlCmd[j][k] = filterHistory.dlRes[j][k] = 0.0;
-        }
-    }
     while (end ==0)
     {
         t[0] = t[1];
+        // Wait for new image
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
-        // Wait for new image
-        sem_wait(inShm[0].semptr[1]);
+        if (sem_timedwait(inShm[0].semptr[2], &timeout) != -1)
+        {
+            clock_gettime(CLOCK_REALTIME, &t[2]);
+            // New image, insert something here
+            centroidShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
 
-        // New image, insert something here
-        outShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
+            //usleep(10000);
+            daoCentroidSpots(inShm[0].array.F,
+                             inShm[0].md[0].size[0],
+                             refShm[0].array.F,
+                             subaSize,
+                             nbSuba,
+                             thresholdShm[0].array.F[0],
+                             centroidShm[0].array.F); 
 
-        daoToolsCommandFilter(inShm[0].array.F, inSize, &filterHistory, servoShm[0].array.F, offsetShm[0].array.F, outShm[0].array.F);
-        daoShmImagePart2ShmFinalize(&outShm[0]);
-        //daoShmImage2Shm((float*)outCmd, outSize, &outShm[0]);
-        //ddaoShmmage2Shm(&inShm[0].array.F[0], outSize, &outShm[0]);
-
-        clock_gettime(CLOCK_REALTIME, &t[1]);
-        elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
-        elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
-        printf("\r fps = %8.3f Hz, %d in=[%6.3f,%6.3f,...,%6.3f], out[%6.3f, %6.3f,...,%6.3f]", 1e6/(1000*elapsedTime), 
-                                                                              inSize, inShm[0].array.F[0],
-                                                                              inShm[0].array.F[1],
-                                                                              inShm[0].array.F[inSize],
-                                                                              outShm[0].array.F[0],
-                                                                              outShm[0].array.F[1],
-                                                                              outShm[0].array.F[outSize]);
-        fflush(stdout);
+            clock_gettime(CLOCK_REALTIME, &t[1]);
+            elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
+            elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
+            compTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
+            compTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
+            printf("\rcompTime = %.3f us, fps = %8.3f Hz, %d in=[%6.3f,%6.3f,...,%6.3f], out[%6.3f, %6.3f,...,%6.3f]", compTime, 1e6/(1000*elapsedTime), 
+                                                                                  inSize, (float)inShm[0].array.UI8[0],
+                                                                                  (float)inShm[0].array.UI8[1],
+                                                                                  (float)inShm[0].array.UI8[inSize],
+                                                                                  centroidShm[0].array.F[0],
+                                                                                  centroidShm[0].array.F[1],
+                                                                                  centroidShm[0].array.F[centroidSize]);
+            fflush(stdout);
+        }
+        else
+        {
+            printf("\r WAIT %d", cnt);
+            fflush(stdout);
+            cnt++;
+        }
     }
 
 
@@ -183,13 +192,17 @@ static void DecodeArgs(int argc, char **argv)
             case 'L':
                         daoInfo("Simple filter from SHM real time control\n");
                     	(void)sscanf(*argv++,"%s", inShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", servoShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", offsetShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", outShmName); argc -= 1;
+                    	(void)sscanf(*argv++,"%s", centroidShmName); argc -= 1;
+                    	(void)sscanf(*argv++,"%s", refShmName); argc -= 1;
+                    	(void)sscanf(*argv++,"%s", thresholdShmName); argc -= 1;
+                    	(void)sscanf(*argv++,"%d", &subaSize); argc -= 1;
+                    	(void)sscanf(*argv++,"%d", &nbSuba); argc -= 1;
                         daoInfo("inShmName = %s\n", inShmName);
-                        daoInfo("servoShmName = %s\n", inShmName);
-                        daoInfo("offsetShmName = %s\n", inShmName);
-                        daoInfo("outShmName = %s\n", inShmName);
+                        daoInfo("centroidShmName = %s\n", centroidShmName);
+                        daoInfo("refShmName = %s\n", centroidShmName);
+                        daoInfo("thresholdShmName = %s\n", thresholdShmName);
+                        daoInfo("subaSize = %d\n", subaSize);
+                        daoInfo("nbSUba = %d\n", nbSuba);
                         realTimeLoop();
                         break;
             default:
