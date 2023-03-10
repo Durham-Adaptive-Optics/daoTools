@@ -5,7 +5,7 @@ import daoShm
 from daoLog import daoLog
 from daoDoubleBuffer import DoubleBuffer
 import time
-
+import sys
 import numpy as np
 from daoDb import *
 
@@ -43,7 +43,7 @@ class redisCheck(daoComponent):
         # take current Redis data and put into SHM
         self.val, self.meta = get_numpy_array_from_redis(self.redis, self.redis_key)
         self.input_shm.set_data(self.val.astype(np.float32))
-        self.input_shm.set_counter(self.meta['uid'])
+        self.input_shm.set_counter(int(self.meta['uid']))
 
         return
 
@@ -65,32 +65,34 @@ class redisCheck(daoComponent):
         Running = True
         # expect a message
         p = self.redis.pubsub()
-        p.subscribef(f'{self.key}:message')
+        p.subscribe(f'{self.redis_key}:message')
 
         while Running:
             # if update on message
             message = p.get_message()
             if message:
+                self.log.debug("new data in the db")
                 # get data
                 self.val, self.meta = get_numpy_array_from_redis(self.redis, self.redis_key)
                 # save to SHM
                 self.input_shm.set_data(self.val)
-                self.input_shm.set_counter(self.meta['uid'])
-
+                self.input_shm.set_counter(int(self.meta['uid']))
+            time.sleep(0.1)
             if self.procThreadStop.is_set():
                 Running = False
             
         return
 
 if __name__=="__main__":
-    name = "redisCheck"
-    ip = "127.0.0.1"
-    port = 5555
-    logger = daoLog(name=name, addr=f"tcp://{ip}:{port}", filename=f"/tmp/{name}.log")
+    scriptName = sys.argv[0]
+    shmName = sys.argv[1]
+    redisIp = sys.argv[2]
+    redisPort = int(sys.argv[3])
+    key = sys.argv[4]
+    topicName = f'redisCheck_{key}'
+    logger = daoLog(name=topicName, filename=f"/tmp/redisCheck_{key}.log")
 
-    redisIp = '192.168.65.2'
-    redisPort = 6379
-    A = redisCheck(name, redisIp=redisIp, redisPort=redisPort, input_file='/tmp/scaoReconstructor.im.shm', key='recon')
+    A = redisCheck(topicName, redisIp=redisIp, redisPort=redisPort, input_file=shmName, key=key)
 
     while True:
         try:
