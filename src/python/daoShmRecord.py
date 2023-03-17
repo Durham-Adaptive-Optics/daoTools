@@ -274,6 +274,7 @@ def daoShmRecReadFromFits(filename):
     return data_dict, optional_headers
 
 if __name__=="__main__":
+     ## using dao logger but no requiement without these lines will use default logger.
     log = daoLog.daoLog(__name__,level=logging.TRACE)
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.TRACE)
@@ -283,9 +284,13 @@ if __name__=="__main__":
     ffile = 'test.fits'
     list = [file1, file2] #, 'Test2.im.shm']
 
+    # create record object and check shm files exsit and open them
     daoRec = daoShmRecord(list)
 
+    # record 10 frames and save to fits file
     a   = daoRec.record(10, fitsfile=ffile)
+
+    # load from fits file
     b,c = daoShmRecReadFromFits('Test.fits')
 
     print(a)
