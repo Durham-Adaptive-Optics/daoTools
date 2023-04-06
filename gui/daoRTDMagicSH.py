@@ -22,10 +22,17 @@ class UpdateThread_Image(QtCore.QThread):
     # (a) for updating the plot when new data arrives:
     updateSignal       = QtCore.pyqtSignal(object)
 
-    def __init__(self, shm_filename, refresh=10):
+    def __init__(self, shm_filename, shm_slopes=None, sub_ap=None, refresh=10):
         super(UpdateThread_Image, self).__init__()
         self.shm_filename = shm_filename
         self.shm = daoShm.shm(self.shm_filename)
+        
+
+        self.shm_slopes_file = shm_slopes
+        self.sub_ap_shm = sub_ap
+        if self.shm_slopes_file is not None and self.sub_ap_shm is not None:
+            self.slopes = daoShm.shm(self.shm_filename)
+    
         self.refresh =refresh
         self.updateTime = 1/refresh
         self.counter = self.shm.get_counter()
@@ -33,6 +40,11 @@ class UpdateThread_Image(QtCore.QThread):
         self.cycles = 0
         self.maxCycles = refresh
         self.emitUpdateSignal(self.shm.get_data())
+        slopes = self.slopes.get_data()
+        self.lines = []
+        for i in range(slopes):
+            pass
+            
         
 
     # This function is called when you say "updateThread.start()":
@@ -114,15 +126,20 @@ class UpdateThread_subApGrid(QtCore.QThread):
         """
         self.updateSignal.emit( data)
 
+
 if __name__=="__main__":
     parser = argparse.ArgumentParser(description='Script to shmPublisher')
     parser.add_argument('-f', '--filename',
                         dest='shm_filename',
                         default='/tmp/image.im.shm',
                         help='Shared memory filename to be published into')  
-    parser.add_argument('-s', '--filename_sub_ap',
+    parser.add_argument('-m', '--filename_sub_ap_map',
                         dest='shm_filename_subs',
-                        default='/tmp/subs.im.shm',
+                        default='/tmp/subAp.im.shm',
+                        help='')
+    parser.add_argument('-s', '--slopes',
+                        dest='slopes_filename',
+                        default='/tmp/slopes.im.shm',
                         help='Shared memory filename to be published into')  
     parser.add_argument('-r', '--refresh',
                         dest='refresh',
@@ -154,14 +171,11 @@ if __name__=="__main__":
     plt.show()
     t = UpdateThread_Image(shm_filename,refresh=int(args.refresh))
     t.updateSignal.connect(im.setData)
-
+    t.start()
     if shm_filename_subs is not None:
         t2 = UpdateThread_subApGrid(shm_filename_subs)
-        # t2.updateSignal.connect(im.setData)
+        t2.start()
 
-
-    t.start()
-    t2.start()
     app.exec_()
     t.exit()
 
