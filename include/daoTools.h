@@ -42,4 +42,12 @@ int_fast8_t daoCentroidSpots(float * image,
                              int nSuba,
                              float threshold,
                              float * cent);
+
+int_fast8_t daoCentroidSpotsRelative(float * image,
+                             int imageSize,
+                             float * ref,
+                             int boxSize,
+                             int nSuba,
+                             float threshold,
+                             float * cent);
 #endif

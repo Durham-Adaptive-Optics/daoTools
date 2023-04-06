@@ -269,7 +269,7 @@ int_fast8_t daoCentroidSpots(float * image,
     
     // variables to accumulate moment (numerators) and
     // total energy (denominator)
-    float xNumerator, yNumarator, denominator, pixel;
+    float xNumerator, yNumerator, denominator, pixel;
     int n=0;
     int count=0;
     // iterate through the search boxes
@@ -277,9 +277,9 @@ int_fast8_t daoCentroidSpots(float * image,
     {
         //printf("Search box %d computed in thread number %d\n",n,omp_get_thread_num());
         // floating point accumulators for coordinate*intensity
-        // (x_ and yNumarator) and intensity (denominator)
+        // (x_ and yNumerator) and intensity (denominator)
         xNumerator = 0.0;
-        yNumarator = 0.0;
+        yNumerator = 0.0;
         denominator = 0.0;
 
         // [x1,x2] and [y1,y2] are closed intervals for
@@ -305,13 +305,13 @@ int_fast8_t daoCentroidSpots(float * image,
                 //printf("%f\n", pixel);
                 denominator += pixel;
                 xNumerator += pixel*(float)x;
-                yNumarator += pixel*(float)y;
+                yNumerator += pixel*(float)y;
             }
         }
         if (denominator!=0)
         {
             cent[n+count] = xNumerator/denominator - ref[n];
-            cent[n+count+1] = yNumarator/denominator - ref[n+1];
+            cent[n+count+1] = yNumerator/denominator - ref[n+1];
         }
         else
         {
@@ -320,6 +320,100 @@ int_fast8_t daoCentroidSpots(float * image,
         }
         cent[n+count+2] = denominator;
         count+=1;
+    }
+    return DAO_SUCCESS;
+}
+
+
+int_fast8_t daoCentroidSpotsRelative(float * image,
+                             int imageSize,
+                             float * ref,
+                             int boxSize,
+                             int nSuba,
+                             float threshold,
+                             float * cent)
+{ 
+    // ASSUME centroid organized as follow XYXYXYXY.... (not XXXX...YYYY....)
+    // variables to hold counters and start/end
+    // coordinates for x and y
+    int x, y, x1, x2, y1, y2;
+    float localMax=0;
+    float relativeThreshold=0;
+    // variables to accumulate moment (numerators) and
+    // total energy (denominator)
+    float xNumerator, yNumerator, denominator, pixel, flux, weight;
+    int n=0;
+    int count=0;
+    // iterate through the search boxes
+    for (n = 0; n < 2*nSuba; n += 2)
+    {
+        //printf("Search box %d computed in thread number %d\n",n,omp_get_thread_num());
+        // floating point accumulators for coordinate*intensity
+        // (x_ and yNumerator) and intensity (denominator)
+        xNumerator = 0.0;
+        yNumerator = 0.0;
+        denominator = 0.0;
+        flux = 0.0;
+        weight = 0.0;
+        localMax=0;
+
+        // [x1,x2] and [y1,y2] are closed intervals for
+        // computing center of mass (that is, x2 and y2
+        // are included in the computation; use <= in
+        // associated for loops
+        // 
+        x1 = (unsigned int)round(ref[n]) - boxSize/2; // truncate to int
+        x2 = (unsigned int)round(ref[n]) + boxSize/2;
+        y1 = (unsigned int)round(ref[n+1]) - boxSize/2;
+        y2 = (unsigned int)round(ref[n+1]) + boxSize/2;
+
+        // Compute max value in teh subaperture
+        for (x = x1; x <= x2; x++)
+        {
+            for (y = y1; y <= y2; y++)
+            {
+                if ((float)image[y * imageSize + x] > localMax)
+                {
+                    localMax = (float)image[y * imageSize + x];
+                }
+            }
+        }
+        relativeThreshold = threshold * localMax;
+        //printf("%d:%d , %d,%d,%d, %d\n", (unsigned int)round(ref[n]), (unsigned int)round(ref[n+1]), x1,x2,y1,y2);
+        for (x = x1; x <= x2; x++)
+        {
+            for (y = y1; y <= y2; y++)
+            {
+                pixel = (float)image[y * imageSize + x];
+                flux += pixel;
+                if (pixel < relativeThreshold)
+                {
+                    pixel = 0;
+                }
+                else
+                {
+                    pixel = pixel - relativeThreshold;
+                }
+                weight += pixel;
+                //printf("%f\n", pixel);
+                denominator += pixel;
+                xNumerator += pixel*(float)x;
+                yNumerator += pixel*(float)y;
+            }
+        }
+        if (denominator!=0)
+        {
+            cent[n+count] = xNumerator/denominator - ref[n];
+            cent[n+count+1] = yNumerator/denominator - ref[n+1];
+        }
+        else
+        {
+            cent[n+count] = 0;
+            cent[n+count+1] = 0;
+        }
+        cent[n+count+2] = flux;//denominator;
+        cent[n+count+3] = weight;//denominator;
+        count+=2;
     }
     return DAO_SUCCESS;
 }

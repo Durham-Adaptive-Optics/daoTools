@@ -119,3 +119,13 @@ daoComputeCentroid = bld.program(
 	use= 'daoTools',
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
+
+daoComputeCentroidRelative = bld.program(
+	source = 'daoComputeCentroidRelative.c',
+	target = 'daoComputeCentroidRelative',
+	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+	linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
+	ldflags = ['-ldaoBase', '-ldaoShm' , '-lpthread', '-lrt', '-lm', '-lncurses'],
+	use= 'daoTools',
+	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
+	)
