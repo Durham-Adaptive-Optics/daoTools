@@ -117,11 +117,9 @@ void * clockRealTimeLoop(void *thread_data)
     daoInfo("clock @ %.3f Hz, pauseTime of %f\n", shmFreq[0].array.F[0], pauseTime);
     // timing emulation there is a small offset of about 50 us...
     // probalby due to the usleep function... not very accurate.
-    pauseTime = pauseTime-50;
     while (end==0) 
     {
-    pauseTime = 1e6/shmFreq[0].array.F[0];
-    pauseTime = pauseTime-50;
+        pauseTime = 1e6 / shmFreq[0].array.F[0];
         usleep(pauseTime-1000*shmElapsedTime);
         clock_gettime(CLOCK_REALTIME, &t[2]);
         clock[0]++;// = clock[0] + 1;

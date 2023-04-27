@@ -138,7 +138,7 @@ void * shmNRealTimeLoop(void *thread_data)
         if (args->shmId == 0)
         { 
             shm[0].md[0].cnt2 = shmIn[0][0].md[0].cnt2;
-            printf("\r combine time = %.3f", elapsedTime);
+            printf("\r combine time = %.3f us", elapsedTime*1e3);
             for (k=0; k< nbShm; k++)
             {
                 printf("%10d ", updateCnt[k]);
