@@ -50,7 +50,6 @@ uid_t euid_real;
 uid_t euid_called;
 uid_t suid;
 
-
 struct timespec tnow;
 double tlastupdatedouble;
 
@@ -58,9 +57,6 @@ char clockName[32];
 char freqName[32];
 float frequency;
 
-// Thread
-pthread_t controllerThread;
-int threadIdCtrl = 0;
 
 // termination flag
 static int end     = 0;
@@ -158,6 +154,9 @@ static int realTimeLoop()
     daoInfo("clock init status = %d, init time=%.3f\n", status, diff);
     fflush(stdout);
 
+    // Thread
+    pthread_t controllerThread;
+    int threadIdCtrl = 0;
     int camThreadVal=0;
     camThreadVal = pthread_create(&controllerThread, NULL, clockRealTimeLoop, (void *)&threadIdCtrl);
     if (camThreadVal != 0)

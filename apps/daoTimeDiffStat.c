@@ -46,14 +46,11 @@ double tlastupdatedouble;
 double dt_update; // time since last update
 double dt_update_lim = 3600.0; // if no command is received during this time, set DM to zero V [sec]
 
-IMAGE *shm;
-IMAGE *shmAvg;
-IMAGE *shmRms;
 
 char shmName[32];
 char shmNameAvg[64];
 char shmNameRms[64];
-int popSize;
+int popSize=100;
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -81,20 +78,25 @@ static void ShowHelp(void)
 }
 
 /*--------------------------------------------------------------------------*/
-static int realTimeLoop()
+void * statRealTimeLoop(void *thread_data)
 {
-    // register interrupt signal to terminate the main loop
-    signal(SIGINT, endme);
+    daoInfo("ThreadId=%p\n", thread_data);
+    IMAGE *shm = (IMAGE *)malloc(sizeof(IMAGE));
+    IMAGE *shmAvg = (IMAGE*) malloc(sizeof(IMAGE));
+    IMAGE *shmRms = (IMAGE*) malloc(sizeof(IMAGE));
+    daoShmShm2Img(shmName, "", &shm[0]);
+    //daoShmShm2Img(shmNameAvg, "", &shmAvg[0]);
+    //daoShmShm2Img(shmNameRms, "", &shmRms[0]);
 
+    // Create size array, using 2D of 1x1... can be change to 1D
+    uint32_t size[2];
+    size[0] = 1;
+    size[1] = 1;
+    daoShmImageCreate(shmAvg, shmNameAvg, 2, size, _DATATYPE_FLOAT, 1, 0);
+    daoShmImageCreate(shmRms, shmNameRms, 2, size, _DATATYPE_FLOAT, 1, 0);
     daoInfo("Starting loop, %s -> %s, popSize=%d\n",shmName, shmNameAvg, popSize );
     daoInfo("               %s -> %s, popSize=%d\n",shmName, shmNameRms, popSize );
     fflush(stdout);
-    shm = (IMAGE*) malloc(sizeof(IMAGE));
-    shmAvg = (IMAGE*) malloc(sizeof(IMAGE));
-    shmRms = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(shmName, "", &shm[0]);
-    daoShmShm2Img(shmNameAvg, "", &shmAvg[0]);
-    daoShmShm2Img(shmNameRms, "", &shmRms[0]);
 
     int nbValue = shm[0].md[0].size[0]*shm[0].md[0].size[1];
     float *avgValue = malloc(nbValue*sizeof(float));
@@ -116,7 +118,7 @@ static int realTimeLoop()
     int tail=0;
     int head=0;
     int c=0;
-    daoInfo("Average telemetry running for %s -> %s, popSize=%d\n",shmName, shmNameAvg, popSize );
+    daoInfo("Avg/Rms telemetry running for %s -> %s/%s, popSize=%d\n",shmName, shmNameAvg, shmNameRms, popSize );
 
     struct timespec timeout;
 
@@ -185,7 +187,155 @@ static int realTimeLoop()
 
     daoInfo("EXITING MAIN LOOP\n");
     fflush(stdout);
+    free(avgValue);
+    free(rmsValue);
 
+
+    return DAO_SUCCESS;
+}
+
+/*--------------------------------------------------------------------------*/
+static int realTimeLoop()
+{
+    int status;
+    // register interrupt signal to terminate the main loop
+    signal(SIGINT, endme);
+
+    clock_t launch, done;
+    double diff;
+    launch=clock();
+    status=1; 
+    usleep(1000);
+    done=clock();
+    diff = (double)(done - launch) / CLOCKS_PER_SEC;
+    daoInfo("\n%ld, %ld, %ld\n",done, launch, CLOCKS_PER_SEC);
+    daoInfo("clock init status = %d, init time=%.3f\n", status, diff);
+    fflush(stdout);
+
+    // Thread
+    pthread_t controllerThread;
+    int threadIdCtrl = 0;
+    int statThreadVal=0;
+    statThreadVal = pthread_create(&controllerThread, NULL, statRealTimeLoop, (void *)&threadIdCtrl);
+    if (statThreadVal != 0)
+    {
+        daoError("Cannot create thread, err\n");
+        return DAO_ERROR;
+    }
+    pthread_join(controllerThread, NULL);
+    return DAO_SUCCESS;
+
+
+//    IMAGE *shm = (IMAGE*) malloc(sizeof(IMAGE));
+//    IMAGE *shmAvg = (IMAGE*) malloc(sizeof(IMAGE));
+//    IMAGE *shmRms = (IMAGE*) malloc(sizeof(IMAGE));
+//    //IMAGE *test = (IMAGE*) malloc(sizeof(IMAGE));
+//    daoShmShm2Img(shmName, "", &shm[0]);
+//    daoShmShm2Img(shmNameAvg, "", &shmAvg[0]);
+//    daoShmShm2Img(shmNameRms, "", &shmRms[0]);
+//
+//    // Create size array, using 2D of 1x1... can be change to 1D
+//    //uint32_t size[2];
+//    //size[0] = 1;
+//    //size[1] = 1;
+//    //daoShmImageCreate(test, "test", 2, size, _DATATYPE_UINT32, 1, 0);
+//    //daoShmImageCreate(shmAvg, shmNameAvg, 2, size, _DATATYPE_FLOAT, 1, 0);
+//    //daoShmImageCreate(shmRms, shmNameRms, 2, size, _DATATYPE_FLOAT, 1, 0);
+//    daoInfo("Starting loop, %s -> %s, popSize=%d\n",shmName, shmNameAvg, popSize );
+//    daoInfo("               %s -> %s, popSize=%d\n",shmName, shmNameRms, popSize );
+//    fflush(stdout);
+//
+//    int nbValue = shm[0].md[0].size[0]*shm[0].md[0].size[1];
+//    float *avgValue = malloc(nbValue*sizeof(float));
+//    float *rmsValue = malloc(nbValue*sizeof(float));
+//    float valueCircBufAvg[nbValue][popSize+1];
+//    float valueCircBuf[nbValue][popSize+1];
+//    int k, l;
+//    // reset buffer
+//    for (k=0; k<nbValue; k++)
+//    {
+//        for (l=0; l<(popSize + 1); l++)
+//        {
+//            valueCircBufAvg[k][l] = 0.0;
+//            valueCircBuf[k][l] = 0.0;
+//        }
+//        avgValue[k] = 0.0;
+//        rmsValue[k] = 0.0;
+//    }
+//    int tail=0;
+//    int head=0;
+//    int c=0;
+//    daoInfo("Avg/Rms telemetry running for %s -> %s/%s, popSize=%d\n",shmName, shmNameAvg, shmNameRms, popSize );
+//
+//    struct timespec timeout;
+//
+//    while (end ==0)
+//    {
+//        clock_gettime(CLOCK_REALTIME, &timeout);
+//        timeout.tv_sec += 1; // 1 second timeout
+//        // Wait for new image
+//        if (sem_timedwait(shm[0].semptr[9], &timeout) != -1)
+//        {
+//            // if new image, add it in the cir buf.
+//            for (k = 0; k < nbValue; k++)
+//            {
+//                valueCircBufAvg[k][tail] = shm[0].array.F[k] / popSize;
+//                valueCircBuf[k][tail] = shm[0].array.F[k];
+//                if (isnan(valueCircBufAvg[k][tail]))
+//                {
+//                    valueCircBufAvg[k][tail] = 0.0;
+//                    valueCircBuf[k][tail] = 0.0;
+//                }
+//            }
+//            tail = (tail + 1) % (popSize + 1);
+//            for (k = 0; k < nbValue; k++)
+//            {
+//                if (!isnan(valueCircBufAvg[k][head]))
+//                {
+//                    // add value in the head
+//                    avgValue[k] += valueCircBufAvg[k][head];
+//                }
+//                else
+//                {
+//                    // add value in the head
+//                    avgValue[k] += 0.0;
+//                }
+//                // remove the tail value
+//                avgValue[k] -= valueCircBufAvg[k][tail];
+//            }
+//            for (k = 0; k < nbValue; k++)
+//            {
+//                for (c = 0; c < popSize; c++)
+//                {
+//                    if (!isnan(valueCircBuf[k][c]))
+//                    {
+//                        // add value in the c
+//                        rmsValue[k] += pow(valueCircBuf[k][c] - avgValue[k], 2);
+//                    }
+//                    else
+//                    {
+//                        // add value in the head
+//                        rmsValue[k] += 0.0;
+//                    }
+//                }
+//                rmsValue[k] = sqrt(rmsValue[k] / popSize);
+//            }
+//            head = (head + 1) % (popSize + 1);
+//
+//            daoShmImage2Shm(avgValue, nbValue, &shmAvg[0]);
+//            daoShmImage2Shm(rmsValue, nbValue, &shmRms[0]);
+//            printf("\r(%8.3f,%8.3f) -> AVG(%8.3f,%8.3f), RMS(%8.3f,%8.3f)",
+//                   shm[0].array.F[0], shm[0].array.F[1],
+//                   shmAvg[0].array.F[0], shmAvg[0].array.F[1],
+//                   shmRms[0].array.F[0], shmRms[0].array.F[1]);
+//            fflush(stdout);
+//        }
+//    }
+//
+//    daoInfo("EXITING MAIN LOOP\n");
+//    fflush(stdout);
+//    free(avgValue);
+//    free(rmsValue);
 
 
     return 0;
@@ -231,6 +381,8 @@ static void DecodeArgs(int argc, char **argv)
                         sprintf(shmNameAvg,"%sAvg", shmName);
                         sprintf(shmNameRms,"%sRms", shmName);
                         daoInfo("SHM = %s\n", shmName);
+                        daoInfo("SHM Avg = %s\n", shmNameAvg);
+                        daoInfo("SHM Rms = %s\n", shmNameRms);
                         break;
             case 't':	(void)sscanf(*argv++,"%d",&popSize); argc -= 1;	break;
             case 'L':
