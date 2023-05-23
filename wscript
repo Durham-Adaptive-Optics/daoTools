@@ -16,12 +16,18 @@ from waflib import Configure, Logs, Utils, Context
 #Configure.autoconfig = True # True/False/'clobber'
 
 def options(opt):
-	opt.load('compiler_c gnu_dirs')
+	opt.load('compiler_c compiler_cxx gnu_dirs')
 
 def configure(conf):
-	conf.load('compiler_c gnu_dirs')
+	conf.load('compiler_c compiler_cxx gnu_dirs')
 	conf.write_config_header('config.h')
 	print('→ prefix is ' + conf.options.prefix)
+
+	conf.check_cfg( package='protobuf',
+				args='--cflags --libs',
+				uselib_store='PROTOBUF'
+				)
+
 
 def build(bld):
 	bld.env.DEFINES=['WAF=1']

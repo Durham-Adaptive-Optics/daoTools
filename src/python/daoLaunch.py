@@ -55,9 +55,9 @@ def check_tmux_session(tmuxname=None, machine=None, user=None) -> bool:
         commands = ["ssh", f"{user}@{machine}"]
     else:
         commands = []
-    commands.extend(["tmux", "list-sessions", "-F", f"{tmuxname}"])
+    commands.extend(["tmux", "list-sessions"])
     result = subprocess.run(commands, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    sessions = result.stdout.decode().strip().split("\n")
+    sessions = [line.split(" ")[0].strip(":") for line in result.stdout.decode().strip().split("\n")]
     if tmuxname in sessions:
         return True
     else:
@@ -100,7 +100,7 @@ def send_commands(commands, user=None, machine=None, timeout=0.1):
     
     Notes:
     - If either user and machine are not specified, the commands are run locally using the sh shell.
-    - The function uses the logging module to log the trace of the function.
+    - The function uses the logging module to log the debug of the function.
     """
     log = logging.getLogger(__name__)
     # Validate input parameters
@@ -111,7 +111,7 @@ def send_commands(commands, user=None, machine=None, timeout=0.1):
     if machine is not None and not isinstance(machine, str):
         raise TypeError("machine must be a string")
 
-    log.trace(f"send_commands({commands}, {user},{machine}")
+    log.debug(f"send_commands({commands}, {user},{machine}")
     output=""
     try:
         if user is None or machine is None:

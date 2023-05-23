@@ -1,8 +1,9 @@
 import sys
-import daoCommand_pb2
-import zmq
 import time
-
+from daoLog import daoLog
+import logging
+from daoCommandIfce import daoCommandIfce
+import argparse
 
 
 # Commands:
@@ -17,47 +18,65 @@ import time
 # OTHER - calls def user_process_other(self, string): to be overloaded if required
 
 if __name__=="__main__":
+    logger = daoLog(__name__)
+    log = logging.getLogger(__name__)
+    log.setLevel(logging.TRACE)
 
-    ip = sys.argv[1]
-    port = int(sys.argv[2])
-    Command = sys.argv[3]
-    payload = sys.argv[4]
+    parser = argparse.ArgumentParser(description='daoSendCommand')
+    # ip = sys.argv[1]
+    # port = int(sys.argv[2])
+    # Command = sys.argv[3]
+    # payload = sys.argv[4]
 
-    command = daoCommand_pb2.Commands()
-    com = command.message.add()
+    parser.add_argument('-i', '--ip',
+                        dest='ip',
+                        default='127.0.0.1',
+                        help='the ip to send command') 
+    parser.add_argument('-p', '--port',
+                        dest='port',
+                        default='5555',
+                        help='Port to listen on')
+    parser.add_argument('-c', '--command',
+                        dest='command',
+                        default='PING',
+                        help='Command to send')
+    parser.add_argument('-a','--args',  dest = 'args', help='Additional arguments')
 
-    Reply = daoCommand_pb2.Reply()
-
-    com.component = "sendCommand.py"
-    com.function = daoCommand_pb2.CommandMessage.COMMAND.Value(Command)
-    com.payload = payload
+    # Parse the arguments
+    args = parser.parse_args()
     
-    context = zmq.Context()
-    socket = context.socket(zmq.REQ)
+    # Access the argument values
+    ip = args.ip
+    port = args.port
+    command = args.command
+    additional_args = args.args
+    log.debug(f"{ip}:{port} {command} {additional_args}")
+    ifce = daoCommandIfce(ip,port)
 
-    socket.connect("tcp://" + ip + ":" + str(port) )
-    socket.setsockopt(zmq.RCVTIMEO, 200)
-    mess = command.SerializeToString()
-    print(f"Sending {Command} to {ip}:{port} with args: {com.payload}")
-    socket.send(mess)
-    start = time.time()
-    print('Waiting for reply...')
 
-    while True:
-        try: 
-            message = socket.recv()
-            Reply.ParseFromString(message)
-            for i in Reply.reply:
-                if(i.status == 0):
-                    print("Success")
-                else:
-                    print("Failure")
-                print(i.payload)
-            break
-        except zmq.ZMQError as e:
-            if e.errno == zmq.EAGAIN:
-                pass # no message was ready (yet!)
-        now = time.time()
-        if(now-start >= 5):
-            print("Command Timed out")
-            exit()
+    # check command is a valid one
+    if command == "EXEC":
+        ret = ifce.Exec(additional_args)
+    elif(command == "SETUP"):
+        ret = ifce.Setup(additional_args)
+    elif(command == "UPDATE"):
+        ifce.Update(additional_args)
+    elif(command == "PING"):
+        ret = ifce.Ping(additional_args)
+    elif(command == "STATE"):
+        ifce.State(additional_args)
+    elif(command == "SET_LOG_LEVEL"):
+        ret = ifce.SetLogLevel(additional_args)
+    elif(command == "QUERY"):
+        ret = ifce.Query(additional_args)
+    elif(command == "DUMP"):
+        ret = ifce.Dump(additional_args)
+    elif(command == "OTHER"):
+        ret = ifce.Other(additional_args)
+    elif(command == "UNKNOWN"):
+        log.error("Unkown command")
+
+    if(ret[0] == 0):
+        log.info(f"Success: {ret[1]}")
+    else:
+        log.error(f"Error: {ret[0]} : {ret[1]}")

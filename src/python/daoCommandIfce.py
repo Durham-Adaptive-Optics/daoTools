@@ -40,7 +40,7 @@ class daoCommandIfce:
                     pass # no message was ready (yet!)
             now = time.time()
             if(now-start >= self.local_timeout):
-                print("timeout resetting socket")
+                self.error("timeout resetting socket")
                 self.network_socket.close()
                 self.network_socket = self.network_context.socket(zmq.REQ)
                 self.network_socket.connect(self.connect_string)
@@ -75,7 +75,7 @@ class daoCommandIfce:
         self.log.error("Setup command not implimented")
         pass
 
-    def Ping(self, args):
+    def Ping(self, args=None):
         command = daoCommand_pb2.CommandMessage()
         command.function = daoCommand_pb2.CommandMessage.COMMAND.Value("PING")
         command.payload = ""
