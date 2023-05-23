@@ -204,7 +204,7 @@ static void DecodeArgs(int argc, char **argv)
                         (void)usleep(a1);
                         break;
             case 'L':
-                        daoInfo("CAM real time control\n");
+                        daoInfo("Clock real time control\n");
                         (void)sscanf(*argv++,"%s", clockName);
                         (void)sscanf(*argv++,"%s", freqName);
                         (void)sscanf(*argv++,"%f", &frequency);
