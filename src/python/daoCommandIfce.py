@@ -40,7 +40,7 @@ class daoCommandIfce:
                     pass # no message was ready (yet!)
             now = time.time()
             if(now-start >= self.local_timeout):
-                self.error("timeout resetting socket")
+                self.log.error("timeout resetting socket")
                 self.network_socket.close()
                 self.network_socket = self.network_context.socket(zmq.REQ)
                 self.network_socket.connect(self.connect_string)
