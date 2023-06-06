@@ -28,7 +28,7 @@
 #include <sys/time.h>
 #include <pthread.h>
 
-#include "daoShm.h"
+#include "dao.h"
 
 /*==========================================================================*/
 static int	sNdx=0;							/* board index */
@@ -83,8 +83,8 @@ static int realTimeLoop()
     fflush(stdout);
     inShm = (IMAGE*) malloc(sizeof(IMAGE));
     outShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(inShmName, "", &inShm[0]);
-    daoShmShm2Img(outShmName, "", &outShm[0]);
+    daoShmShm2Img(inShmName, &inShm[0]);
+    daoShmShm2Img(outShmName, &outShm[0]);
 
     int nbInVal = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
     int nbOutVal = outShm[0].md[0].size[0]*outShm[0].md[0].size[1];

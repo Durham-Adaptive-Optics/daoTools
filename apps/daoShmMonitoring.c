@@ -31,7 +31,7 @@
 #include <ncurses.h>
 
 // DAO header
-#include "daoShm.h" 
+#include "dao.h" 
 
 typedef int bool_t;
 #ifndef TRUE
@@ -117,10 +117,12 @@ void * displayRealTimeLoop(void *thread_data)
         usleep(pauseTime);
         mvprintw(0, 0, "Shared Memory monitoring: %s/%s.im.shm\n", SHAREDMEMDIR, shm[0].md[0].name);
         printw("-------------------------------------------------------------------\n"); 
+        printw("pointer     %p\n", shm[0].array); 
         printw("naxis       %d\n", shm[0].md[0].naxis); 
         printw("size        %d, %d, %d\n", shm[0].md[0].size[0], shm[0].md[0].size[1], shm[0].md[0].size[2]); 
         printw("nelement    %d\n", shm[0].md[0].nelement); 
         printw("atype       %d\n", shm[0].md[0].atype); 
+        printw("cnt0        %d\n", shm[0].md[0].cnt0); 
         printw("cnt1        %d\n", shm[0].md[0].cnt1); 
         printw("cnt2        %d\n", shm[0].md[0].cnt2); 
         printw("timestamp   %ld\n", shm[0].md[0].atime.tsfixed.secondlong); 
@@ -148,7 +150,7 @@ static int realTimeLoop()
     signal(SIGINT, endme);
 
     shm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(shmName, "", &shm[0]);
+    daoShmShm2Img(shmName, &shm[0]);
 
     clock_t launch, done;
     double diff;

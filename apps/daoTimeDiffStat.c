@@ -28,7 +28,7 @@
 #include <sys/time.h>
 #include <pthread.h>
 
-#include "daoShm.h"
+#include "dao.h"
 
 /*==========================================================================*/
 static int	sNdx=0;							/* board index */
@@ -84,9 +84,9 @@ void * statRealTimeLoop(void *thread_data)
     IMAGE *shm = (IMAGE *)malloc(sizeof(IMAGE));
     IMAGE *shmAvg = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *shmRms = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(shmName, "", &shm[0]);
-    //daoShmShm2Img(shmNameAvg, "", &shmAvg[0]);
-    //daoShmShm2Img(shmNameRms, "", &shmRms[0]);
+    daoShmShm2Img(shmName, &shm[0]);
+    //daoShmShm2Img(shmNameAvg, &shmAvg[0]);
+    //daoShmShm2Img(shmNameRms, &shmRms[0]);
 
     // Create size array, using 2D of 1x1... can be change to 1D
     uint32_t size[2];
@@ -230,9 +230,9 @@ static int realTimeLoop()
 //    IMAGE *shmAvg = (IMAGE*) malloc(sizeof(IMAGE));
 //    IMAGE *shmRms = (IMAGE*) malloc(sizeof(IMAGE));
 //    //IMAGE *test = (IMAGE*) malloc(sizeof(IMAGE));
-//    daoShmShm2Img(shmName, "", &shm[0]);
-//    daoShmShm2Img(shmNameAvg, "", &shmAvg[0]);
-//    daoShmShm2Img(shmNameRms, "", &shmRms[0]);
+//    daoShmShm2Img(shmName, &shm[0]);
+//    daoShmShm2Img(shmNameAvg, &shmAvg[0]);
+//    daoShmShm2Img(shmNameRms, &shmRms[0]);
 //
 //    // Create size array, using 2D of 1x1... can be change to 1D
 //    //uint32_t size[2];

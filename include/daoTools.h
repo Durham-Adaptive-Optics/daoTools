@@ -12,8 +12,7 @@
 
 #ifndef _DAOTOOLS_H
 #define _DAOTOOLS_H
-#include "daoBase.h"
-#include "daoShm.h"
+#include "dao.h"
 
 #define RES_MAX_VAL 8192
 #define FILTER_ORDER 3
@@ -30,6 +29,7 @@ typedef struct
 } daoFilterHistory;
 
 unsigned daoToolsIp2Int(const char * ip); 
+void daoToolsInsertShmNamePrefix(const char* base_string, const char* prefix, char* final_string); 
 
 int_fast8_t daoToolsShmCalibrate(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IMAGE *calShm);
 int_fast8_t daoToolCog(float *img, int height, int width, float *centX, float *centY);
@@ -43,11 +43,12 @@ int_fast8_t daoCentroidSpots(float * image,
                              float threshold,
                              float * cent);
 
-int_fast8_t daoCentroidSpotsRelative(float * image,
-                             int imageSize,
-                             float * ref,
-                             int boxSize,
-                             int nSuba,
-                             float threshold,
-                             float * cent);
+int_fast8_t daoCentroidSpotsRelative(float *image,
+                                     int imageSize,
+                                     float *ref,
+                                     int boxSize,
+                                     int nSuba,
+                                     float threshold,
+                                     float *cent);
+
 #endif

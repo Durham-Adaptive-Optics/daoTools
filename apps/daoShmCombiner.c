@@ -31,7 +31,8 @@
 #include <ncurses.h>
 
 // DAO header
-#include "daoShm.h" 
+#include "dao.h" 
+#include "daoTools.h"
 
 typedef int bool_t;
 #ifndef TRUE
@@ -162,16 +163,18 @@ static int prepRealTime()
     signal(SIGINT, endme);
 
     shm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(shmName, "", &shm[0]);
+    daoShmShm2Img(shmName, &shm[0]);
     daoInfo("%s shm created", shmName);
     
-    char nameId[32];
     // create shm (/tmp/<shmName><nameId>.im.shm)
     for (k=0; k<nbShm; k++)
     {
+        char nameId[32];
+        char shmNameId[256];
         sprintf(nameId, "%02d", k);
+        daoToolsInsertShmNamePrefix(shmName, nameId, shmNameId);
         shmIn[k] = (IMAGE *)malloc(sizeof(IMAGE));
-        daoShmShm2Img(nameId, shmName, &shmIn[k][0]);
+        daoShmShm2Img(shmNameId, &shmIn[k][0]);
         daoInfo("%s%s shm created\n", shmName, nameId);
         updateCnt[k] = 0;
     }

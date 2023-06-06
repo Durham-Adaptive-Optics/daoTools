@@ -20,6 +20,7 @@
  */
 unsigned daoToolsIp2Int (const char * ip)
 {
+    daoTrace("\n");
     /* The return value. */
     unsigned v = 0;
     /* The count of the number of bytes processed. */
@@ -59,6 +60,31 @@ unsigned daoToolsIp2Int (const char * ip)
     return v;
 }
 
+/**
+ * @brief 
+ * 
+ * @param base_string 
+ * @param prefix 
+ * @param suffix 
+ * @param final_string 
+ */
+void daoToolsInsertShmNamePrefix(const char* base_string, const char* prefix, char* final_string) 
+{
+    daoTrace("\n");
+    const char* suffix = ".im.shm";
+    size_t suffix_length = strlen(suffix);
+    size_t base_string_length = strlen(base_string);
+
+    if (base_string_length <= suffix_length) 
+    {
+        printf("Invalid string format.\n");
+        return;
+    }
+
+    size_t prefix_index = base_string_length - suffix_length;
+
+    snprintf(final_string, 128, "%.*s%s%s", (int)prefix_index, base_string, prefix, suffix);
+}
 
 /**
  * @brief Calibrate an image by applying flatfield and background
@@ -160,6 +186,7 @@ int_fast8_t daoToolsShmCalibrate(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IMAGE
  */
 int_fast8_t daoToolCog(float *img, int height, int width, float *centX, float *centY) 
 {
+    daoTrace("\n");
 	float sumX=0;
 	float sumY=0;
 	float sumPix=0;
@@ -262,6 +289,8 @@ int_fast8_t daoCentroidSpots(float * image,
                              float threshold,
                              float * cent)
 { 
+    daoTrace("\n");
+
     // ASSUME centroid organized as follow XYXYXYXY.... (not XXXX...YYYY....)
     // variables to hold counters and start/end
     // coordinates for x and y
@@ -324,7 +353,18 @@ int_fast8_t daoCentroidSpots(float * image,
     return DAO_SUCCESS;
 }
 
-
+/**
+ * @brief 
+ * 
+ * @param image 
+ * @param imageSize 
+ * @param ref 
+ * @param boxSize 
+ * @param nSuba 
+ * @param threshold 
+ * @param cent 
+ * @return int_fast8_t 
+ */
 int_fast8_t daoCentroidSpotsRelative(float * image,
                              int imageSize,
                              float * ref,
@@ -333,6 +373,7 @@ int_fast8_t daoCentroidSpotsRelative(float * image,
                              float threshold,
                              float * cent)
 { 
+    daoTrace("\n");
     // ASSUME centroid organized as follow XYXYXYXY.... (not XXXX...YYYY....)
     // variables to hold counters and start/end
     // coordinates for x and y

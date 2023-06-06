@@ -6,7 +6,7 @@ bld.shlib(
 	linkflags = ['-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
 	#cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
-	ldflags = ['-ldaoBase' , '-ldaoShm', '-lpthread', '-lrt', '-lm'],
+	ldflags = ['-ldao', '-lpthread', '-lrt', '-lm'],
 	target = 'daoTools',
 	name   = 'daoTools',
 	vnum   = '0.0.1')

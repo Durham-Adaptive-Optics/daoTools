@@ -29,6 +29,7 @@
 #include <pthread.h>
 #include <omp.h>
 
+#include "dao.h"
 #include "daoTools.h"
 
 /*==========================================================================*/
@@ -88,10 +89,10 @@ static int realTimeLoop()
     IMAGE *centroidShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *refShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *thresholdShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(inShmName, "", &inShm[0]);
-    daoShmShm2Img(centroidShmName, "", &centroidShm[0]);
-    daoShmShm2Img(refShmName, "", &refShm[0]);
-    daoShmShm2Img(thresholdShmName, "", &thresholdShm[0]);
+    daoShmShm2Img(inShmName, &inShm[0]);
+    daoShmShm2Img(centroidShmName, &centroidShm[0]);
+    daoShmShm2Img(refShmName, &refShm[0]);
+    daoShmShm2Img(thresholdShmName, &thresholdShm[0]);
 
     int inSize = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
     struct timespec t[3];

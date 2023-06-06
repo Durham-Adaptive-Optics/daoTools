@@ -29,7 +29,7 @@
 #include <pthread.h>
 #include <ncurses.h>
 
-#include "daoShm.h"
+#include "dao.h"
 
 /*==========================================================================*/
 static int	sNdx=0;							/* board index */
@@ -88,9 +88,9 @@ static int realTimeLoop()
     shm0 = (IMAGE*) malloc(sizeof(IMAGE));
     shm1 = (IMAGE*) malloc(sizeof(IMAGE));
     latencyShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(shm0Name, "", &shm0[0]);
-    daoShmShm2Img(shm1Name, "", &shm1[0]);
-    daoShmShm2Img(latencyShmName, "", &latencyShm[0]);
+    daoShmShm2Img(shm0Name, &shm0[0]);
+    daoShmShm2Img(shm1Name, &shm1[0]);
+    daoShmShm2Img(latencyShmName, &latencyShm[0]);
 
     WINDOW * mainwin;
     mainwin = initscr();
@@ -116,8 +116,8 @@ static int realTimeLoop()
     while (end ==0)
     {
         mvprintw(0, 0, "Measure timing script between\n");
-        printw("SHM0 %s/%s.im.shm\n", SHAREDMEMDIR, shm0[0].md[0].name);
-        printw("SHM1 %s/%s.im.shm\n", SHAREDMEMDIR, shm1[0].md[0].name);
+        printw("SHM0 %s\n", shm0Name);
+        printw("SHM1 %s\n", shm1Name);
         //clock_gettime(CLOCK_REALTIME, &timeout);
         //timeout.tv_sec += 1; // 1 second timeout
         //// Wait for new image

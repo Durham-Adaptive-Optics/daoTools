@@ -83,10 +83,10 @@ static int realTimeLoop()
     IMAGE *servoShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *offsetShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *outShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(inShmName, "", &inShm[0]);
-    daoShmShm2Img(servoShmName, "", &servoShm[0]);
-    daoShmShm2Img(offsetShmName, "", &offsetShm[0]);
-    daoShmShm2Img(outShmName, "", &outShm[0]);
+    daoShmShm2Img(inShmName, &inShm[0]);
+    daoShmShm2Img(servoShmName, &servoShm[0]);
+    daoShmShm2Img(offsetShmName, &offsetShm[0]);
+    daoShmShm2Img(outShmName, &outShm[0]);
 
     int inSize = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
     int outSize = outShm[0].md[0].size[0]*outShm[0].md[0].size[1];

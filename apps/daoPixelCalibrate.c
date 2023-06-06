@@ -28,7 +28,7 @@
 #include <sys/time.h>
 #include <pthread.h>
 
-#include "daoShm.h"
+#include "dao.h"
 #include "daoTools.h"
 
 /*==========================================================================*/
@@ -87,10 +87,10 @@ static int realTimeLoop()
     ffShm = (IMAGE*) malloc(sizeof(IMAGE));
     bgShm = (IMAGE*) malloc(sizeof(IMAGE));
     calShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(inShmName, "", &inShm[0]);
-    daoShmShm2Img(ffShmName, "", &ffShm[0]);
-    daoShmShm2Img(bgShmName, "", &bgShm[0]);
-    daoShmShm2Img(calShmName, "", &calShm[0]);
+    daoShmShm2Img(inShmName, &inShm[0]);
+    daoShmShm2Img(ffShmName, &ffShm[0]);
+    daoShmShm2Img(bgShmName, &bgShm[0]);
+    daoShmShm2Img(calShmName, &calShm[0]);
 
     daoInfo("Starting loop, %s/%s \n",inShmName, calShmName);
     fflush(stdout);

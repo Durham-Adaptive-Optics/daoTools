@@ -31,7 +31,7 @@
 #include <pthread.h>
 
 // DAO header
-#include "daoShm.h" 
+#include "dao.h" 
 
 typedef int bool_t;
 #ifndef TRUE

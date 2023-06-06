@@ -28,7 +28,7 @@
 #include <sys/time.h>
 #include <pthread.h>
 
-#include "daoShm.h"
+#include "dao.h"
 
 /*==========================================================================*/
 static int	sNdx=0;							/* board index */
@@ -81,9 +81,9 @@ static int realTimeLoop()
     daoInfo("Starting loop, %s \n", outShmName);
     fflush(stdout);
     outShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(outShmName, "", &outShm[0]);
+    daoShmShm2Img(outShmName, &outShm[0]);
     clockShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(clockShmName, "", &clockShm[0]);
+    daoShmShm2Img(clockShmName, &clockShm[0]);
 
     int outSize = outShm[0].md[0].size[0]*outShm[0].md[0].size[1];
     struct timespec t[4];
