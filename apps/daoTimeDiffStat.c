@@ -29,6 +29,7 @@
 #include <pthread.h>
 
 #include "dao.h"
+#include "daoTools.h"
 
 /*==========================================================================*/
 static int	sNdx=0;							/* board index */
@@ -378,8 +379,10 @@ static void DecodeArgs(int argc, char **argv)
                         break;
             case 's':	
                         (void)sscanf(*argv++,"%s",shmName); argc -= 1;
-                        sprintf(shmNameAvg,"%sAvg", shmName);
-                        sprintf(shmNameRms,"%sRms", shmName);
+                        daoToolsInsertShmNamePrefix(shmName, "Avg", shmNameAvg);
+                        daoToolsInsertShmNamePrefix(shmName, "Rms", shmNameRms);
+                        //sprintf(shmNameAvg,"%sAvg", shmName);
+                        //sprintf(shmNameRms,"%sRms", shmName);
                         daoInfo("SHM = %s\n", shmName);
                         daoInfo("SHM Avg = %s\n", shmNameAvg);
                         daoInfo("SHM Rms = %s\n", shmNameRms);
