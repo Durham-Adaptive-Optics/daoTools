@@ -78,7 +78,6 @@ static int realTimeLoop()
 {
     // register interrupt signal to terminate the main loop
     signal(SIGINT, endme);
-
     daoInfo("Starting loop, %s/%s \n",inShmName, outShmName);
     fflush(stdout);
     inShm = (IMAGE*) malloc(sizeof(IMAGE));
