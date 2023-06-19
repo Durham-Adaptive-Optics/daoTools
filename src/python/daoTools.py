@@ -414,3 +414,116 @@ class ShackHartmannWFS:
                 centroids[k, 1] = centroid_y + j * subaperture.shape[1]
                 k += 1
         return centroids
+
+# Function which use a simple model to compute the Pyramid image.
+# Includes non-linear amplitude effects, but
+# not the mixing of spatial frequencies which can occur for large
+# wavefronts. Uses a Fourier filter to include the effects of modulation.
+#
+# Inputs:
+# Z_in:         incoming (true) wavefront [m]
+# wavelength:   WFSing wavlength [m]
+# mod:          moduolation in lambda/D
+# pupil:        function describing the pupil (Z_in dimensions)
+#
+# Return:
+# pwsFrame:     Pyramid WFS frame
+#
+# Charlotte Bond    21st March 2019
+
+def pwfsImage(Z_in,wavelength,mod,pupil,imsize):
+
+    np.seterr(divide='ignore', invalid='ignore')
+    
+    # Resolution
+    res = np.size(Z_in[0])
+
+    # Wavenumber
+    k = 2*np.pi/wavelength
+
+    # Case for no modulation
+    if mod==0:
+        Z_filt = Z_in
+    # With modulation 
+    else:
+        # Fourier filter
+        G = np.zeros([res,res])
+        n0 = int(np.ceil((res+1)/2)-1)
+        kk = np.linspace(1,res,res)-(n0+1)
+        [kx,ky] = np.meshgrid(kk,kk)
+        
+        # Gradient part
+        G = np.sqrt(kx**2+ky**2)/mod
+        # Constant part
+        G[G>1] = 1
+        # Reconstruction fiter
+        R = 1/G
+        R[n0,n0] = 0
+
+        # Filtered phase (i.e. phase seen by the PWS)
+        Z_filt = np.real(np.fft.ifft2(np.fft.ifftshift(G*np.fft.fftshift(np.fft.fft2(Z_in)))))
+
+
+    # Simulate Pyramid image
+    ####################################################################
+    # 1: compute pyramid mask
+    # Use resolution of imagesize
+    nF = imsize
+    c = 1
+    nPx = c*nF
+    # x/y range in prism space (vary this parameter?)
+    #xv = np.linspace(-np.floor((nPx-1)/2),np.ceil((nPx-1)/2),nPx)
+    #yv = np.linspace(-np.floor((nPx-1)/2),np.ceil((nPx-1)/2),nPx)
+    xv = np.linspace(-np.ceil((nPx-1)/2),np.floor((nPx-1)/2),nPx)
+    yv = np.linspace(-np.ceil((nPx-1)/2),np.floor((nPx-1)/2),nPx)
+    [X,Y] = np.meshgrid(xv,yv)
+    # Angle of roof prism (degrees)
+    theta = 15e-6
+    # Four-sided roof prism
+    rho = np.arctan(Y/X)
+    prism = -np.sqrt(2)*np.abs((X+Y))*np.sin(theta*np.pi/180)
+    # In the quadrants with corespond to |rho|>pi/4 should have a slope of
+    # |Y|sin(theta)
+    prism[rho<0] = -np.sqrt(2)*np.abs(X[rho<0]-Y[rho<0])*np.sin(theta*np.pi/180)
+
+    # Plot Pyramid mask
+    """
+    plt.imshow(prism)
+    plt.show()
+    """
+
+    # Compute Fourier mask (should look at real units for this)
+    mask = np.exp(1j*prism*k)
+    mask_ = np.fft.fftshift(np.fft.fft2(mask))
+
+    """
+    plt.imshow(np.log10(np.abs(mask_)))
+    plt.show()
+    """
+    ####################################################################
+
+    ####################################################################
+    # 2: apply pyramid effect in Fourier space
+    nPhotons = 50000
+    fullPupil = np.zeros([nPx,nPx])
+    i0 = int(np.ceil((nPx-res)/2))
+    fullPupil[i0:i0+res,i0:i0+res] = pupil
+
+    """
+    plt.imshow(fullPupil)
+    plt.show()
+    """
+
+    wf = Z_filt
+    #wf = np.zeros([res,res])
+    phiP = np.zeros([nPx,nPx],dtype=complex)
+    phiP[fullPupil==1] = np.sqrt(nPhotons)*np.exp(1j*k*wf[pupil==1])
+
+    pwsFrame = (np.abs(np.fft.ifft2(np.fft.fftshift(np.fft.fft2(phiP)*np.fft.ifftshift(mask))))**2)
+    
+    """
+    plt.imshow(pwsFrame)
+    plt.show()
+    """    
+    
+    return pwsFrame

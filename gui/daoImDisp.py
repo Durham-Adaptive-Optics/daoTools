@@ -35,13 +35,13 @@ class Main(QMainWindow, Ui_MainWindow):
         print(shmimName)
         self.shmim = daoShm.shm(shmimName)
         # set display according to SHM size
-        print(str(self.shmim.mtdata['size'][0])+','+str(self.shmim.mtdata['size'][1]))
-        self.vb.setRange(QtCore.QRectF(0, 0, self.shmim.mtdata['size'][0], self.shmim.mtdata['size'][1]))
+        print(str(self.shmim.get_meta_data()['size'][0])+','+str(self.shmim.get_meta_data()['size'][1]))
+        self.vb.setRange(QtCore.QRectF(0, 0, self.shmim.get_meta_data()['size'][0], self.shmim.get_meta_data()['size'][1]))
         # Get first image
         im = self.shmim.get_data()
         self.img.setImage(np.rot90(im.reshape(im.shape[1], im.shape[0]),3))
         # save first counter
-        self.imCnt1 = self.shmim.get_counter()
+        self.imCnt1 = self.shmim.get_meta_data()['cnt0']
         # Create QT timer to update display
         self.timer  = QtCore.QTimer(self)
         # Throw event timeout with an interval of 50 milliseconds
