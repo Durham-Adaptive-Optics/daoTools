@@ -6,11 +6,10 @@ import astropy.io.fits as pf
 import time
 import datetime
 from scipy import signal 
-import krtc
 import matplotlib.pyplot as plt
 from math import gamma
 
-import daoShm
+import dao
 
 import os
 os.nice(10)
@@ -19,7 +18,7 @@ os.nice(10)
 # DM.  Output is in the form of DM commands.
 # 
 # Charlotte Bond    16th October 2018
-# The main function sets up the initial parameters of the
+# The applyTub function sets up the initial parameters of the
 # turbulence and computes the initial phase screen.  This is
 # then propagated through the function updatePhaseScreen()
 #
@@ -36,13 +35,13 @@ os.nice(10)
 #                the AO loop)
 #         T -    Total time period [s]
 #
-# For live use adapt main() function to continuously update DM
+# For live use adapt applyTub() function to continuously update DM
 # or save a series of images phase screens for later application.
 #
 # Charlotte Bond    16th October 2018
 #
 
-def main(shm, nAct, D, r0, wS, wD, dt, T):
+def applyTub(shm, shmMap, nAct, D, r0, wS, wD, dt, T):
 
     # Compute the initial phase screen in Fourier space
     [fft_Z,Kx,Ky] = fourierPhaseScreen(nAct,D,r0)
@@ -72,7 +71,8 @@ def main(shm, nAct, D, r0, wS, wD, dt, T):
         # Look at DM coefficients in 2D map (just for plotting
         # purposes, remove for live use)
         Z_DM[pup] = Z_coefs 
-        shm.set_data(Z_DM.astype(np.float32))
+
+        shm.set_data(Z_DM.astype(np.float32).flatten()[shmMap.get_data().flatten()==1])
         time.sleep(dt)
 
         #plt.imshow(Z_DM)
@@ -189,8 +189,9 @@ def pupil(N):
 if __name__ == '__main__':
     print('Turbulence Simulator Tool')
     
-    shmName = ''
-    diameter = 39 # m
+    shmName = '/tmp/dm.im.shm'
+    shmMapName = '/tmp/dmMap.im.shm'
+    diameter = 10 # m
     r0 = 0.1 # m
     wSpeed = 10 # m/s
     wDirection = -45 # deg
@@ -221,13 +222,14 @@ if __name__ == '__main__':
         elif opt in ("-p", "--period"):
             period = float(arg)
 
-    shm = daoShm(shmName)       
+    shm = dao.shm(shmName)       
+    shmMap = dao.shm(shmMapName)       
     # Get number of actuator
-    nAct = shm.get_data().shape[0]
+    nAct = shmMap.get_data().shape[0]
 
     try:
         while 1:
-            main(nAct, diameter, r0, wSpeed, wDirection, dt, period)
+            applyTub(shm, shmMap, nAct, diameter, r0, wSpeed, wDirection, dt, period)
     except KeyboardInterrupt:
         shm.set_data(0*shm.get_data())
 
