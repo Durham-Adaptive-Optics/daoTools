@@ -90,6 +90,16 @@ daoPixelCalibrate = bld.program(
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
+daoPixelCalibratePws = bld.program(
+	source = 'daoPixelCalibratePws.c',
+	target = 'daoPixelCalibratePws',
+	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+	linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
+	ldflags = ['-ldao' , '-lpthread', '-lrt', '-lm', '-lncurses'],
+	use= 'daoTools',
+	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
+	)
+
 daoShmCombiner = bld.program(
 	source = 'daoShmCombiner.c',
 	target = 'daoShmCombiner',
@@ -123,6 +133,16 @@ daoComputeCentroid = bld.program(
 daoComputeCentroidRelative = bld.program(
 	source = 'daoComputeCentroidRelative.c',
 	target = 'daoComputeCentroidRelative',
+	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+	linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
+	ldflags = ['-ldao' , '-lpthread', '-lrt', '-lm', '-lncurses'],
+	use= 'daoTools',
+	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
+	)
+
+daoComputeCentroidPws = bld.program(
+	source = 'daoComputeCentroidPws.c',
+	target = 'daoComputeCentroidPws',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
 	ldflags = ['-ldao' , '-lpthread', '-lrt', '-lm', '-lncurses'],

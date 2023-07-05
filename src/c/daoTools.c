@@ -177,6 +177,137 @@ int_fast8_t daoToolsShmCalibrate(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IMAGE
 }
 
 /**
+ * @brief Calibrate an image by applying flatfield and background
+ * 
+ * @param inShm raw image 
+ * @param ffShm flat field
+ * @param bgShm background
+ * @param maskShm mask for the calibrated image
+ * @param calShm output calibrated image
+ * @return int_fast8_t 
+ */
+int_fast8_t daoToolsShmCalibratePws(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IMAGE *maskShm, IMAGE *calShm, IMAGE *fluxShm)
+{
+    daoTrace("\n");
+    int k;
+    int inSize = inShm[0].md[0].size[0] * inShm[0].md[0].size[1];
+    calShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
+    if (inShm[0].md[0].atype == _DATATYPE_UINT8)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+            if (maskShm[0].array.SI32[k] != -1)
+            {
+                calShm[0].array.F[maskShm[0].array.SI32[k]] = ((float)inShm[0].array.UI8[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
+                fluxShm[0].array.F[0] += calShm[0].array.F[maskShm[0].array.SI32[k]];
+            }
+        }
+    }
+    else if (inShm[0].md[0].atype == _DATATYPE_INT8)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+            if (maskShm[0].array.SI32[k] != -1)
+            {
+                calShm[0].array.F[maskShm[0].array.SI32[k]] = ((float)inShm[0].array.SI8[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
+                fluxShm[0].array.F[0] += calShm[0].array.F[maskShm[0].array.SI32[k]];
+            }
+        }
+    }
+    else if (inShm[0].md[0].atype == _DATATYPE_UINT16)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+            if (maskShm[0].array.SI32[k] != -1)
+            {
+                calShm[0].array.F[maskShm[0].array.SI32[k]] = ((float)inShm[0].array.UI16[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
+                fluxShm[0].array.F[0] += calShm[0].array.F[maskShm[0].array.SI32[k]];
+            }
+        }
+    }
+    else if (inShm[0].md[0].atype == _DATATYPE_INT16)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+            if (maskShm[0].array.SI32[k] != -1)
+            {
+                calShm[0].array.F[maskShm[0].array.SI32[k]] = ((float)inShm[0].array.SI16[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
+                fluxShm[0].array.F[0] += calShm[0].array.F[maskShm[0].array.SI32[k]];
+            }
+        }
+    }
+    else if (inShm[0].md[0].atype == _DATATYPE_INT32)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+            if (maskShm[0].array.SI32[k] != -1)
+            {
+                calShm[0].array.F[maskShm[0].array.SI32[k]] = ((float)inShm[0].array.UI32[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
+                fluxShm[0].array.F[0] += calShm[0].array.F[maskShm[0].array.SI32[k]];
+            }
+        }
+    }
+    else if (inShm[0].md[0].atype == _DATATYPE_UINT32)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+            if (maskShm[0].array.SI32[k] != -1)
+            {
+                calShm[0].array.F[maskShm[0].array.SI32[k]] = ((float)inShm[0].array.SI32[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
+                fluxShm[0].array.F[0] += calShm[0].array.F[maskShm[0].array.SI32[k]];
+            }
+        }
+    }
+    else if (inShm[0].md[0].atype == _DATATYPE_UINT64)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+            if (maskShm[0].array.SI32[k] != -1)
+            {
+                calShm[0].array.F[maskShm[0].array.SI32[k]] = ((float)inShm[0].array.UI64[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
+                fluxShm[0].array.F[0] += calShm[0].array.F[maskShm[0].array.SI32[k]];
+            }
+        }
+    }
+    else if (inShm[0].md[0].atype == _DATATYPE_INT64)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+            if (maskShm[0].array.SI32[k] != -1)
+            {
+                calShm[0].array.F[maskShm[0].array.SI32[k]] = ((float)inShm[0].array.SI64[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
+                fluxShm[0].array.F[0] += calShm[0].array.F[maskShm[0].array.SI32[k]];
+            }
+        }
+    }
+    else if (inShm[0].md[0].atype == _DATATYPE_FLOAT)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+            if (maskShm[0].array.SI32[k] != -1)
+            {
+                calShm[0].array.F[maskShm[0].array.SI32[k]] = ((float)inShm[0].array.F[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
+                fluxShm[0].array.F[0] += calShm[0].array.F[maskShm[0].array.SI32[k]];
+            }
+        }
+    }
+    else if (inShm[0].md[0].atype == _DATATYPE_DOUBLE)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+            if (maskShm[0].array.SI32[k] != -1)
+            {
+                calShm[0].array.F[maskShm[0].array.SI32[k]] = ((float)inShm[0].array.D[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
+                fluxShm[0].array.F[0] += calShm[0].array.F[maskShm[0].array.SI32[k]];
+            }
+        }
+    }
+    daoShmImagePart2ShmFinalize(&calShm[0]);
+
+    return DAO_SUCCESS;
+}
+
+/**
  * @brief compute centroif of an image 
  * 
  * @param img 
@@ -456,5 +587,41 @@ int_fast8_t daoCentroidSpotsRelative(float * image,
         cent[n+count+3] = weight;//denominator;
         count+=2;
     }
+    return DAO_SUCCESS;
+}
+
+/**
+ * compute slopes at CPU level.
+ */
+int_fast8_t daoCentroidPws(float *im, float *slopes,
+                           float *slopesRef, int *wfsPixId, int *wfsPixIdMap,
+                           float *flux, int nbPix,
+                           int imSize, int pupSize)
+{
+    daoTrace("\n");
+    float q1,q2,q3,q4;
+    // Get our global thread ID
+    int id=0;
+    float avg=*flux/(4*nbPix);
+    daoDebug("avg = %.3f\n", avg);
+    // do the comutation only if there is flux
+    for (id=0; id<pupSize; id++)
+    {    
+        if (*flux > 0)
+        {
+            if (wfsPixId[id] != -1)
+            {
+                //daoInfo("id=%d, pixid[id]=%d, pixIdMap[id]=%d\n", id, wfsPixId[id], wfsPixIdMap[id]);
+                q1=im[wfsPixIdMap[id]];
+                q2=im[wfsPixIdMap[id]+imSize];
+                q3=im[wfsPixIdMap[id]+imSize*2*imSize];
+                q4=im[wfsPixIdMap[id]+imSize*2*imSize+imSize];
+                daoInfo("%f,%f,%f,%f\n", q1,q2,q3,q4);
+                slopes[wfsPixId[id]] =  (q1+q3-q2-q4) / avg - slopesRef[wfsPixId[id]];
+                slopes[wfsPixId[id]+nbPix] =  (q1+q2-q3-q4) / avg - slopesRef[wfsPixId[id]+nbPix];
+            }
+        }
+    }
+
     return DAO_SUCCESS;
 }

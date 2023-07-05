@@ -283,7 +283,7 @@ if __name__ == '__main__':
             sys.exit()
         elif opt in ("-s", "--dmshm"):
             shmDmName = str(arg)
-        elif opt in ("-s", "--mapShm"):
+        elif opt in ("-m", "--mapShm"):
             shmMapName = str(arg)
     app = QtGui.QApplication([])
     main = Main(shmDmName, shmMapName)

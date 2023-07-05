@@ -52,17 +52,12 @@ detSizeX=128
 detSizeY=128
 
 # define position of the quadrant into the detector
-quadPosX = np.zeros([4,1])
-quadPosX[0,0]=7
-quadPosX[1,0]=6
-quadPosX[2,0]=73
-quadPosX[3,0]=72
+quadxshm=dao.shm('/tmp/quadx.im.shm')
+quadPosX=quadxshm.get_data()
 
-quadPosY = np.zeros([4,1])
-quadPosY[0,0]=9
-quadPosY[1,0]=75
-quadPosY[2,0]=10
-quadPosY[3,0]=76
+quadyshm=dao.shm('/tmp/quady.im.shm')
+quadPosY=quadyshm.get_data()
+
 # WFS parameters
 mod = 5
 wvlngth = 1.65e-6
@@ -89,6 +84,7 @@ if __name__ == '__main__':
 
     # Pupil
     pup = daoTools.pupil(nPx)
+    pupShm = dao.shm('/tmp/wsPupil.im.shm', pup)
 
     # First relisation (don't wait for first frame)
     # Get DM commands

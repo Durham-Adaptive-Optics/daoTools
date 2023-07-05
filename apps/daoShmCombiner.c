@@ -175,7 +175,7 @@ static int prepRealTime()
         daoToolsInsertShmNamePrefix(shmName, nameId, shmNameId);
         shmIn[k] = (IMAGE *)malloc(sizeof(IMAGE));
         daoShmShm2Img(shmNameId, &shmIn[k][0]);
-        daoInfo("%s%s shm created\n", shmName, nameId);
+        daoInfo("%s shm created\n", shmNameId);
         updateCnt[k] = 0;
     }
 
