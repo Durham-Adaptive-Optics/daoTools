@@ -105,7 +105,7 @@ void * clockRealTimeLoop(void *thread_data)
     fflush(stdout);
     struct timespec t[3];
     double elapsedTime;
-    double shmElapsedTime=0;
+    //double shmElapsedTime=0;
     unsigned int clock[1]; 
     clock_gettime(CLOCK_REALTIME, &t[1]);
     float pauseTime;
@@ -113,10 +113,21 @@ void * clockRealTimeLoop(void *thread_data)
     daoInfo("clock @ %.3f Hz, pauseTime of %f\n", shmFreq[0].array.F[0], pauseTime);
     // timing emulation there is a small offset of about 50 us...
     // probalby due to the usleep function... not very accurate.
+    struct timespec tc;
+    clock_gettime(CLOCK_MONOTONIC, &tc);
+
     while (end==0) 
     {
-        pauseTime = 1e6 / shmFreq[0].array.F[0];
-        usleep(pauseTime-1000*shmElapsedTime);
+        pauseTime = 1e9 / shmFreq[0].array.F[0];
+
+        tc.tv_nsec += pauseTime;
+        if (tc.tv_nsec >= 1000000000L) 
+        {
+            tc.tv_sec += tc.tv_nsec / 1000000000L;
+            tc.tv_nsec = tc.tv_nsec % 1000000000L;
+        }
+        // Delay until the next timestamp
+        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &tc, NULL);
         clock_gettime(CLOCK_REALTIME, &t[2]);
         clock[0]++;// = clock[0] + 1;
         shm[0].md[0].cnt2++; 
@@ -125,7 +136,7 @@ void * clockRealTimeLoop(void *thread_data)
         clock_gettime(CLOCK_REALTIME, &t[1]);
         elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;    // sec to ms
         elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6; // us to ms
-        printf("\rfps = %.3f Hz", 1e6/(1000*elapsedTime));
+        printf("\rfps = %.3f Hz, elapsed time = %.3lf ms", 1e6/(1000*elapsedTime), elapsedTime);
         fflush(stdout);
     }
 
