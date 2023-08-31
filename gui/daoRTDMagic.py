@@ -61,8 +61,8 @@ class UpdateThread(QtCore.QThread):
         Returns:
             nothing
         """
-        self.updateSignal.emit( data)
-
+        self.updateSignal.emit(np.rot90(data, k=3))
+ 
 if __name__=="__main__":
     parser = argparse.ArgumentParser(description='Script to shmPublisher')
     parser.add_argument('-f', '--filename',
