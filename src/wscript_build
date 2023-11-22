@@ -1,5 +1,6 @@
 #! /usr/bin/env python
 import os 
+import platform
 if platform.system() == "Darwin":
 	my_ld_flags = ['']
 	my_cxx_flags = ['-std=c++14']
