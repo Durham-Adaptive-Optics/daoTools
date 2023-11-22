@@ -98,7 +98,6 @@ void * displayRealTimeLoop(void *thread_data)
     daoInfo("ENTERING LOOP\n");
     fflush(stdout);
     struct timespec t[2];
-    double elapsedTime;
     clock_gettime(CLOCK_REALTIME, &t[1]);
     float pauseTime;
     pauseTime = 1e6/frequency-50;
@@ -128,11 +127,6 @@ void * displayRealTimeLoop(void *thread_data)
         printw("timestamp   %ld\n", shm[0].md[0].atime.tsfixed.secondlong); 
         printw("-------------------------------------------------------------------\n"); 
         refresh();
-        t[0]=t[1];
-        clock_gettime(CLOCK_REALTIME, &t[1]);
-        elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;    // sec to ms
-        elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6; // us to ms
-        elapsedTime = elapsedTime; // in sec... :-)
     }
     endwin();
 

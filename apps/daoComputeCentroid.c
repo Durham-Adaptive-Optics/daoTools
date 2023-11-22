@@ -27,7 +27,6 @@
 #include <semaphore.h>
 #include <sys/time.h>
 #include <pthread.h>
-#include <omp.h>
 
 #include "dao.h"
 #include "daoTools.h"

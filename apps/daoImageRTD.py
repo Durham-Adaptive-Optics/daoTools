@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import numpy as np
-import daoShm
+import dao
 import getopt
 import sys
 import time
@@ -46,7 +46,7 @@ if __name__ == '__main__':
             shmimName = str(arg)
         elif opt in ("-a", "--axisFlip"):
             axisFlip = True
-    shm = daoShm.shm(shmimName)
+    shm = dao.shm(shmimName)
     imageSizeX = shm.get_data().shape[0]
     imageSizeY = shm.get_data().shape[1]
     if axisFlip == True:
