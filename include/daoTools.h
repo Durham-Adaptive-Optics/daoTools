@@ -76,4 +76,6 @@ int_fast8_t daoCentroidPws(float *im, float *slopes,
                            float *flux, int nbPix,
                            int imSize, int pupSize);
 
+void daoDescrambleOcam2Image(uint8_t img[], int imgRows, int imgCols, uint16_t *img16[],
+                             int descrambler[], int descramblerSize, uint16_t output[]);
 #endif

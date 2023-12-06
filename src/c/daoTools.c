@@ -625,3 +625,42 @@ int_fast8_t daoCentroidPws(float *im, float *slopes,
 
     return DAO_SUCCESS;
 }
+
+/**
+ * @brief Descrambles and processes an OCam2 image.
+ * 
+ * This function takes a flattened 8-bit image array (img), converts it to 
+ * a 16-bit format, and then reorders its pixels according to a descrambler array. 
+ * The output is a descrambled 16-bit image.
+ *
+ * @param img A pointer to the flattened 8-bit image array.
+ * @param imgRows The number of rows in the image.
+ * @param imgCols The number of columns in the image.
+ * @param img16 A pointer to a pre-allocated 2D array for intermediate 16-bit image data.
+ * @param descrambler An array used for descrambling the image pixels.
+ * @param descramblerSize The size of the descrambler array.
+ * @param output A pointer to a pre-allocated array where the processed image data will be stored.
+ */
+void daoDescrambleOcam2Image(uint8_t img[], int imgRows, int imgCols, uint16_t *img16[],
+                             int descrambler[], int descramblerSize, uint16_t output[])
+{
+    int img16Cols = imgCols / 2;
+
+    // Convert flattened img to 16-bit img16
+    for (int i = 0; i < imgRows; i++) 
+    {
+        for (int j = 0; j < imgCols; j += 2) \
+        {
+            // Combine two adjacent 8-bit values into one 16-bit value
+            img16[i][j / 2] = (uint16_t)(img[i * imgCols + j + 1] << 8) + img[i * imgCols + j];
+        }
+    }
+
+    // Use descrambler array to reorder the pixels in the output
+    for (int i = 0; i < descramblerSize; i++) 
+    {
+        int row = descrambler[i] / img16Cols;
+        int col = descrambler[i] % img16Cols;
+        output[i] = img16[row][col];
+    }
+}
