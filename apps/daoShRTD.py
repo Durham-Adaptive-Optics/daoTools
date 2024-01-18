@@ -2,6 +2,7 @@
 
 import numpy as np
 import daoShm
+import dao
 import getopt
 import sys
 import time
@@ -11,6 +12,7 @@ if __name__ == '__main__':
     shmimName = '/tmp/image.im.shm'
     shmcentName = '/tmp/centroids.im.shm'
     shmrefName = '/tmp/references.im.shm'
+    shmpupName = '/tmp/pupMask1.im.shm'
     try:
         opts, args = getopt.getopt(sys.argv[1:],"hi:c:r:",["help", "shmimName=", "shmcentName=", "shmrefName="])
     except getopt.GetoptError:
@@ -29,25 +31,37 @@ if __name__ == '__main__':
     print(shmimName)
     print(shmimName)
     print(shmrefName)
-    shmim = daoShm.shm(shmimName)
-    shmcent = daoShm.shm(shmcentName)
-    shmref = daoShm.shm(shmrefName)
+    shmim = dao.shm(shmimName)
+    shmcent = dao.shm(shmcentName)
+    shmref = dao.shm(shmrefName)
+    shmpup = dao.shm(shmpupName)
+    pup=    shmpup.get_data()
+    intMap=np.zeros(pup.shape)
 
     plt.ion()
-    fig, ax = plt.subplots()
-    iref=ax.imshow(shmim.get_data(), cmap='gray')
+    fig, ax = plt.subplots(1,2)
+    im=shmim.get_data()
+    iref=ax[0].imshow(im, cmap='gray')
+    tref=ax[0].set_title(str(im.max()))
     cref=shmref.get_data()
-    crefh,=ax.plot(cref[:,0],cref[:,1],'+g')
-    #cent = shmcent.get_data()
-    cent=cref+shmcent.get_data()[:,:2];
-    centh,=ax.plot(cent[:,0], cent[:,1],'.r')
+    crefh,=ax[0].plot(cref[0::2,:],cref[1::2,:],'+g')
+    cent = shmcent.get_data()
+    centh,=ax[0].plot(cref[0::2,:] + cent[0::4,:], cref[1::2,:] + cent[1::4,:],'.r')
+    intVect = cent[2::4,0]
+    intMap[pup==1]=intVect
+    intref=ax[1].imshow(intMap, cmap='gray')
     
     while True:
         cref=shmref.get_data()
-        cent=cref+shmcent.get_data()[:,:2];
-        iref.set_data(shmim.get_data())
-        crefh.set_data(cref[:,0], cref[:,1])
-        centh.set_data(cent[:,0], cent[:,1])
+        cent=shmcent.get_data()
+        im=shmim.get_data()
+        iref.set_data(im)
+        tref.set_text(str(im.max()))
+        crefh.set_data(cref[0::2,:], cref[1::2,:])
+        centh.set_data(cref[0::2,:] + cent[0::4,:], cref[1::2,:] + cent[1::4,:])
+        intVect = cent[2::4,0]
+        intMap[pup==1]=intVect
+        intref.set_data(intMap)
         fig.canvas.draw()
         fig.canvas.flush_events()
         time.sleep(0.1)
