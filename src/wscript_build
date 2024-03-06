@@ -17,6 +17,5 @@ bld.shlib(
 	ldflags = ['-ldao', '-lpthread', '-lm'] + my_ld_flags,
 	target = 'daoTools',
 	name   = 'daoTools',
+	features='pkg_build',
 	vnum   = '0.0.1')
-
-

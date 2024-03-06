@@ -20,15 +20,32 @@ def options(opt):
 
 def configure(conf):
 	conf.load('compiler_c compiler_cxx gnu_dirs')
+	conf.load('build_tools.pkg_tool')
 	conf.write_config_header('config.h')
 	print('→ prefix is ' + conf.options.prefix)
 
-	conf.check_cfg( package='protobuf',
+	conf.check_cfg(package='protobuf',
 				args='--cflags --libs',
 				uselib_store='PROTOBUF'
 				)
 
-
+	conf.check_cfg(package='dao',
+				args='--cflags --libs',
+				uselib_store='DAO'
+				)
+ 
+	conf.check_cfg(package='daoNuma',
+				args='--cflags --libs',
+				uselib_store='DAONUMA'
+				)
+	conf.check_cfg( package='daoProto',
+				args='--cflags --libs',
+				uselib_store='DAOPROTO'
+				)
+	conf.env.PYTHONDIR		= f'{conf.env.PREFIX}/python'
+	conf.env.DATADIR		= f'{conf.env.PREFIX}/data'
+	conf.env.PKGCONFIGDIR	= f'{conf.env.LIBDIR}/pkgconfig'
+ 
 def build(bld):
 	bld.env.DEFINES=['WAF=1']
 	bld.recurse('src')
@@ -38,32 +55,32 @@ def build(bld):
 	# include
 	files = glob.glob('include/*.h')
 	for file in files:
-		bld.install_files(bld.env.PREFIX+'/include', file, relative_trick=False)
+		bld.install_files(bld.env.INCLUDEDIR, file, relative_trick=False)
 	files = glob.glob('include/*.hpp')
 	for file in files:
-		bld.install_files(bld.env.PREFIX+'/include', file, relative_trick=False)
+		bld.install_files(bld.env.INCLUDEDIR, file, relative_trick=False)
 	# src
 	files = glob.glob('src/*.py')
 	for file in files:
-		bld.install_files(bld.env.PREFIX+'/python', file, relative_trick=False)
+		bld.install_files(bld.env.PYTHONDIR, file, relative_trick=False)
 	files = glob.glob('src/python/*.py')
 	for file in files:
-		bld.install_files(bld.env.PREFIX+'/python', file, relative_trick=False)
+		bld.install_files(bld.env.PYTHONDIR, file, relative_trick=False)
 	# apps
 	files = glob.glob('apps/*.py')
 	for file in files:
-		bld.install_files(bld.env.PREFIX+'/bin', file, chmod=0o0755, relative_trick=False)
+		bld.install_files(bld.env.BINDIR, file, chmod=0o0755, relative_trick=False)
 	# gui
 	files = glob.glob('gui/*.ui')
 	for file in files:
-		bld.install_files(bld.env.PREFIX+'/data', file, relative_trick=False)
+		bld.install_files(bld.env.DATADIR, file, relative_trick=False)
 	files = glob.glob('gui/*.py')
 	for file in files:
-		bld.install_files(bld.env.PREFIX+'/bin', file, chmod=0o0755, relative_trick=False)
+		bld.install_files(bld.env.BINDIR, file, chmod=0o0755, relative_trick=False)
 	# script
 	files = glob.glob('scripts/*')
 	for file in files:
-		bld.install_files(bld.env.PREFIX+'/bin', file, chmod=0o0755, relative_trick=False)
+		bld.install_files(bld.env.BINDIR, file, chmod=0o0755, relative_trick=False)
 
 #	bld.install_files(bld.env.PREFIX+'/include', 'include/daoTools.h', relative_trick=False)
 #

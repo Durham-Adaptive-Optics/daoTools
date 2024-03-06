@@ -13,169 +13,152 @@ else:
 daoRandWriterSync = bld.program(
 	source = 'daoRandWriterSync.c',
 	target = 'daoRandWriterSync',
-	includes = '../include '+os.getenv('DAOROOT')+'/include/',
-	linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
-	ldflags = ['-ldao', '-lpthread', '-lm'] + my_ld_flags,
-	use= 'daoTools',
-	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
+	includes = '../include',
+	ldflags = ['-lpthread', '-lm'] + my_ld_flags,
+	use= ['daoTools', 'DAO'],
+	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto']
 	)
 
 daoClock = bld.program(
 	source = 'daoClock.c',
 	target = 'daoClock',
-	includes = '../include '+os.getenv('DAOROOT')+'/include/',
-	linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
-	ldflags = ['-ldao' , '-lpthread', '-lm'] + my_ld_flags,
-	use= 'daoTools',
+	includes = '../include',
+	ldflags = ['-lpthread', '-lm'] + my_ld_flags,
+	use= ['daoTools', 'DAO'],
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
 daoTimeDiff = bld.program(
 	source = 'daoTimeDiff.c',
 	target = 'daoTimeDiff',
-	includes = '../include '+os.getenv('DAOROOT')+'/include/',
-	linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
-	ldflags = ['-ldao'  , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
-	use= 'daoTools',
+	includes = '../include',
+	ldflags = ['-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	use= ['daoTools', 'DAO'],
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
 daoReadWrite = bld.program(
 	source = 'daoReadWrite.c',
 	target = 'daoReadWrite',
-	includes = '../include '+os.getenv('DAOROOT')+'/include/',
-	linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
+	includes = '../include',
 	ldflags = ['-ldao'  , '-lpthread', '-lm'] + my_ld_flags,
-	use= 'daoTools',
+	use= ['daoTools', 'DAO'],
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
 daoTimeDiffStat = bld.program(
 	source = 'daoTimeDiffStat.c',
 	target = 'daoTimeDiffStat',
-	includes = '../include '+os.getenv('DAOROOT')+'/include/',
-	linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
+	includes = '../include',
 	ldflags = ['-ldao'  , '-lpthread', '-lm'] + my_ld_flags,
-	use= 'daoTools',
+	use= ['daoTools', 'DAO'],
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
 daoCommandFilter = bld.program(
 	source = 'daoCommandFilter.c',
 	target = 'daoCommandFilter',
-	includes = '../include '+os.getenv('DAOROOT')+'/include/',
-	linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
-	ldflags = ['-ldao' , '-lpthread', '-lm'] + my_ld_flags,
-	use = 'daoTools',
+	includes = '../include',
+	ldflags = [ '-lpthread', '-lm'] + my_ld_flags,
+	use= ['daoTools', 'DAO'],
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
 daoShmMonitoring = bld.program(
 	source = 'daoShmMonitoring.c',
 	target = 'daoShmMonitoring',
-	includes = '../include '+os.getenv('DAOROOT')+'/include/',
-	linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
-	use = 'daoTools',
+	includes = '../include',
+	ldflags = [ '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	use= ['daoTools', 'DAO'],
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
 daoShmMonitoring1Value = bld.program(
 	source = 'daoShmMonitoring1Value.c',
 	target = 'daoShmMonitoring1Value',
-	includes = '../include '+os.getenv('DAOROOT')+'/include/',
-	linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
+	includes = '../include',
 	ldflags = ['-ldao'  , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
-	use= 'daoTools',
+	use= ['daoTools', 'DAO'],
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
 daoPixelCalibrate = bld.program(
 	source = 'daoPixelCalibrate.c',
 	target = 'daoPixelCalibrate',
-	includes = '../include '+os.getenv('DAOROOT')+'/include/',
-	linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
-	use= 'daoTools',
+	includes = '../include',
+	ldflags = [ '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	use= ['daoTools', 'DAO'],
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
 daoPixelCalibratePws = bld.program(
 	source = 'daoPixelCalibratePws.c',
 	target = 'daoPixelCalibratePws',
-	includes = '../include '+os.getenv('DAOROOT')+'/include/',
-	linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
-	use= 'daoTools',
+	includes = '../include',
+	ldflags = [ '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	use= ['daoTools', 'DAO'],
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
 daoShmCombiner = bld.program(
 	source = 'daoShmCombiner.c',
 	target = 'daoShmCombiner',
-	includes = '../include '+os.getenv('DAOROOT')+'/include/',
-	linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
-	use= 'daoTools',
+	includes = '../include',
+	ldflags = [ '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	use= ['daoTools', 'DAO'],
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
 daoShm2Fits = bld.program(
 	source = 'daoShm2Fits.c',
 	target = 'daoShm2Fits',
-	includes = '../include '+os.getenv('DAOROOT')+'/include/',
-	linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
-	use= 'daoTools',
+	includes = '../include',
+	ldflags = [ '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	use= ['daoTools', 'DAO'],
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
 daoComputeCentroid = bld.program(
 	source = 'daoComputeCentroid.c',
 	target = 'daoComputeCentroid',
-	includes = '../include '+os.getenv('DAOROOT')+'/include/',
-	linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
-	use= 'daoTools',
+	includes = '../include',
+	ldflags = [ '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	use= ['daoTools', 'DAO'],
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
 daoComputeCentroidRelative = bld.program(
 	source = 'daoComputeCentroidRelative.c',
 	target = 'daoComputeCentroidRelative',
-	includes = '../include '+os.getenv('DAOROOT')+'/include/',
-	linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
-	use= 'daoTools',
+	includes = '../include',
+	ldflags = [ '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	use= ['daoTools', 'DAO'],
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
 daoComputeCentroidPws = bld.program(
 	source = 'daoComputeCentroidPws.c',
 	target = 'daoComputeCentroidPws',
-	includes = '../include '+os.getenv('DAOROOT')+'/include/',
-	linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
-	use= 'daoTools',
+	includes = '../include',
+	ldflags = [ '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	use= ['daoTools', 'DAO'],
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
 daoSetLatency = bld.program(
 	source = 'daoSetLatency.c',
 	target = 'daoSetLatency',
-	includes = '../include '+os.getenv('DAOROOT')+'/include/',
-	linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
+	includes = '../include',
 	ldflags = ['-lm', '-lncurses'] + my_ld_flags,
-	use= 'daoTools',
+	use= ['daoTools', 'DAO'],
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
 daoAvgShm = bld.program(
 	source = 'daoAvgShm.c',
 	target = 'daoAvgShm',
-	includes = '../include '+os.getenv('DAOROOT')+'/include/',
-	linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
-	use= 'daoTools',
+	includes = '../include',
+	ldflags = [ '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	use= ['daoTools', 'DAO'],
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
