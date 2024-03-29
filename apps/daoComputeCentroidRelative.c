@@ -129,9 +129,9 @@ static int realTimeLoop()
             compTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
             compTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
             printf("\rcompTime = %.3f us, fps = %8.3f Hz, %d in=[%6.3f,%6.3f,...,%6.3f], out[%6.3f, %6.3f,...,%6.3f]", compTime, 1e6/(1000*elapsedTime), 
-                                                                                  inSize, (float)inShm[0].array.UI8[0],
-                                                                                  (float)inShm[0].array.UI8[1],
-                                                                                  (float)inShm[0].array.UI8[inSize],
+                                                                                  inSize, (float)inShm[0].array.F[0],
+                                                                                  (float)inShm[0].array.F[1],
+                                                                                  (float)inShm[0].array.F[inSize],
                                                                                   centroidShm[0].array.F[0],
                                                                                   centroidShm[0].array.F[1],
                                                                                   centroidShm[0].array.F[2]);

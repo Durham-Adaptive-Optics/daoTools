@@ -147,7 +147,7 @@ daoComputeCentroidRelative = bld.program(
 	linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
 	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
 	use= 'daoTools',
-	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
+	cflags = ['-Ofast', '-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto', '-g'],
 	)
 
 daoComputeCentroidPws = bld.program(

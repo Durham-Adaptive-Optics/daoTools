@@ -115,6 +115,7 @@ void * clockRealTimeLoop(void *thread_data)
     // probalby due to the usleep function... not very accurate.
     struct timespec tc;
     clock_gettime(CLOCK_MONOTONIC, &tc);
+    double elapseTime;
 
     while (end==0) 
     {
