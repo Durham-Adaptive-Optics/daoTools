@@ -125,10 +125,10 @@ void * displayRealTimeLoop(void *thread_data)
             printw("naxis       %d\n", shm[shmCnt].md[0].naxis); 
             printw("size        %d, %d, %d\n", shm[shmCnt].md[0].size[0], shm[shmCnt].md[0].size[1], shm[shmCnt].md[0].size[2]); 
             printw("nelement    %ld\n", shm[shmCnt].md[0].nelement); 
-            printw("atype       %d\n", shm[shmCnt].md[0].atype); 
+            printw("datatype       %d\n", shm[shmCnt].md[0].datatype); 
             printw("cnt1        %ld\n", shm[shmCnt].md[0].cnt1); 
             printw("cnt2        %ld\n", shm[shmCnt].md[0].cnt2); 
-            printw("timestamp   %ld\n", shm[shmCnt].md[0].atime.tsfixed.secondlong); 
+            printw("timestamp   %ld\n", shm[shmCnt].md[0].atime.tv_nsec); 
             printw("\n"); 
             printw("VALUE =     %10.3f\n", shm[shmCnt].array.F[0]); 
             printw("-------------------------------------------------------------------\n"); 

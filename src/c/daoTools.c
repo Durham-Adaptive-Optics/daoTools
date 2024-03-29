@@ -101,70 +101,70 @@ int_fast8_t daoToolsShmCalibrate(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IMAGE
     int k;
     int calSize = calShm[0].md[0].size[0] * calShm[0].md[0].size[1];
     calShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
-    if (inShm[0].md[0].atype == _DATATYPE_UINT8)
+    if (inShm[0].md[0].datatype == _DATATYPE_UINT8)
     {
         for (k = 0; k < calSize; k++)
         {
             calShm[0].array.F[k] = ((float)inShm[0].array.UI8[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_INT8)
+    else if (inShm[0].md[0].datatype == _DATATYPE_INT8)
     {
         for (k = 0; k < calSize; k++)
         {
             calShm[0].array.F[k] = ((float)inShm[0].array.SI8[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_UINT16)
+    else if (inShm[0].md[0].datatype == _DATATYPE_UINT16)
     {
         for (k = 0; k < calSize; k++)
         {
             calShm[0].array.F[k] = ((float)inShm[0].array.UI16[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_INT16)
+    else if (inShm[0].md[0].datatype == _DATATYPE_INT16)
     {
         for (k = 0; k < calSize; k++)
         {
             calShm[0].array.F[k] = ((float)inShm[0].array.SI16[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_INT32)
+    else if (inShm[0].md[0].datatype == _DATATYPE_INT32)
     {
         for (k = 0; k < calSize; k++)
         {
             calShm[0].array.F[k] = ((float)inShm[0].array.UI32[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_UINT32)
+    else if (inShm[0].md[0].datatype == _DATATYPE_UINT32)
     {
         for (k = 0; k < calSize; k++)
         {
             calShm[0].array.F[k] = ((float)inShm[0].array.SI32[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_UINT64)
+    else if (inShm[0].md[0].datatype == _DATATYPE_UINT64)
     {
         for (k = 0; k < calSize; k++)
         {
             calShm[0].array.F[k] = ((float)inShm[0].array.UI64[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_INT64)
+    else if (inShm[0].md[0].datatype == _DATATYPE_INT64)
     {
         for (k = 0; k < calSize; k++)
         {
             calShm[0].array.F[k] = ((float)inShm[0].array.SI64[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_FLOAT)
+    else if (inShm[0].md[0].datatype == _DATATYPE_FLOAT)
     {
         for (k = 0; k < calSize; k++)
         {
             calShm[0].array.F[k] = ((float)inShm[0].array.F[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_DOUBLE)
+    else if (inShm[0].md[0].datatype == _DATATYPE_DOUBLE)
     {
         for (k = 0; k < calSize; k++)
         {
@@ -192,7 +192,7 @@ int_fast8_t daoToolsShmCalibratePws(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IM
     int k;
     int inSize = inShm[0].md[0].size[0] * inShm[0].md[0].size[1];
     calShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
-    if (inShm[0].md[0].atype == _DATATYPE_UINT8)
+    if (inShm[0].md[0].datatype == _DATATYPE_UINT8)
     {
         for (k = 0; k < inSize; k++)
         {
@@ -203,7 +203,7 @@ int_fast8_t daoToolsShmCalibratePws(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IM
             }
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_INT8)
+    else if (inShm[0].md[0].datatype == _DATATYPE_INT8)
     {
         for (k = 0; k < inSize; k++)
         {
@@ -214,7 +214,7 @@ int_fast8_t daoToolsShmCalibratePws(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IM
             }
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_UINT16)
+    else if (inShm[0].md[0].datatype == _DATATYPE_UINT16)
     {
         for (k = 0; k < inSize; k++)
         {
@@ -225,7 +225,7 @@ int_fast8_t daoToolsShmCalibratePws(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IM
             }
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_INT16)
+    else if (inShm[0].md[0].datatype == _DATATYPE_INT16)
     {
         for (k = 0; k < inSize; k++)
         {
@@ -236,7 +236,7 @@ int_fast8_t daoToolsShmCalibratePws(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IM
             }
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_INT32)
+    else if (inShm[0].md[0].datatype == _DATATYPE_INT32)
     {
         for (k = 0; k < inSize; k++)
         {
@@ -247,7 +247,7 @@ int_fast8_t daoToolsShmCalibratePws(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IM
             }
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_UINT32)
+    else if (inShm[0].md[0].datatype == _DATATYPE_UINT32)
     {
         for (k = 0; k < inSize; k++)
         {
@@ -258,7 +258,7 @@ int_fast8_t daoToolsShmCalibratePws(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IM
             }
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_UINT64)
+    else if (inShm[0].md[0].datatype == _DATATYPE_UINT64)
     {
         for (k = 0; k < inSize; k++)
         {
@@ -269,7 +269,7 @@ int_fast8_t daoToolsShmCalibratePws(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IM
             }
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_INT64)
+    else if (inShm[0].md[0].datatype == _DATATYPE_INT64)
     {
         for (k = 0; k < inSize; k++)
         {
@@ -280,7 +280,7 @@ int_fast8_t daoToolsShmCalibratePws(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IM
             }
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_FLOAT)
+    else if (inShm[0].md[0].datatype == _DATATYPE_FLOAT)
     {
         for (k = 0; k < inSize; k++)
         {
@@ -291,7 +291,7 @@ int_fast8_t daoToolsShmCalibratePws(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IM
             }
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_DOUBLE)
+    else if (inShm[0].md[0].datatype == _DATATYPE_DOUBLE)
     {
         for (k = 0; k < inSize; k++)
         {

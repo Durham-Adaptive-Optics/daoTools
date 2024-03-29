@@ -120,11 +120,11 @@ void * displayRealTimeLoop(void *thread_data)
         printw("naxis       %d\n", shm[0].md[0].naxis); 
         printw("size        %d, %d, %d\n", shm[0].md[0].size[0], shm[0].md[0].size[1], shm[0].md[0].size[2]); 
         printw("nelement    %ld\n", shm[0].md[0].nelement); 
-        printw("atype       %d\n", shm[0].md[0].atype); 
+        printw("datatype       %d\n", shm[0].md[0].datatype); 
         printw("cnt0        %ld\n", shm[0].md[0].cnt0); 
         printw("cnt1        %ld\n", shm[0].md[0].cnt1); 
         printw("cnt2        %ld\n", shm[0].md[0].cnt2); 
-        printw("timestamp   %ld\n", shm[0].md[0].atime.tsfixed.secondlong); 
+        printw("timestamp   %ld\n", shm[0].md[0].atime.tv_nsec); 
         printw("-------------------------------------------------------------------\n"); 
         refresh();
     }

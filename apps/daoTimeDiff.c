@@ -124,19 +124,19 @@ static int realTimeLoop()
         //if (sem_timedwait(shm0[0].semptr[sem0], &timeout) != -1)
         //{
             //sem_wait(shm0[0].semptr[sem0]);
-            //t[0] = shm0[0].md[0].atime.tsfixed.secondlong;
+            //t[0] = shm0[0].md[0].atime.tv_nsec;
             //frameId0 = shm0[0].md[0].cnt2;
             clock_gettime(CLOCK_REALTIME, &timeout);
             timeout.tv_sec += 1; // 1 second timeout
             // wait for 2nd shm
             if (sem_timedwait(shm1[0].semptr[sem1], &timeout) != -1)
             {
-            t[0] = shm0[0].md[0].atime.tsfixed.secondlong;
+            t[0] = shm0[0].md[0].atime.tv_nsec;
             frameId0 = shm0[0].md[0].cnt2;
                 // sem_wait(shm1[0].semptr[sem1]);
-                t[1] = shm1[0].md[0].atime.tsfixed.secondlong;
+                t[1] = shm1[0].md[0].atime.tv_nsec;
                 frameId1 = shm1[0].md[0].cnt2;
-                // t[0] = shm0[0].md[0].atime.tsfixed.secondlong;
+                // t[0] = shm0[0].md[0].atime.tv_nsec;
                 // frameId0 = shm0[0].md[0].cnt2;
                 // Check if timeout
                 elapsedTimeNs = t[1] - t[0];
