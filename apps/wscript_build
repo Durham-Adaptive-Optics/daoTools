@@ -189,3 +189,13 @@ daoDescrambleOcam2 = bld.program(
 	use= 'daoTools',
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 	)
+
+daoComputeIntensityPws = bld.program(
+	source = 'daoComputeIntensityPws.c',
+	target = 'daoComputeIntensityPws',
+	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+	linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
+	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	use= 'daoTools',
+	cflags = ['-Ofast', '-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
+	)

@@ -90,7 +90,11 @@ static int realTimeLoop()
     latencyShm = (IMAGE*) malloc(sizeof(IMAGE));
     daoShmShm2Img(shm0Name, &shm0[0]);
     daoShmShm2Img(shm1Name, &shm1[0]);
-    daoShmShm2Img(latencyShmName, &latencyShm[0]);
+    // Create size array, using 2D of 1x1... can be change to 1D
+    uint32_t size[2];
+    size[0] = 1;
+    size[1] = 1;
+    daoShmImageCreate(latencyShm, latencyShmName, 2, size, _DATATYPE_FLOAT, 1, 0);
 
     WINDOW * mainwin;
     mainwin = initscr();
