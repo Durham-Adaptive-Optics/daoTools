@@ -383,27 +383,25 @@ int_fast8_t daoToolsCommandFilter(float *command, int nbVal, daoFilterHistory *f
     }
     // precomputation of servo loop filter for next filterHistory->step
     int i1, i2, i;
-    c=0;
     for (i=0;i<nbVal;i++)
     {
         i2 = 2 * FILTER_ORDER;
         for (i1 = filterHistory->step; i1 < FILTER_ORDER; i1++, i2--)
         {
-            filterHistory->precal[c] -= servoFilter[i2] * filterHistory->dlCmd[i1][c];
+            filterHistory->precal[i] -= servoFilter[i2] * filterHistory->dlCmd[i1][i];
         }
         for (i1 = 0; i1 < filterHistory->step; i1++, i2--)
         {
-            filterHistory->precal[c] -= servoFilter[i2] * filterHistory->dlCmd[i1][c];
+            filterHistory->precal[i] -= servoFilter[i2] * filterHistory->dlCmd[i1][i];
         }
         for (i1 = filterHistory->step; i1 < FILTER_ORDER; i1++, i2--)
         {
-            filterHistory->precal[c] += servoFilter[i2] * filterHistory->dlRes[i1][c];
+            filterHistory->precal[i] += servoFilter[i2] * filterHistory->dlRes[i1][i];
         }
         for (i1 = 0; i1 < filterHistory->step; i1++, i2--)
         {
-            filterHistory->precal[c] += servoFilter[i2] * filterHistory->dlRes[i1][c];
+            filterHistory->precal[i] += servoFilter[i2] * filterHistory->dlRes[i1][i];
         }
-        c++;
     }
 
     return DAO_SUCCESS;

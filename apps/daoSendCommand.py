@@ -55,7 +55,6 @@ if __name__=="__main__":
     log.debug(f"{ip}:{port} {command} {additional_args}")
     ifce = daoCommandIfce(ip,port)
 
-
     # check command is a valid one
     if command == "EXEC":
         ret = ifce.Exec(additional_args)
@@ -75,8 +74,10 @@ if __name__=="__main__":
         ret = ifce.Dump(additional_args)
     elif(command == "OTHER"):
         ret = ifce.Other(additional_args)
-    elif(command == "UNKNOWN"):
-        log.error("Unkown command")
+    else:
+        ret = [1,"unknown command"]
+        log.error(f"Unkown command: {command}")
+        log.error(f"Commands: EXEC, SETUP, UPDATE, PING, STATE, SET_LOG_LEVEL, QUERY, DUMP, OTHER")
 
     if(ret[0] == 0):
         log.info(f"Success: {ret[1]}")

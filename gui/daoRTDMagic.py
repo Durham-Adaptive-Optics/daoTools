@@ -61,6 +61,7 @@ class UpdateThread(QtCore.QThread):
         Returns:
             nothing
         """
+        data[0,0]=0
         self.updateSignal.emit(np.rot90(data, k=3))
  
 if __name__=="__main__":

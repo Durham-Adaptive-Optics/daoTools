@@ -122,10 +122,24 @@ static int realTimeLoop()
 
         if (lpCmdShm[0].array.UI32[0] == 1)
         {
-            daoToolsCommandFilter(inShm[0].array.F, inSize, &filterHistory, servoShm[0].array.F, offsetShm[0].array.F, outShm[0].array.F);
+            daoToolsCommandFilter(inShm[0].array.F, inSize,
+                                 &filterHistory, 
+                                 servoShm[0].array.F, 
+                                 offsetShm[0].array.F,
+                                 outShm[0].array.F);
         }
         else
         {
+            for(k=0; k<inSize;k++)
+            {
+                // Use this loop to reset filter to zero
+                filterHistory.precal[k] = 0.0;
+                for (j = 0; j < FILTER_ORDER; j++)
+                {
+                    filterHistory.dlCmd[j][k] = filterHistory.dlRes[j][k] = 0.0;
+                }
+            }
+
             for (j=0; j< inSize; j++)
             {
                 outShm[0].array.F[j] = 0.0;
