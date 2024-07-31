@@ -4,10 +4,9 @@ from PyQt5.uic import loadUiType
 import sys, getopt
 from PyQt5 import QtGui
 from PyQt5 import QtCore
-from pyqtgraph.Qt import QtGui, QtCore, USE_PYSIDE
+from PyQt5.QtWidgets import QApplication
 import numpy as np
 import pyqtgraph as pg
-import pyqtgraph.ptime as ptime
 import time
 import os
 
@@ -105,7 +104,7 @@ if __name__ == '__main__':
             sys.exit()
         elif opt in ("-s", "--shm"):
             shmimName = str(arg)
-    app = QtGui.QApplication([])
+    app = QApplication([])
     main = Main(shmimName)
     main.setWindowTitle(shmimName)
     main.show()

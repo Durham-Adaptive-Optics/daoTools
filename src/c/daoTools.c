@@ -407,6 +407,32 @@ int_fast8_t daoToolsCommandFilter(float *command, int nbVal, daoFilterHistory *f
     return DAO_SUCCESS;
 }
 
+/*
+ * Apply Integrator to command
+ */
+int_fast8_t daoToolsLeakyIntegrator(float *command, int nbVal, float leaky, float gain, float *commandOffset, float *filteredCommand)
+{
+    daoTrace("\n");
+    // 
+    float commandMoff[nbVal];
+    int pp;
+    for(pp = 0; pp < nbVal; pp++)
+    {
+        // Check that values to filter are
+        // number... safety check to stop propagating nan
+        if (isnan(command[pp]))
+        {
+            command[pp] = 0.0;
+        }
+        // Substract command offset
+        commandMoff[pp] = command[pp] - commandOffset[pp];
+        filteredCommand[pp] = leaky * filteredCommand[pp] - gain * commandMoff[pp]; // * mixingFactor;
+    }
+
+    return DAO_SUCCESS;
+}
+
+
 
 
 

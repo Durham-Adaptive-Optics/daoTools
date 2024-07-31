@@ -88,7 +88,6 @@ static int realTimeLoop()
     daoShmShm2Img(intensityShmName, &intensityShm[0]);
     daoShmShm2Img(validPixShmName, &validPixShm[0]);
 
-    int imSize = imShm[0].md[0].size[0] * imShm[0].md[0].size[1];
     int validPixSize = validPixShm[0].md[0].size[0] * validPixShm[0].md[0].size[1];
 
     int i;

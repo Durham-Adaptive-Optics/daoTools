@@ -86,7 +86,6 @@ static int realTimeLoop()
     daoShmShm2Img(lutShmName, &lutShm[0]);
 
     int imgWidth = ocamRawShm[0].md[0].size[0];
-    int imgHeight = ocamRawShm[0].md[0].size[1];
     int unscrambledSize = ocamShm[0].md[0].size[0] * ocamShm[0].md[0].size[1];
     struct timespec timeout;
     struct timespec t[3];

@@ -85,8 +85,6 @@ static int realTimeLoop()
     // register interrupt signal to terminate the main loop
     signal(SIGINT, endme);
 
-    printf("Starting loop, %s -> %s, nAvg=%d\n",shmName, shmNameAvg, nbAvg );
-    fflush(stdout);
     shm = (IMAGE*) malloc(sizeof(IMAGE));
     daoShmShm2Img(shmName, &shm[0]);
     // Create receiving Avg SHM
@@ -97,6 +95,8 @@ static int realTimeLoop()
     //size[1] = shm[0].md[0].size[1];
     //daoShmImageCreate(shmAvg, shmNameAvg, 2, size, _DATATYPE_FLOAT, 1, 0);
     daoShmShm2Img(shmNameAvg, &shmAvg[0]);
+    printf("Starting loop, %s -> %s, nAvg=%d\n",shmName, shmNameAvg, nbAvg );
+    fflush(stdout);
 
     int nbValue = shm[0].md[0].size[0]*shm[0].md[0].size[1];
     float *avgValue = shmAvg[0].array.F;//malloc(nbValue*sizeof(float));
