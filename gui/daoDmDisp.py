@@ -46,6 +46,7 @@ class Main(QMainWindow, Ui_MainWindow):
         self.graphicsView.setCentralItem(self.vb)
         self.vb.setAspectLocked()
         self.img = pg.ImageItem()
+        self.vb.addItem(self.img)
 
         self.img.setImage(self.dmM)
 #        self.label1.setImage(self.dm1M)
