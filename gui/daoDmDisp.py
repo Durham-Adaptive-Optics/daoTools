@@ -8,24 +8,10 @@ from PyQt5.QtWidgets import QApplication
 
 import numpy as np
 import pyqtgraph as pg
-from scipy import ndimage
 import time
 import dao
 import os
-import poppy
 from matplotlib import cm
-#from scipy.misc.pilutil import toimage
-import scipy.ndimage
-from PIL import Image
-from PIL.ImageQt import ImageQt
-
-
-def nparrayToQPixmap(arrayImage):
-    pilImage = Image.fromarray(np.uint8(cm.gray(arrayImage)*255))
-    qtImage = ImageQt(pilImage)
-    qImage = QtGui.QImage(qtImage)
-    qPixmap = QtGui.QPixmap(qImage)
-    return qPixmap
 
 path = os.getenv('DAOROOT')+'/data/'
 Ui_MainWindow, QMainWindow = loadUiType(os.path.join(path,'daoDmDisp.ui'))
@@ -42,26 +28,24 @@ class Main(QMainWindow, Ui_MainWindow):
         self.shmdm3 = dao.shm('/tmp/'+name+'02.im.shm')
         self.shmdm4 = dao.shm('/tmp/'+name+'03.im.shm')
         self.map = dao.shm('/tmp/'+mapName+'.im.shm')
-#        self.dmMaskCirc=poppy.zernike.zernike(0,0,dm.mapArray.shape[0],outside=0.0)
-        self.dmMaskCirc=self.map.get_data();
-        self.dmMaskHex=np.rot90(poppy.zernike.hex_aperture(self.map.get_data().shape[0]))
-        self.dmMask = self.dmMaskCirc # default circular mask
+        self.dmMask=self.map.get_data();
         self.dmM = np.copy(self.map.get_data()).astype(np.float32)
         self.dm1M = np.copy(self.map.get_data()).astype(np.float32)
         self.dm2M = np.copy(self.map.get_data()).astype(np.float32)
         self.dm3M = np.copy(self.map.get_data()).astype(np.float32)
         self.dm4M = np.copy(self.map.get_data()).astype(np.float32)
         # Get first image
-        self.dmM[self.dmMask == 1] = self.shmdm.get_data()
-        self.dm1M[self.dmMask == 1] = self.shmdm1.get_data()
-        self.dm2M[self.dmMask == 1] = self.shmdm2.get_data()
-        self.dm3M[self.dmMask == 1] = self.shmdm3.get_data()
-        self.dm4M[self.dmMask == 1] = self.shmdm4.get_data()
-        self.label.setPixmap(nparrayToQPixmap(scipy.ndimage.zoom(self.dmM,10, order=0)))
-        self.label1.setPixmap(nparrayToQPixmap(scipy.ndimage.zoom(self.dm1M),10, order=0)))
-        self.label2.setPixmap(nparrayToQPixmap(scipy.ndimage.zoom(self.dm2M),10, order=0)))
-        self.label3.setPixmap(nparrayToQPixmap(scipy.ndimage.zoom(self.dm3M),10, order=0)))
-        self.label4.setPixmap(nparrayToQPixmap(scipy.ndimage.zoom(self.dm4M),10, order=0)))
+        print(self.dmMask)
+        self.dmM[self.dmMask == 1] = self.shmdm.get_data()[:,0]
+        self.dm1M[self.dmMask == 1] = self.shmdm1.get_data()[:,0]
+        self.dm2M[self.dmMask == 1] = self.shmdm2.get_data()[:,0]
+        self.dm3M[self.dmMask == 1] = self.shmdm3.get_data()[:,0]
+        self.dm4M[self.dmMask == 1] = self.shmdm4.get_data()[:,0]
+        self.label.setImage(self.dmM)
+        self.label1.setImage(self.dm1M)
+        self.label2.setImage(self.dm2M)
+        self.label3.setImage(self.dm3M)
+        self.label4.setImage(self.dm4M)
         self.pushButton.toggle()
         self.pushButton.clicked.connect(self.ResetAll)
         # save first counter
@@ -95,16 +79,16 @@ class Main(QMainWindow, Ui_MainWindow):
     def Update(self):
         """ Update the GUI """
         # Update the displayed image with the data of the SHM
-        self.dmM[self.dmMask == 1] = self.shmdm.get_data()
-        self.dm1M[self.dmMask == 1] = self.shmdm1.get_data()
-        self.dm2M[self.dmMask == 1] = self.shmdm2.get_data()
-        self.dm3M[self.dmMask == 1] = self.shmdm3.get_data()
-        self.dm4M[self.dmMask == 1] = self.shmdm4.get_data()
-        self.label.setPixmap(nparrayToQPixmap(scipy.ndimage.zoom(self.dmM,10, order=0)))
-        self.label1.setPixmap(nparrayToQPixmap(scipy.ndimage.zoom(self.dm1M,10, order=0)))
-        self.label2.setPixmap(nparrayToQPixmap(scipy.ndimage.zoom(self.dm2M,10, order=0)))
-        self.label3.setPixmap(nparrayToQPixmap(scipy.ndimage.zoom(self.dm3M,10, order=0)))
-        self.label4.setPixmap(nparrayToQPixmap(scipy.ndimage.zoom(self.dm4M,10, order=0)))
+        self.dmM[self.dmMask == 1] = self.shmdm.get_data()[:,0]
+        self.dm1M[self.dmMask == 1] = self.shmdm1.get_data()[:,0]
+        self.dm2M[self.dmMask == 1] = self.shmdm2.get_data()[:,0]
+        self.dm3M[self.dmMask == 1] = self.shmdm3.get_data()[:,0]
+        self.dm4M[self.dmMask == 1] = self.shmdm4.get_data()[:,0]
+        self.label.setImage(self.dmM)
+        self.label1.setImage(self.dm1M)
+        self.label2.setImage(self.dm2M)
+        self.label3.setImage(self.dm3M)
+        self.label4.setImage(self.dm4M)
         self.minLabel.setText(str(np.min(self.dmM)))
         self.maxLabel.setText(str(np.max(self.dmM)))
 
@@ -133,7 +117,7 @@ if __name__ == '__main__':
         elif opt in ("-m", "--map"):
             mapName = arg
 
-    app = QtGui.QApplication([])
+    app = QApplication([])
     main = Main(name, mapName)
     main.setWindowTitle(''+name+'')
     main.show()
