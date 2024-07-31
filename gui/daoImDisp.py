@@ -10,7 +10,7 @@ import pyqtgraph as pg
 import time
 import os
 
-import daoShm
+import dao
 
 # get the directory of ui files
 path = os.getenv('DAOROOT')+'/data/'
@@ -32,7 +32,7 @@ class Main(QMainWindow, Ui_MainWindow):
         self.graphicsView_2.setCentralItem(self.hist)        
         # Create SHM object
         print(shmimName)
-        self.shmim = daoShm.shm(shmimName)
+        self.shmim = dao.shm(shmimName)
         # set display according to SHM size
         print(str(self.shmim.get_meta_data()['size'][0])+','+str(self.shmim.get_meta_data()['size'][1]))
         self.vb.setRange(QtCore.QRectF(0, 0, self.shmim.get_meta_data()['size'][0], self.shmim.get_meta_data()['size'][1]))
