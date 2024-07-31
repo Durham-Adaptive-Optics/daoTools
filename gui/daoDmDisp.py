@@ -41,11 +41,17 @@ class Main(QMainWindow, Ui_MainWindow):
         self.dm2M[self.dmMask == 1] = self.shmdm2.get_data()[:,0]
         self.dm3M[self.dmMask == 1] = self.shmdm3.get_data()[:,0]
         self.dm4M[self.dmMask == 1] = self.shmdm4.get_data()[:,0]
-        self.label.setImage(self.dmM)
-        self.label1.setImage(self.dm1M)
-        self.label2.setImage(self.dm2M)
-        self.label3.setImage(self.dm3M)
-        self.label4.setImage(self.dm4M)
+
+        self.vb = pg.ViewBox()
+        self.graphicsView.setCentralItem(self.vb)
+        self.vb.setAspectLocked()
+        self.img = pg.ImageItem()
+
+        self.img.setImage(self.dmM)
+#        self.label1.setImage(self.dm1M)
+#        self.label2.setImage(self.dm2M)
+#        self.label3.setImage(self.dm3M)
+#        self.label4.setImage(self.dm4M)
         self.pushButton.toggle()
         self.pushButton.clicked.connect(self.ResetAll)
         # save first counter
@@ -84,11 +90,11 @@ class Main(QMainWindow, Ui_MainWindow):
         self.dm2M[self.dmMask == 1] = self.shmdm2.get_data()[:,0]
         self.dm3M[self.dmMask == 1] = self.shmdm3.get_data()[:,0]
         self.dm4M[self.dmMask == 1] = self.shmdm4.get_data()[:,0]
-        self.label.setImage(self.dmM)
-        self.label1.setImage(self.dm1M)
-        self.label2.setImage(self.dm2M)
-        self.label3.setImage(self.dm3M)
-        self.label4.setImage(self.dm4M)
+        self.img.setImage(self.dmM)
+#        self.label1.setImage(self.dm1M)
+#        self.label2.setImage(self.dm2M)
+#        self.label3.setImage(self.dm3M)
+#        self.label4.setImage(self.dm4M)
         self.minLabel.setText(str(np.min(self.dmM)))
         self.maxLabel.setText(str(np.max(self.dmM)))
 
