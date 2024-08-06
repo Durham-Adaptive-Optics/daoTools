@@ -44,15 +44,40 @@ class Main(QMainWindow, Ui_MainWindow):
 
         self.vb = pg.ViewBox()
         self.graphicsView.setCentralItem(self.vb)
-        self.vb.setAspectLocked()
         self.img = pg.ImageItem()
         self.vb.addItem(self.img)
+        self.vb.setAspectLocked(True)
+        
+        self.vb1 = pg.ViewBox()
+        self.graphicsView_1.setCentralItem(self.vb1)
+        self.img1 = pg.ImageItem()
+        self.vb1.addItem(self.img1)
+        self.vb1.setAspectLocked(True)
+
+        self.vb2 = pg.ViewBox()
+        self.graphicsView_2.setCentralItem(self.vb2)
+        self.img2 = pg.ImageItem()
+        self.vb2.addItem(self.img2)
+        self.vb2.setAspectLocked(True)
+
+        self.vb3 = pg.ViewBox()
+        self.graphicsView_3.setCentralItem(self.vb3)
+        self.img3 = pg.ImageItem()
+        self.vb3.addItem(self.img3)
+        self.vb3.setAspectLocked(True)
+
+        self.vb4 = pg.ViewBox()
+        self.graphicsView_4.setCentralItem(self.vb4)
+        self.img4 = pg.ImageItem()
+        self.vb4.addItem(self.img4)
+        self.vb4.setAspectLocked(True)
 
         self.img.setImage(self.dmM)
-#        self.label1.setImage(self.dm1M)
-#        self.label2.setImage(self.dm2M)
-#        self.label3.setImage(self.dm3M)
-#        self.label4.setImage(self.dm4M)
+        self.img1.setImage(self.dm1M)
+        self.img2.setImage(self.dm2M)
+        self.img3.setImage(self.dm3M)
+        self.img4.setImage(self.dm4M)
+
         self.pushButton.toggle()
         self.pushButton.clicked.connect(self.ResetAll)
         # save first counter
@@ -92,10 +117,10 @@ class Main(QMainWindow, Ui_MainWindow):
         self.dm3M[self.dmMask == 1] = self.shmdm3.get_data()[:,0]
         self.dm4M[self.dmMask == 1] = self.shmdm4.get_data()[:,0]
         self.img.setImage(self.dmM)
-#        self.label1.setImage(self.dm1M)
-#        self.label2.setImage(self.dm2M)
-#        self.label3.setImage(self.dm3M)
-#        self.label4.setImage(self.dm4M)
+        self.img1.setImage(self.dm1M)
+        self.img2.setImage(self.dm2M)
+        self.img3.setImage(self.dm3M)
+        self.img4.setImage(self.dm4M)
         self.minLabel.setText(str(np.min(self.dmM)))
         self.maxLabel.setText(str(np.max(self.dmM)))
 
