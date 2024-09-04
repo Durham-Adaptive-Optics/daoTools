@@ -11,7 +11,6 @@ import pyqtgraph as pg
 import time
 import dao
 import os
-from matplotlib import cm
 
 path = os.getenv('DAOROOT')+'/data/'
 Ui_MainWindow, QMainWindow = loadUiType(os.path.join(path,'daoDmDisp.ui'))
