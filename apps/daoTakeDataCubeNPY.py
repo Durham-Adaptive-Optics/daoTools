@@ -28,6 +28,6 @@ if __name__ == '__main__':
         shmp.set_data(shmp.get_data()*0+np.uint32(100*(k+1)/nFrame))
     print('\n')
 
-    fileName = f"{os.getenv("DAODATA")}/data/{baseName}Cube{desc}.npy"
+    fileName = f"{os.getenv('DAODATA')}/data/{baseName}Cube{desc}.npy"
     print(f"saving in {fileName}")
     np.save(f"{fileName}", dataCube)
