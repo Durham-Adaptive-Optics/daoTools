@@ -30,6 +30,9 @@ class Main(QMainWindow, Ui_MainWindow):
         self.hist = pg.HistogramLUTItem()
         self.hist.setImageItem(self.img)
         self.graphicsView_2.setCentralItem(self.hist)        
+
+        self.hist.vb.setMouseEnabled(y=False)  # Disable auto-scaling
+
         # Create SHM object
         print(shmimName)
         self.shmim = dao.shm(shmimName)
