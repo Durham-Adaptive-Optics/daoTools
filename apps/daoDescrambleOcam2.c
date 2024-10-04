@@ -114,6 +114,7 @@ static int realTimeLoop()
         elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
         printf("\r time to descramble = %8.6f ms", elapsedTime); 
         fflush(stdout);
+        //usleep(1000);
     }
 
 
