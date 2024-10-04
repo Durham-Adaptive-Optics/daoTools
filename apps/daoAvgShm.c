@@ -90,11 +90,11 @@ static int realTimeLoop()
     // Create receiving Avg SHM
     shmAvg = (IMAGE*) malloc(sizeof(IMAGE));
     daoToolsInsertShmNamePrefix(shmName, "Avg", shmNameAvg);
-    //uint32_t size[2];
-    //size[0] = shm[0].md[0].size[0];
-    //size[1] = shm[0].md[0].size[1];
-    //daoShmImageCreate(shmAvg, shmNameAvg, 2, size, _DATATYPE_FLOAT, 1, 0);
-    daoShmShm2Img(shmNameAvg, &shmAvg[0]);
+    uint32_t size[2];
+    size[0] = shm[0].md[0].size[0];
+    size[1] = shm[0].md[0].size[1];
+    daoShmImageCreate(shmAvg, shmNameAvg, 2, size, shm[0].md[0].atype, 1, 0);
+    //daoShmShm2Img(shmNameAvg, &shmAvg[0]);
     printf("Starting loop, %s -> %s, nAvg=%d\n",shmName, shmNameAvg, nbAvg );
     fflush(stdout);
 
@@ -129,7 +129,7 @@ static int realTimeLoop()
             // if new image, add it in the cir buf.
             for (k=0; k<nbValue; k++)
             {
-                valueCircBuf[k][tail] = shm[0].array.UI16[k]/nbAvg;
+                valueCircBuf[k][tail] = shm[0].array.F[k]/nbAvg;
                 if (isnan(valueCircBuf[k][tail]))
                 {
                     valueCircBuf[k][tail] = 0.0;
@@ -155,8 +155,8 @@ static int realTimeLoop()
 
     //        daoShmImage2Shm(avgValue, nbValue, &shmAvg[0]);
             daoShmImagePart2ShmFinalize(&shmAvg[0]);
-            printf("\r(%d,%d) -> (%.3f,%.3f)",
-                    shm[0].array.UI16[0], shm[0].array.UI16[1],
+            printf("\r(%f,%f) -> (%.3f,%.3f)",
+                    shm[0].array.F[0], shm[0].array.F[1],
                     shmAvg[0].array.F[0], shmAvg[0].array.F[1]);
         }
         else
