@@ -209,3 +209,13 @@ daoComputeIntensityPws = bld.program(
 	use= 'daoTools',
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 	)
+
+daoStatShm = bld.program(
+	source = 'daoStatShm.c',
+	target = 'daoStatShm',
+	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+	linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
+	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	use= 'daoTools',
+	cflags = ['-Ofast', '-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
+	)

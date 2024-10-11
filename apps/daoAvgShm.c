@@ -123,8 +123,7 @@ static int realTimeLoop()
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
         // Wait for new image
-        sem_wait(shm[0].semptr[1]);
-        if (sem_timedwait(shm[0].semptr[2], &timeout) != -1)
+        if (sem_timedwait(shm[0].semptr[6], &timeout) != -1)
         {
             // if new image, add it in the cir buf.
             for (k=0; k<nbValue; k++)
