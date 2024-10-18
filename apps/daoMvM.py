@@ -67,5 +67,13 @@ if __name__ == '__main__':
             v = vShm.get_data(check=True)
             oShm.set_data(np.matmul(m, v))
         t1 = time.time()
-        sys.stdout.write('\rmvm in %f' % (t1-t0))
+        sys.stdout.write(f"\rCM({mCounter}) MvM in {t1-t0}")
         sys.stdout.flush()
+        # update cm if needed
+        if mCounter != mShm.get_counter():
+            mCounter = mShm.get_counter()
+            if gpu:
+                m = cp.array(mShm.get_data())
+            else:
+                m = mShm.get_data()
+            print("\nMatrix updated")
