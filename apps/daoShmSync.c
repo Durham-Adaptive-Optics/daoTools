@@ -41,12 +41,15 @@ uid_t euid_real;
 uid_t euid_called;
 uid_t suid;
 
-void *context;
-void *socket;  // ZMQ_PAIR for bi-directional communication
+void *contextWrite;
+void *socketWrite;  // ZMQ_PAIR for bi-directional communication
+void *contextRead;
+void *socketRead;  // ZMQ_PAIR for bi-directional communication
 IMAGE *shm;
 
 char shmName[32];
 char serverAddr[32];
+int port=5555;
 
 // Thread
 pthread_t writeThread;
@@ -73,7 +76,7 @@ static void ShowHelp(void)
     /*
      **	Post init tests
      */
-    printf("   -L <shm> <servAddr>             real time control loop, servAddr form is tcp://localhost:5555\n");
+    printf("   -L <shm> <servAddr>             real time control loop, servAddr form is tcp://localhost:5555 5555\n");
     printf("\n");
 }
 
@@ -87,10 +90,10 @@ void * readRealTimeLoop(void *thread_data)
     int cnt=0;
     while (end ==0)
     {
-        zmqReceiveImage(shm, socket);
+        zmqReceiveImage(shm, socketWrite);
         printf("\r RECEVING %d", cnt);
             // Send the IMAGE structure
-            //zmqSendImage(shm, socket);
+            //zmqSendImage(shm, socketWrite);
         cnt++;
         fflush(stdout);
     }
@@ -115,7 +118,7 @@ void * writeRealTimeLoop(void *thread_data)
         {
             printf("\r SENDING %d", cnt);
             // Send the IMAGE structure
-            //zmqSendImage(shm, socket);
+            //zmqSendImage(shm, socketWrite);
         }
         else
         {
@@ -134,10 +137,17 @@ static int realTimeLoop()
     // register interrupt signal to terminate the main loop
     signal(SIGINT, endme);
     daoInfo("Building ZeroMQ context and socket\n");
+
     // Initialize ZeroMQ context and socket
-    context = zmq_ctx_new();
-    socket = zmq_socket(context, ZMQ_PAIR);  // ZMQ_PAIR for bi-directional communication
-    zmq_connect(socket, serverAddr);  // Connect to server
+    contextWrite = zmq_ctx_new();
+    socketWrite = zmq_socket(contextWrite, ZMQ_PAIR);  // ZMQ_PAIR for bi-directional communication
+    zmq_connect(socketWrite, serverAddr);  // Connect to server
+
+    contextRead = zmq_ctx_new();
+    socketRead = zmq_socket(contextRead, ZMQ_PAIR);  // ZMQ_PAIR for bi-directional communication
+    char endpoint[256];
+    snprintf(endpoint, sizeof(endpoint), "tcp://*:%d", port);
+    zmq_bind(socketRead, endpoint);  // Bind to port to receive the image from sender
 
     shm = (IMAGE*) malloc(sizeof(IMAGE));
     daoShmShm2Img(shmName, &shm[0]);
@@ -208,7 +218,8 @@ static void DecodeArgs(int argc, char **argv)
                         daoInfo("continuously send SHM to remote machine real time control\n");
                         (void)sscanf(*argv++,"%s", shmName);
                         (void)sscanf(*argv++,"%s", serverAddr);
-                        daoInfo("will be sending shmName=%s to serverAddr=%s...\n", shmName, serverAddr);
+                        (void)sscanf(*argv++,"%d", &port);
+                        daoInfo("will be sending shmName=%s to serverAddr=%s:%d...\n", shmName, serverAddr, port);
                         realTimeLoop();
                         break;
             default:
