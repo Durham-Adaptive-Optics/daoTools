@@ -93,8 +93,6 @@ void * readRealTimeLoop(void *thread_data)
     {
         zmqReceiveImage(shm, socketRead);
         printf("\r RECEVING %d", cnt);
-            // Send the IMAGE structure
-            //zmqSendImage(shm, socketWrite);
         cnt++;
         fflush(stdout);
     }
@@ -120,7 +118,9 @@ void * writeRealTimeLoop(void *thread_data)
         {
             printf("\r SENDING %d", cnt);
             // Send the IMAGE structure
-            //zmqSendImage(shm, socketWrite);
+            zmqSendImage(shm, socketWrite);
+            // Finalize, release semaphore
+            daoShmImagePart2ShmFinalize(&shm[0]);
         }
         else
         {
