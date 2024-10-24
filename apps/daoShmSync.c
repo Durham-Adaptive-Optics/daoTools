@@ -90,7 +90,7 @@ void * readRealTimeLoop(void *thread_data)
     int cnt=0;
     while (end ==0)
     {
-        zmqReceiveImage(shm, socketWrite);
+        zmqReceiveImage(shm, socketRead);
         printf("\r RECEVING %d", cnt);
             // Send the IMAGE structure
             //zmqSendImage(shm, socketWrite);
