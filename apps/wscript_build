@@ -219,3 +219,13 @@ daoStatShm = bld.program(
 	use= 'daoTools',
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 	)
+
+daoShmSync = bld.program(
+	source = 'daoShmSync.c',
+	target = 'daoShmSync',
+	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+	linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
+	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses', '-lzmq'] + my_ld_flags,
+	use= 'daoTools',
+	cflags = ['-Ofast', '-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
+	)
