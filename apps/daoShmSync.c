@@ -219,7 +219,7 @@ static void DecodeArgs(int argc, char **argv)
                         (void)sscanf(*argv++,"%s", shmName);
                         (void)sscanf(*argv++,"%s", serverAddr);
                         (void)sscanf(*argv++,"%d", &port);
-                        daoInfo("will be sending shmName=%s to serverAddr=%s:%d...\n", shmName, serverAddr, port);
+                        daoInfo("will be sending shmName=%s to serverAddr=%s and receiving on port %d...\n", shmName, serverAddr, port);
                         realTimeLoop();
                         break;
             default:
