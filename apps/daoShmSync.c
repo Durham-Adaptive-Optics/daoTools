@@ -83,6 +83,7 @@ static void ShowHelp(void)
 void * readRealTimeLoop(void *thread_data)
 {
     daoInfo("ThreadId=%p\n", thread_data);
+    daoInfo("Starting receiving on port %d\n", port);
     // MAIN LOOP
     daoInfo("ENTERING LOOP\n");
     fflush(stdout);
@@ -103,6 +104,7 @@ void * readRealTimeLoop(void *thread_data)
 void * writeRealTimeLoop(void *thread_data)
 {
     daoInfo("ThreadId=%p\n", thread_data);
+    daoInfo("Starting sending %s to %s\n",shmName, serverAddr);
     // MAIN LOOP
     daoInfo("ENTERING LOOP\n");
     fflush(stdout);
@@ -151,8 +153,6 @@ static int realTimeLoop()
 
     shm = (IMAGE*) malloc(sizeof(IMAGE));
     daoShmShm2Img(shmName, &shm[0]);
-    daoInfo("Starting sending %s to %s\n",shmName, serverAddr);
-    fflush(stdout);
 
 
     int writeThreadVal=0;
