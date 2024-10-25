@@ -113,11 +113,11 @@ void * recvRealTimeLoop(void *thread_data)
             // Finalize, release semaphore
             daoShmImagePart2ShmFinalize(&shm[0]);
             lastReceivedCnt = shm[0].md[0].cnt0;
-            printf("\r \t\t\tRECEIVING %d\t", cnt);
+            printf("\r \t\t\t     RECEIVING %d\t", cnt);
         }
         else
         {
-            printf("\r \t\t\tWAIT RECEIVING %d\t", cnt);
+            printf("\r \t\t\twait receiving %d\t", cnt);
         }
         cnt++;
         fflush(stdout);
@@ -145,7 +145,7 @@ void * sendRealTimeLoop(void *thread_data)
             // Send only if it is a new image not from another receveive to avoid loop
             if (shm[0].md[0].cnt0 != lastReceivedCnt)
             {
-                printf("\r SENDING %d\t", cnt);
+                printf("\r      SENDING %d\t", cnt);
                 if (strncmp(protocol, "tcp", 3) == 0)
                 {
                     // Send the IMAGE structure
@@ -164,7 +164,7 @@ void * sendRealTimeLoop(void *thread_data)
         }
         else
         {
-            printf("\r WAIT SENDING %d\t", cnt);
+            printf("\r wait sending %d\t", cnt);
             fflush(stdout);
         }
         cnt++;
