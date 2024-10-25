@@ -235,7 +235,7 @@ static int realTimeLoop()
         zmq_bind(socketRecv, recvEndPoint);  // Bind to multicast address and port
 
         // Join a group to filter messages (for example, "image")
-        zmq_join(socketRecv, shmName);  // Join the group "image" for receiving
+        zmq_join(socketRecv, shmName);  // Join the group <shm name> for receiving
     }
     else
     {
