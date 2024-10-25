@@ -95,11 +95,11 @@ void * readRealTimeLoop(void *thread_data)
         {
             // Finalize, release semaphore
             daoShmImagePart2ShmFinalize(&shm[0]);
-            printf("\r RECEIVING %d", cnt);
+            printf("\r \t\t\tRECEIVING %d", cnt);
         }
         else
         {
-            printf("\r WAIT RECEIVING %d", cnt);
+            printf("\r \t\t\tWAIT RECEIVING %d", cnt);
         }
         cnt++;
         fflush(stdout);
