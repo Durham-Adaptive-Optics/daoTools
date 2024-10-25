@@ -147,6 +147,10 @@ static int realTimeLoop()
 
     contextRead = zmq_ctx_new();
     socketRead = zmq_socket(contextRead, ZMQ_PAIR);  // ZMQ_PAIR for bi-directional communication
+    // Set a 1-second receive timeout
+    int timeout = 1000; // in milliseconds
+    zmq_setsockopt(socketRead, ZMQ_RCVTIMEO, &timeout, sizeof(timeout));
+    
     char endpoint[256];
     snprintf(endpoint, sizeof(endpoint), "tcp://*:%d", port);
     zmq_bind(socketRead, endpoint);  // Bind to port to receive the image from sender
