@@ -146,15 +146,16 @@ static int realTimeLoop()
     signal(SIGINT, endme);
     daoInfo("Building ZeroMQ context and socket\n");
 
+    // Set a 1-second receive timeout for send and receive
+    int timeout = 1000; // in milliseconds
     // Initialize ZeroMQ context and socket
     contextWrite = zmq_ctx_new();
     socketWrite = zmq_socket(contextWrite, ZMQ_PAIR);  // ZMQ_PAIR for bi-directional communication
     zmq_connect(socketWrite, serverAddr);  // Connect to server
+    zmq_setsockopt(socketWrite, ZMQ_SNDTIMEO, &timeout, sizeof(timeout));
 
     contextRead = zmq_ctx_new();
     socketRead = zmq_socket(contextRead, ZMQ_PAIR);  // ZMQ_PAIR for bi-directional communication
-    // Set a 1-second receive timeout
-    int timeout = 1000; // in milliseconds
     zmq_setsockopt(socketRead, ZMQ_RCVTIMEO, &timeout, sizeof(timeout));
     
     char endpoint[256];
