@@ -154,7 +154,7 @@ void * sendRealTimeLoop(void *thread_data)
                 else if (strncmp(protocol, "udp", 3) == 0)
                 {
                     // Send the IMAGE structure
-                    zmqSendImageUDP(shm, socketSend, "test_group", 1400);
+                    zmqSendImageUDP(shm, socketSend, shmName, 1400);
                 }
                 else
                 {
@@ -235,8 +235,8 @@ static int realTimeLoop()
         zmq_bind(socketRecv, recvEndPoint);  // Bind to multicast address and port
 
         // Join a group to filter messages (for example, "image")
-        daoInfo("Joining group '%s' for receiving\n", "test_group");
-        zmq_join(socketRecv, "test_group");  // Join the group <shm name> for receiving
+        daoInfo("Joining group '%s' for receiving\n", shmName);
+        zmq_join(socketRecv, shmName);  // Join the group <shm name> for receiving
     }
     else
     {
