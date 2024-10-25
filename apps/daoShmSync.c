@@ -41,21 +41,23 @@ uid_t euid_real;
 uid_t euid_called;
 uid_t suid;
 
-void *contextWrite;
-void *socketWrite;  // ZMQ_PAIR for bi-directional communication
-void *contextRead;
-void *socketRead;  // ZMQ_PAIR for bi-directional communication
+void *contextSend;
+void *socketSend;  // ZMQ_PAIR for bi-directional communication amd ZMQ RADIO for UDP
+void *contextRecv;
+void *socketRecv;  // ZMQ_PAIR for bi-directional communication and ZMQ_DISH for UDP
 IMAGE *shm;
 
+char protocol[32];
 char shmName[32];
 char serverAddr[32];
-int port=5555;
+int portSend=5555;
+int portRecv=5556;
 
 // Thread
-pthread_t writeThread;
-pthread_t readThread;
-int threadIdWrite = 0;
-int threadIdRead = 0;
+pthread_t sendThread;
+pthread_t recvThread;
+int threadIdSend = 0;
+int threadIdRecv = 0;
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -80,10 +82,10 @@ static void ShowHelp(void)
     printf("\n");
 }
 
-void * readRealTimeLoop(void *thread_data)
+void * recvRealTimeLoop(void *thread_data)
 {
     daoInfo("ThreadId=%p\n", thread_data);
-    daoInfo("Starting receiving on port %d\n", port);
+    daoInfo("Starting receiving on port %d\n", portRecv);
     // MAIN LOOP
     daoInfo("ENTERING LOOP\n");
     fflush(stdout);
@@ -91,7 +93,7 @@ void * readRealTimeLoop(void *thread_data)
     int cnt=0;
     while (end ==0)
     {
-        if (zmqReceiveImage(shm, socketRead) == DAO_SUCCESS)
+        if (zmqReceiveImageTCP(shm, socketRecv) == DAO_SUCCESS)
         {
             // Finalize, release semaphore
             daoShmImagePart2ShmFinalize(&shm[0]);
@@ -107,10 +109,10 @@ void * readRealTimeLoop(void *thread_data)
     return DAO_SUCCESS;
 }
 
-void * writeRealTimeLoop(void *thread_data)
+void * sendRealTimeLoop(void *thread_data)
 {
     daoInfo("ThreadId=%p\n", thread_data);
-    daoInfo("Starting sending %s to %s\n",shmName, serverAddr);
+    daoInfo("Starting sending %s to %s:%d\n",shmName, serverAddr, portSend);
     // MAIN LOOP
     daoInfo("ENTERING LOOP\n");
     fflush(stdout);
@@ -126,7 +128,7 @@ void * writeRealTimeLoop(void *thread_data)
         {
             printf("\r SENDING %d\t", cnt);
             // Send the IMAGE structure
-            zmqSendImage(shm, socketWrite);
+            zmqSendImageTCP(shm, socketSend);
         }
         else
         {
@@ -146,41 +148,87 @@ static int realTimeLoop()
     signal(SIGINT, endme);
     daoInfo("Building ZeroMQ context and socket\n");
 
-    // Set a 1-second receive timeout for send and receive
-    int timeout = 1000; // in milliseconds
-    // Initialize ZeroMQ context and socket
-    contextWrite = zmq_ctx_new();
-    socketWrite = zmq_socket(contextWrite, ZMQ_PAIR);  // ZMQ_PAIR for bi-directional communication
-    zmq_connect(socketWrite, serverAddr);  // Connect to server
-    zmq_setsockopt(socketWrite, ZMQ_SNDTIMEO, &timeout, sizeof(timeout));
 
-    contextRead = zmq_ctx_new();
-    socketRead = zmq_socket(contextRead, ZMQ_PAIR);  // ZMQ_PAIR for bi-directional communication
-    zmq_setsockopt(socketRead, ZMQ_RCVTIMEO, &timeout, sizeof(timeout));
+    if (strncmp(protocol, "tcp", 3) == 0)
+    {
+        // Set a 1-second receive timeout for send and receive
+        int timeout = 1000; // in milliseconds
+        char sendEndPoint[256];
+        char recvEndPoint[256];
+
+        daoInfo("Setting up ZMQ for protocol %s\n", protocol);
+
+        // Initialize ZeroMQ context and socket
+        contextSend = zmq_ctx_new();
+        socketSend = zmq_socket(contextSend, ZMQ_PAIR);  // ZMQ_PAIR for bi-directional communication (TCP)
+        zmq_setsockopt(socketSend, ZMQ_SNDTIMEO, &timeout, sizeof(timeout));
+        snprintf(sendEndPoint, sizeof(sendEndPoint), "tcp://%s:%d", serverAddr, portSend);
+        daoInfo("Sending to %s\n", sendEndPoint);
+        zmq_connect(socketSend, sendEndPoint);  // Connect to server
+
+        contextRecv = zmq_ctx_new();
+        socketRecv = zmq_socket(contextRecv, ZMQ_PAIR);  // ZMQ_PAIR for bi-directional communication (TCP_)
+        zmq_setsockopt(socketRecv, ZMQ_RCVTIMEO, &timeout, sizeof(timeout));
     
-    char endpoint[256];
-    snprintf(endpoint, sizeof(endpoint), "tcp://*:%d", port);
-    zmq_bind(socketRead, endpoint);  // Bind to port to receive the image from sender
+        snprintf(recvEndPoint, sizeof(recvEndPoint), "tcp://*:%d", portRecv);
+        daoInfo("Receiving to %s\n", recvEndPoint);
+        zmq_bind(socketRecv, recvEndPoint);  // Bind to portRecv to receive the image from sender
+    }
+    else if (strncmp(protocol, "udp", 3) == 0)
+    {
+        // Set up ZMQ for UDP with 1-second timeout for send and receive
+        int timeout = 1000; // in milliseconds
+        char sendEndPoint[256];
+        char recvEndPoint[256];
+        //const char *serverAddr = "239.192.1.1"; // Choose a suitable multicast address for UDP
 
+        daoInfo("Setting up ZMQ for protocol %s\n", protocol);
+
+        // Initialize ZeroMQ context and socket for sending
+        contextSend = zmq_ctx_new();
+        socketSend = zmq_socket(contextSend, ZMQ_RADIO);  // ZMQ_RADIO for UDP sending
+        zmq_setsockopt(socketSend, ZMQ_SNDTIMEO, &timeout, sizeof(timeout)); // Set send timeout
+
+        snprintf(sendEndPoint, sizeof(sendEndPoint), "udp://%s:%d", serverAddr, portSend);
+        daoInfo("Sending to %s\n", sendEndPoint);
+        zmq_connect(socketSend, sendEndPoint);  // Connect to multicast address
+
+        // Initialize ZeroMQ context and socket for receiving
+        contextRecv = zmq_ctx_new();
+        socketRecv = zmq_socket(contextRecv, ZMQ_DISH);  // ZMQ_DISH for UDP receiving
+        zmq_setsockopt(socketRecv, ZMQ_RCVTIMEO, &timeout, sizeof(timeout)); // Set receive timeout
+
+        snprintf(recvEndPoint, sizeof(recvEndPoint), "udp://%s:%d", serverAddr, portRecv);
+        daoInfo("Receiving from %s\n", recvEndPoint);
+        zmq_bind(socketRecv, recvEndPoint);  // Bind to multicast address and port
+
+        // Join a group to filter messages (for example, "image")
+        zmq_join(socketRecv, shmName);  // Join the group "image" for receiving
+    }
+    else
+    {
+        daoError("Invalid protocol %s\n", protocol);
+        return DAO_ERROR;
+    }
     shm = (IMAGE*) malloc(sizeof(IMAGE));
     daoShmShm2Img(shmName, &shm[0]);
 
 
-    int writeThreadVal=0;
-    writeThreadVal = pthread_create(&writeThread, NULL, writeRealTimeLoop, (void *)&threadIdWrite);
-    if (writeThreadVal != 0)
+    int sendThreadVal=0;
+    sendThreadVal = pthread_create(&sendThread, NULL, sendRealTimeLoop, (void *)&threadIdSend);
+    if (sendThreadVal != 0)
     {
-        daoError("Cannot create write thread, err\n");
+        daoError("Cannot create send thread, err\n");
         return DAO_ERROR;
     }
-    int readThreadVal=0;
-    readThreadVal = pthread_create(&readThread, NULL, readRealTimeLoop, (void *)&threadIdRead);
-    if (readThreadVal != 0)
+    int recvThreadVal=0;
+    recvThreadVal = pthread_create(&recvThread, NULL, recvRealTimeLoop, (void *)&threadIdRecv);
+    if (recvThreadVal != 0)
     {
-        daoError("Cannot create read thread, err\n");
+        daoError("Cannot create recv thread, err\n");
         return DAO_ERROR;
     }
-    pthread_join(writeThread, NULL);
+    pthread_join(sendThread, NULL);
 
     daoInfo("EXITING MAIN LOOP\n");
     fflush(stdout);
@@ -227,10 +275,14 @@ static void DecodeArgs(int argc, char **argv)
                         break;
             case 'L':
                         daoInfo("continuously send SHM to remote machine real time control\n");
+                        (void)sscanf(*argv++,"%s", protocol);
                         (void)sscanf(*argv++,"%s", shmName);
                         (void)sscanf(*argv++,"%s", serverAddr);
-                        (void)sscanf(*argv++,"%d", &port);
-                        daoInfo("will be sending shmName=%s to serverAddr=%s and receiving on port %d...\n", shmName, serverAddr, port);
+                        (void)sscanf(*argv++,"%d", &portSend);
+                        (void)sscanf(*argv++,"%d", &portRecv);
+                        daoInfo("Using protocol=%s\n", protocol);
+                        daoInfo("Sending shmName=%s to serverAddr=%s:%d\n", shmName, serverAddr, portSend);
+                        daoInfo("Receiving on port %d...\n", portRecv);
                         realTimeLoop();
                         break;
             default:
