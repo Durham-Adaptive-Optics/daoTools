@@ -86,7 +86,7 @@ static void ShowHelp(void)
 void * recvRealTimeLoop(void *thread_data)
 {
     daoInfo("ThreadId=%p\n", thread_data);
-    daoInfo("Starting receiving on port %d\n", portRecv);
+    daoInfo("Starting receiving %s from udp://%s:%d\n", shmName, serverAddr, portRecv);
     // MAIN LOOP
     daoInfo("ENTERING LOOP\n");
     fflush(stdout);
@@ -128,7 +128,7 @@ void * recvRealTimeLoop(void *thread_data)
 void * sendRealTimeLoop(void *thread_data)
 {
     daoInfo("ThreadId=%p\n", thread_data);
-    daoInfo("Starting sending %s to %s:%d\n",shmName, serverAddr, portSend);
+    daoInfo("Starting sending %s to udp://%s:%d\n",shmName, serverAddr, portSend);
     // MAIN LOOP
     daoInfo("ENTERING LOOP\n");
     fflush(stdout);
@@ -222,7 +222,7 @@ static int realTimeLoop()
         zmq_setsockopt(socketSend, ZMQ_SNDTIMEO, &timeout, sizeof(timeout)); // Set send timeout
 
         snprintf(sendEndPoint, sizeof(sendEndPoint), "udp://%s:%d", serverAddr, portSend);
-        daoInfo("Sending to %s\n", sendEndPoint);
+        daoInfo("Sending to '%s'\n", sendEndPoint);
         zmq_connect(socketSend, sendEndPoint);  // Connect to multicast address
 
         // Initialize ZeroMQ context and socket for receiving
@@ -231,7 +231,7 @@ static int realTimeLoop()
         zmq_setsockopt(socketRecv, ZMQ_RCVTIMEO, &timeout, sizeof(timeout)); // Set receive timeout
 
         snprintf(recvEndPoint, sizeof(recvEndPoint), "udp://%s:%d", serverAddr, portRecv);
-        daoInfo("Receiving from %s\n", recvEndPoint);
+        daoInfo("Receiving from '%s'\n", recvEndPoint);
         zmq_bind(socketRecv, recvEndPoint);  // Bind to multicast address and port
 
         // Join a group to filter messages (for example, "image")
