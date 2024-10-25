@@ -209,7 +209,7 @@ static int realTimeLoop()
     else if (strncmp(protocol, "udp", 3) == 0)
     {
         // Set up ZMQ for UDP with 1-second timeout for send and receive
-        int timeout = 100; // in milliseconds
+        int timeout = 1000; // in milliseconds
         char sendEndPoint[256];
         char recvEndPoint[256];
         //const char *serverAddr = "239.192.1.1"; // Choose a suitable multicast address for UDP
