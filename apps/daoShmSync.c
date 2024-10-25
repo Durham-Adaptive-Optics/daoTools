@@ -91,10 +91,16 @@ void * readRealTimeLoop(void *thread_data)
     int cnt=0;
     while (end ==0)
     {
-        zmqReceiveImage(shm, socketRead);
-        // Finalize, release semaphore
-        daoShmImagePart2ShmFinalize(&shm[0]);
-        printf("\r RECEVING %d", cnt);
+        if (zmqReceiveImage(shm, socketRead) == DAO_SUCCESS)
+        {
+            // Finalize, release semaphore
+            daoShmImagePart2ShmFinalize(&shm[0]);
+            printf("\r RECEIVING %d", cnt);
+        }
+        else
+        {
+            printf("\r WAIT RECEIVING %d", cnt);
+        }
         cnt++;
         fflush(stdout);
     }
@@ -124,7 +130,7 @@ void * writeRealTimeLoop(void *thread_data)
         }
         else
         {
-            printf("\r WAIT %d", cnt);
+            printf("\r WAIT SENDING %d", cnt);
             fflush(stdout);
         }
         cnt++;
