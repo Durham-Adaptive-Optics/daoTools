@@ -154,7 +154,7 @@ void * sendRealTimeLoop(void *thread_data)
                 else if (strncmp(protocol, "udp", 3) == 0)
                 {
                     // Send the IMAGE structure
-                    zmqSendImageUDP(shm, socketSend, shmName);
+                    zmqSendImageUDP(shm, socketSend, shmName, 1400);
                 }
                 else
                 {
