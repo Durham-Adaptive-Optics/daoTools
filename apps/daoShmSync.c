@@ -53,6 +53,7 @@ char serverAddr[32];
 int portSend=5555;
 int portRecv=5556;
 
+long unsigned int lastReceivedCnt=0; // Used to sync recv and send and avoid infinite loop to not resend what you just received
 // Thread
 pthread_t sendThread;
 pthread_t recvThread;
@@ -97,6 +98,7 @@ void * recvRealTimeLoop(void *thread_data)
         {
             // Finalize, release semaphore
             daoShmImagePart2ShmFinalize(&shm[0]);
+            lastReceivedCnt = shm[0].md[0].cnt0;
             printf("\r \t\t\tRECEIVING %d\t", cnt);
         }
         else
@@ -126,9 +128,13 @@ void * sendRealTimeLoop(void *thread_data)
         // Wait for new image
         if (sem_timedwait(shm[0].semptr[9], &timeout) != -1)
         {
-            printf("\r SENDING %d\t", cnt);
-            // Send the IMAGE structure
-            zmqSendImageTCP(shm, socketSend);
+            // Send only if it is a new image not from another receveive to avoid loop
+            if (shm[0].md[0].cnt0 != lastReceivedCnt)
+            {
+                printf("\r SENDING %d\t", cnt);
+                // Send the IMAGE structure
+                zmqSendImageTCP(shm, socketSend);
+            }
         }
         else
         {
