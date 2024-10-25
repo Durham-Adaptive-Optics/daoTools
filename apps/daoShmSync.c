@@ -95,11 +95,11 @@ void * readRealTimeLoop(void *thread_data)
         {
             // Finalize, release semaphore
             daoShmImagePart2ShmFinalize(&shm[0]);
-            printf("\r \t\t\tRECEIVING %d", cnt);
+            printf("\r \t\t\tRECEIVING %d\t", cnt);
         }
         else
         {
-            printf("\r \t\t\tWAIT RECEIVING %d", cnt);
+            printf("\r \t\t\tWAIT RECEIVING %d\t", cnt);
         }
         cnt++;
         fflush(stdout);
@@ -124,13 +124,13 @@ void * writeRealTimeLoop(void *thread_data)
         // Wait for new image
         if (sem_timedwait(shm[0].semptr[9], &timeout) != -1)
         {
-            printf("\r SENDING %d", cnt);
+            printf("\r SENDING %d\t", cnt);
             // Send the IMAGE structure
             zmqSendImage(shm, socketWrite);
         }
         else
         {
-            printf("\r WAIT SENDING %d", cnt);
+            printf("\r WAIT SENDING %d\t", cnt);
             fflush(stdout);
         }
         cnt++;
