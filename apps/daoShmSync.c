@@ -92,9 +92,23 @@ void * recvRealTimeLoop(void *thread_data)
     fflush(stdout);
 
     int cnt=0;
+    int res = DAO_SUCCESS;
     while (end ==0)
     {
-        if (zmqReceiveImageTCP(shm, socketRecv) == DAO_SUCCESS)
+        if (strncmp(protocol, "tcp", 3) == 0)
+        {
+            res = zmqReceiveImageTCP(shm, socketRecv);
+        }
+        else if (strncmp(protocol, "udp", 3) == 0)
+        {
+            res = zmqReceiveImageUDP(shm, socketRecv, shmName);
+        }
+        else
+        {
+            daoError("Invalid protocol %s\n", protocol);
+        }
+        
+        if (res == DAO_SUCCESS)
         {
             // Finalize, release semaphore
             daoShmImagePart2ShmFinalize(&shm[0]);
@@ -132,8 +146,20 @@ void * sendRealTimeLoop(void *thread_data)
             if (shm[0].md[0].cnt0 != lastReceivedCnt)
             {
                 printf("\r SENDING %d\t", cnt);
-                // Send the IMAGE structure
-                zmqSendImageTCP(shm, socketSend);
+                if (strncmp(protocol, "tcp", 3) == 0)
+                {
+                    // Send the IMAGE structure
+                    zmqSendImageTCP(shm, socketSend);
+                }
+                else if (strncmp(protocol, "udp", 3) == 0)
+                {
+                    // Send the IMAGE structure
+                    zmqSendImageUDP(shm, socketSend, shmName);
+                }
+                else
+                {
+                    daoError("Invalid protocol %s\n", protocol);
+                }
             }
         }
         else
