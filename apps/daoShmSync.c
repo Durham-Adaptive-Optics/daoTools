@@ -111,8 +111,8 @@ void * recvRealTimeLoop(void *thread_data)
         if (res == DAO_SUCCESS)
         {
             // Finalize, release semaphore
-            //daoShmImagePart2ShmFinalize(&shm[0]);
-            //lastReceivedCnt = shm[0].md[0].cnt0;
+            daoShmImagePart2ShmFinalize(&shm[0]);
+            lastReceivedCnt = shm[0].md[0].cnt0;
             printf("\r \t\t\tRECEIVING %d\t", cnt);
         }
         else
