@@ -16,6 +16,18 @@ sudo yum install ncurses-devel
 pip3 install pyqtgraph
 ````
 
+## zmq from source
+We are using the UDP mutlicast of ZMQ introduced version 4.2.0. To build the newest version:
+```
+git clone https://github.com/zeromq/libzmq.git
+cd libzmq
+mkdir build && cd build
+cmake ..
+make -j4
+sudo make install
+sudo ldconfig
+```
+
 # Build
 ```
 waf configure --prefix=$DAOROOT
