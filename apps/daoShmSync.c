@@ -228,7 +228,7 @@ static int realTimeLoop()
         // Initialize ZeroMQ context and socket for receiving
         contextRecv = zmq_ctx_new();
         socketRecv = zmq_socket(contextRecv, ZMQ_DISH);  // ZMQ_DISH for UDP receiving
-        zmq_setsockopt(socketRecv, ZMQ_RCVTIMEO, &timeout, sizeof(timeout)); // Set receive timeout
+//        zmq_setsockopt(socketRecv, ZMQ_RCVTIMEO, &timeout, sizeof(timeout)); // Set receive timeout
 
         snprintf(recvEndPoint, sizeof(recvEndPoint), "udp://%s:%d", serverAddr, portRecv);
         daoInfo("Receiving from '%s'\n", recvEndPoint);
