@@ -259,10 +259,10 @@ static int realTimeLoop()
         zmq_setsockopt(socketSend, ZMQ_SNDTIMEO, &timeout, sizeof(timeout));  // Set send timeout
 
         // Bind to PGM multicast address for sending
-        char sendEndpoint[256];
-        snprintf(sendEndpoint, sizeof(sendEndpoint), "epgm://%s;%s:%d", nicName, serverAddr, portSend);
+        char sendEndPoint[256];
+        snprintf(sendEndPoint, sizeof(sendEndPoint), "epgm://%s;%s:%d", nicName, serverAddr, portSend);
         daoInfo("Sending to '%s'\n", sendEndPoint);
-        if (zmq_bind(socketSend, sendEndpoint) != 0) 
+        if (zmq_bind(socketSend, sendEndPoint) != 0) 
         {
             fprintf(stderr, "Failed to bind sender socket: %s\n", zmq_strerror(errno));
             return DAO_ERROR;
@@ -274,10 +274,10 @@ static int realTimeLoop()
         zmq_setsockopt(socketRecv, ZMQ_RCVTIMEO, &timeout, sizeof(timeout));  // Set receive timeout
 
         // Connect to PGM multicast address for receiving
-        char recvEndpoint[256];
-        snprintf(recvEndpoint, sizeof(recvEndpoint), "epgm://%s;%s:%d", nicName, serverAddr, portRecv);
+        char recvEndPoint[256];
+        snprintf(recvEndPoint, sizeof(recvEndPoint), "epgm://%s;%s:%d", nicName, serverAddr, portRecv);
         daoInfo("Receiving from '%s'\n", recvEndPoint);
-        if (zmq_connect(socketRecv, recvEndpoint) != 0) 
+        if (zmq_connect(socketRecv, recvEndPoint) != 0) 
         {
             fprintf(stderr, "Failed to connect receiver socket: %s\n", zmq_strerror(errno));
             return DAO_ERROR;
