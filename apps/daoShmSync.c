@@ -50,6 +50,7 @@ IMAGE *shm;
 char protocol[32];
 char shmName[32];
 char serverAddr[32];
+char nicName[32];
 int portSend=5555;
 int portRecv=5556;
 
@@ -86,7 +87,7 @@ static void ShowHelp(void)
 void * recvRealTimeLoop(void *thread_data)
 {
     daoInfo("ThreadId=%p\n", thread_data);
-    daoInfo("Starting receiving %s from udp://%s:%d\n", shmName, serverAddr, portRecv);
+    daoInfo("Starting receiving %s from %s:%d\n", shmName, serverAddr, portRecv);
     // MAIN LOOP
     daoInfo("ENTERING LOOP\n");
     fflush(stdout);
@@ -102,6 +103,10 @@ void * recvRealTimeLoop(void *thread_data)
         else if (strncmp(protocol, "udp", 3) == 0)
         {
             res = zmqReceiveImageUDP(shm, socketRecv);
+        }
+        else if (strncmp(protocol, "pgm", 3) == 0)
+        {
+            res = zmqReceiveImagePGM(shm, socketRecv);
         }
         else
         {
@@ -156,6 +161,11 @@ void * sendRealTimeLoop(void *thread_data)
                 {
                     // Send the IMAGE structure
                     zmqSendImageUDP(shm, socketSend, shmName, 1400);
+                }
+                else if (strncmp(protocol, "pgm", 3) == 0)
+                {
+                    // Send the IMAGE structure
+                    zmqSendImagePGM(shm, socketSend, 1400);
                 }
                 else
                 {
@@ -239,6 +249,41 @@ static int realTimeLoop()
         daoInfo("Joining group '%s' for receiving\n", shmName);
         zmq_join(socketRecv, shmName);  // Join the group <shm name> for receiving
     }
+    else if (strncmp(protocol, "pgm", 3) == 0)
+    {
+        int timeout = 1000;  // Timeout in milliseconds
+
+        // Initialize ZeroMQ context and PUB socket for sending
+        contextSend = zmq_ctx_new();
+        socketSend = zmq_socket(contextSend, ZMQ_PUB);
+        zmq_setsockopt(socketSend, ZMQ_SNDTIMEO, &timeout, sizeof(timeout));  // Set send timeout
+
+        // Bind to PGM multicast address for sending
+        char sendEndpoint[256];
+        snprintf(sendEndpoint, sizeof(sendEndpoint), "epgm://%s;%s:%d", nicName, serverAddr, portSend);
+        if (zmq_bind(socketSend, sendEndpoint) != 0) 
+        {
+            fprintf(stderr, "Failed to bind sender socket: %s\n", zmq_strerror(errno));
+            return DAO_ERROR;
+        }
+
+        // Initialize ZeroMQ context and SUB socket for receiving
+        contextRecv = zmq_ctx_new();
+        socketRecv = zmq_socket(contextRecv, ZMQ_SUB);
+        zmq_setsockopt(socketRecv, ZMQ_RCVTIMEO, &timeout, sizeof(timeout));  // Set receive timeout
+
+        // Connect to PGM multicast address for receiving
+        char recvEndpoint[256];
+        snprintf(recvEndpoint, sizeof(recvEndpoint), "epgm://%s;%s:%d", nicName, serverAddr, portRecv);
+        if (zmq_connect(socketRecv, recvEndpoint) != 0) 
+        {
+            fprintf(stderr, "Failed to connect receiver socket: %s\n", zmq_strerror(errno));
+            return DAO_ERROR;
+        }
+
+        // Subscribe to group
+        zmq_setsockopt(socketRecv, ZMQ_SUBSCRIBE, shmName, strlen(shmName));
+    }
     else
     {
         daoError("Invalid protocol %s\n", protocol);
@@ -314,6 +359,7 @@ static void DecodeArgs(int argc, char **argv)
                         (void)sscanf(*argv++,"%s", serverAddr);
                         (void)sscanf(*argv++,"%d", &portSend);
                         (void)sscanf(*argv++,"%d", &portRecv);
+                        (void)sscanf(*argv++,"%s", nicName);
                         daoInfo("Using protocol=%s\n", protocol);
                         daoInfo("Sending shmName=%s to serverAddr=%s:%d\n", shmName, serverAddr, portSend);
                         daoInfo("Receiving on port %d...\n", portRecv);
