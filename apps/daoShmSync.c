@@ -261,6 +261,7 @@ static int realTimeLoop()
         // Bind to PGM multicast address for sending
         char sendEndpoint[256];
         snprintf(sendEndpoint, sizeof(sendEndpoint), "epgm://%s;%s:%d", nicName, serverAddr, portSend);
+        daoInfo("Sending to '%s'\n", sendEndPoint);
         if (zmq_bind(socketSend, sendEndpoint) != 0) 
         {
             fprintf(stderr, "Failed to bind sender socket: %s\n", zmq_strerror(errno));
@@ -275,6 +276,7 @@ static int realTimeLoop()
         // Connect to PGM multicast address for receiving
         char recvEndpoint[256];
         snprintf(recvEndpoint, sizeof(recvEndpoint), "epgm://%s;%s:%d", nicName, serverAddr, portRecv);
+        daoInfo("Receiving from '%s'\n", recvEndPoint);
         if (zmq_connect(socketRecv, recvEndpoint) != 0) 
         {
             fprintf(stderr, "Failed to connect receiver socket: %s\n", zmq_strerror(errno));
