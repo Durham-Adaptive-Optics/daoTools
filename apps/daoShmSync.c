@@ -101,11 +101,12 @@ void * recvRealTimeLoop(void *thread_data)
         }
         else if (strncmp(protocol, "udp", 3) == 0)
         {
-            res = zmqReceiveImageUDP(shm, socketRecv, shmName);
+            res = zmqReceiveImageUDP(shm, socketRecv);
         }
         else
         {
             daoError("Invalid protocol %s\n", protocol);
+            res=DAO_ERROR;
         }
         
         if (res == DAO_SUCCESS)
