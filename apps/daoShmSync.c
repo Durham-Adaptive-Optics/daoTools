@@ -213,7 +213,7 @@ static int realTimeLoop()
         int timeout = 1000; // in milliseconds
         char sendEndPoint[256];
         char recvEndPoint[256];
-        int bufsize = 4 * 1024 * 1024;  // Set buffer size to 4 MB
+        int bufsize = 8 * 1024 * 1024;  // Set buffer size to 4 MB
         //const char *serverAddr = "239.192.1.1"; // Choose a suitable multicast address for UDP
 
         daoInfo("Setting up ZMQ for protocol %s\n", protocol);
