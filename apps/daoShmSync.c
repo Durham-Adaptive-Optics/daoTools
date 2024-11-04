@@ -213,6 +213,7 @@ static int realTimeLoop()
         int timeout = 1000; // in milliseconds
         char sendEndPoint[256];
         char recvEndPoint[256];
+        int bufsize = 4 * 1024 * 1024;  // Set buffer size to 4 MB
         //const char *serverAddr = "239.192.1.1"; // Choose a suitable multicast address for UDP
 
         daoInfo("Setting up ZMQ for protocol %s\n", protocol);
@@ -221,6 +222,7 @@ static int realTimeLoop()
         contextSend = zmq_ctx_new();
         socketSend = zmq_socket(contextSend, ZMQ_RADIO);  // ZMQ_RADIO for UDP sending
         zmq_setsockopt(socketSend, ZMQ_SNDTIMEO, &timeout, sizeof(timeout)); // Set send timeout
+zmq_setsockopt(socketSend, ZMQ_SNDBUF, &bufsize, sizeof(bufsize));
 
         snprintf(sendEndPoint, sizeof(sendEndPoint), "udp://%s:%d", serverAddr, portSend);
         daoInfo("Sending to '%s'\n", sendEndPoint);
@@ -230,6 +232,7 @@ static int realTimeLoop()
         contextRecv = zmq_ctx_new();
         socketRecv = zmq_socket(contextRecv, ZMQ_DISH);  // ZMQ_DISH for UDP receiving
         zmq_setsockopt(socketRecv, ZMQ_RCVTIMEO, &timeout, sizeof(timeout)); // Set receive timeout
+        zmq_setsockopt(socketRecv, ZMQ_RCVBUF, &bufsize, sizeof(bufsize));
 
         snprintf(recvEndPoint, sizeof(recvEndPoint), "udp://%s:%d", serverAddr, portRecv);
         daoInfo("Receiving from '%s'\n", recvEndPoint);
