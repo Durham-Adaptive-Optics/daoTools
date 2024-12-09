@@ -20,6 +20,8 @@ class daoShmViewer2(QWidget):
         self.shm = None
         self.lastCounter = 0
         self.FLAT = False
+        self.TABLE = False
+        self.ShowTable = False
 
     def initUI(self):
         self.timer = QTimer()
@@ -97,7 +99,9 @@ class daoShmViewer2(QWidget):
         
         metadataLayout.addWidget(QLabel("File Metadata:", self))
         metadataLayout.addWidget(self.metadataText)
-        
+        self.tableButton = QPushButton("Show as Table")
+        self.tableButton.clicked.connect(self.showTable)
+        metadataLayout.addWidget(self.tableButton)
         metadataTab.setLayout(metadataLayout)
         tabWidget.addTab(metadataTab, "Metadata")
         
@@ -187,17 +191,25 @@ class daoShmViewer2(QWidget):
             font = self.graphWidget.font()
             font.setPointSize(12)  # Set font size (adjust as needed)
             # Resize the column and row to fit the content
+            self.graphWidget.setFont(font)
             self.graphWidget.resizeColumnsToContents()
             self.graphWidget.resizeRowsToContents()
-
-
-            self.graphWidget.setFont(font)
+            
+        elif self.ShowTable:
+            self.graphWidget = QtWidgets.QTableWidget(data.shape[0], data.shape[1])
+            for i in range(data.shape[0]):
+                for j in range(data.shape[1]):
+                    self.graphWidget.setItem(i, j, QTableWidgetItem(str(data[i, j])))
+                    # Optional: Set text alignment for better readability
+                    self.graphWidget.item(i, j).setTextAlignment(Qt.AlignCenter)
+            self.graphWidget.resizeColumnsToContents()
+            self.graphWidget.resizeRowsToContents()
         else:
             self.graphWidget = magicplot.MagicPlot()
         
         self.topSplitter.replaceWidget(index, self.graphWidget)    
         
-        if self.TABLE:
+        if self.TABLE or self.ShowTable:
             pass
         else:
             if(self.FLAT == True):
@@ -227,6 +239,17 @@ class daoShmViewer2(QWidget):
         self.updateMetadata(self.filenameEdit.text(), frequency)
         if(self.TABLE):
             self.graphWidget.setItem(0, 0, QTableWidgetItem(str(self.shm.get_data()[0, 0])))
+        elif self.ShowTable:
+            data = self.shm.get_data()
+            rows, cols = data.shape
+            for i in range(rows):
+                for j in range(cols):
+                    value = str(data[i, j])  # Convert each value to a string
+                    self.graphWidget.setItem(i, j, QTableWidgetItem(str(value)))
+
+            # Resize the table cells to fit the content
+            self.table_widget.resizeColumnsToContents()
+            self.table_widget.resizeRowsToContents()
         else:   
             if(self.FLAT):
                 self.im.setData(self.shm.get_data().flatten())
@@ -375,6 +398,14 @@ class daoShmViewer2(QWidget):
             msg.setWindowTitle("Error")
             msg.exec_()
             return
+    def showTable(self):
+        if self.ShowTable==False:
+            self.ShowTable = True
+            self.tableButton.setText("Show as Graph")
+        else:
+            self.ShowTable = False
+            self.tableButton.setText("Show as Table")
+        self.onCellClicked(self.tableWidget.currentRow(), 0)
 
 class GraphWidget(QWidget):
     def __init__(self, parent=None):
