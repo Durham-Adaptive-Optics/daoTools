@@ -165,32 +165,51 @@ class daoShmViewer2(QWidget):
             self.lastCounter = self.shm.get_counter()
             self.updateMetadata(filenameItem.text())
             self.updateMultiRecordList()
+            
         data = self.shm.get_data()
-        
-        if(np.min(data.shape) == 1):
+        if np.shape(data) == (1,1):
+            self.TABLE=True
+        elif(np.min(data.shape) == 1):
             self.FLAT = True
+            self.TABLE = False
         else:
             self.FLAT = False
+            self.TABLE = False
             
         index = self.topSplitter.indexOf(self.graphWidget)
-        if self.graphWidget:
-            # self.topSplitter.replaceWidget(self.graphWidget)
-            # self.graphWidget.deleteLater()
-            self.graphWidget = magicplot.MagicPlot()
-            self.topSplitter.replaceWidget(index, self.graphWidget)
+        if self.TABLE:
+            self.graphWidget = QtWidgets.QTableWidget(1,1)
+            self.graphWidget.setItem(0, 0, QTableWidgetItem(str(data[0, 0])))
 
+            # Resize the column and row to fit the content
+            self.graphWidget.resizeColumnsToContents()
+            self.graphWidget.resizeRowsToContents()
 
-        if self.FLAT:
-            # self.graphWidget.plot(data.flatten())
-            self.im = self.graphWidget.getDataItem()
-            self.im.setData(self.shm.get_data().flatten())
+            # Optional: Set text alignment for better readability
+            self.graphWidget.item(0, 0).setTextAlignment(Qt.AlignCenter)
+
+            # Optional: Customize the font or font size
+            font = self.graphWidget.font()
+            font.setPointSize(12)  # Set font size (adjust as needed)
+            self.graphWidget.setFont(font)
         else:
-            # self.graphWidget.plot(data)
-            self.im = self.graphWidget.getImageItem()
-            self.im.setData(self.shm.get_data())
+            self.graphWidget = magicplot.MagicPlot()
+        
+        self.topSplitter.replaceWidget(index, self.graphWidget)    
+        
+        if self.TABLE:
+            pass
+        else:
+            if(self.FLAT == True):
+                self.im = self.graphWidget.getDataItem()
+                self.im.setData(self.shm.get_data().flatten())
+            else:
+                # self.graphWidget.plot(data)
+                self.im = self.graphWidget.getImageItem()
+                self.im.setData(self.shm.get_data())
            
-        self.graphWidget.updatePanBounds()
-        self.graphWidget.viewBox.autoRange()
+            self.graphWidget.updatePanBounds()
+            self.graphWidget.viewBox.autoRange()
         # Display metadata
         # self.show_metadata(file_path)
         
@@ -206,11 +225,13 @@ class daoShmViewer2(QWidget):
         else:
             frequency = 10/diff
         self.updateMetadata(self.filenameEdit.text(), frequency)
-        
-        if(self.FLAT):
-            self.im.setData(self.shm.get_data().flatten())
-        else:
-            self.im.setData(self.shm.get_data())   
+        if(self.TABLE):
+            self.graphWidget.setItem(0, 0, QTableWidgetItem(str(self.shm.get_data()[0, 0])))
+        else:   
+            if(self.FLAT):
+                self.im.setData(self.shm.get_data().flatten())
+            else:
+                self.im.setData(self.shm.get_data())   
 
 
     def record_file(self, filename, frames):
