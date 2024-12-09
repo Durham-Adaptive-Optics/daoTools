@@ -180,17 +180,17 @@ class daoShmViewer2(QWidget):
         if self.TABLE:
             self.graphWidget = QtWidgets.QTableWidget(1,1)
             self.graphWidget.setItem(0, 0, QTableWidgetItem(str(data[0, 0])))
-
-            # Resize the column and row to fit the content
-            self.graphWidget.resizeColumnsToContents()
-            self.graphWidget.resizeRowsToContents()
-
             # Optional: Set text alignment for better readability
             self.graphWidget.item(0, 0).setTextAlignment(Qt.AlignCenter)
 
             # Optional: Customize the font or font size
             font = self.graphWidget.font()
             font.setPointSize(12)  # Set font size (adjust as needed)
+            # Resize the column and row to fit the content
+            self.graphWidget.resizeColumnsToContents()
+            self.graphWidget.resizeRowsToContents()
+
+
             self.graphWidget.setFont(font)
         else:
             self.graphWidget = magicplot.MagicPlot()
