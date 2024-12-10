@@ -2,11 +2,11 @@ import sys
 from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem, 
                              QCheckBox, QHeaderView, QLineEdit, QPushButton, QFileDialog, QLabel, QSpinBox, 
                              QTabWidget, QSplitter, QFrame, QTextEdit, QListWidget, QMessageBox, QErrorMessage)
-from PyQt5.QtCore import QDir, Qt, QTimer
+from PyQt5.QtCore import QDir, Qt, QTimer, QAbstractTableModel
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PyQt5 import QtWidgets
-
+from PyQt5.QtWidgets import QTableView
 import magicplot
 from astropy.io import fits
 import numpy as np
@@ -196,14 +196,9 @@ class daoShmViewer2(QWidget):
             self.graphWidget.resizeRowsToContents()
             
         elif self.ShowTable:
-            self.graphWidget = QtWidgets.QTableWidget(data.shape[0], data.shape[1])
-            for i in range(data.shape[0]):
-                for j in range(data.shape[1]):
-                    self.graphWidget.setItem(i, j, QTableWidgetItem(str(data[i, j])))
-                    # Optional: Set text alignment for better readability
-                    self.graphWidget.item(i, j).setTextAlignment(Qt.AlignCenter)
-            self.graphWidget.resizeColumnsToContents()
-            self.graphWidget.resizeRowsToContents()
+            model = NumpyTableModel(data)
+            self.graphWidget = QTableView()
+            self.graphWidget.setModel(model)
         else:
             self.graphWidget = magicplot.MagicPlot()
         
@@ -240,16 +235,7 @@ class daoShmViewer2(QWidget):
         if(self.TABLE):
             self.graphWidget.setItem(0, 0, QTableWidgetItem(str(self.shm.get_data()[0, 0])))
         elif self.ShowTable:
-            data = self.shm.get_data()
-            rows, cols = data.shape
-            for i in range(rows):
-                for j in range(cols):
-                    value = str(data[i, j])  # Convert each value to a string
-                    self.graphWidget.setItem(i, j, QTableWidgetItem(str(value)))
-
-            # Resize the table cells to fit the content
-            self.table_widget.resizeColumnsToContents()
-            self.table_widget.resizeRowsToContents()
+            self.graphWidget.setModel(NumpyTableModel(self.shm.get_data()))
         else:   
             if(self.FLAT):
                 self.im.setData(self.shm.get_data().flatten())
@@ -421,6 +407,24 @@ class GraphWidget(QWidget):
         ax = self.figure.add_subplot(111)
         ax.plot([0, 1, 2, 3], [10, 1, 20, 3])
         self.canvas.draw()
+
+class NumpyTableModel(QAbstractTableModel):
+    def __init__(self, data, parent=None):
+        super().__init__(parent)
+        self._data = data  # Store the NumPy array
+
+    def rowCount(self, parent=None):
+        return self._data.shape[0]  # Number of rows
+
+    def columnCount(self, parent=None):
+        return self._data.shape[1]  # Number of columns
+
+    def data(self, index, role=Qt.DisplayRole):
+        if role == Qt.DisplayRole:
+            # Display data for the given cell
+            value = self._data[index.row(), index.column()]
+            return f"{value:.3f}"  # Format to 3 decimal places if needed
+        return None
 
 def main():
     app = QApplication(sys.argv)
