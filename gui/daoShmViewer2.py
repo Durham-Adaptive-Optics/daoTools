@@ -22,6 +22,7 @@ class daoShmViewer2(QWidget):
         self.FLAT = False
         self.TABLE = False
         self.ShowTable = False
+        self.dataCounter = 0
 
     def initUI(self):
         self.timer = QTimer()
@@ -171,6 +172,7 @@ class daoShmViewer2(QWidget):
             self.updateMultiRecordList()
             
         data = self.shm.get_data()
+        self.dataCounter = self.shm.get_counter()
         if np.shape(data) == (1,1):
             self.TABLE=True
         elif(np.min(data.shape) == 1):
@@ -181,22 +183,8 @@ class daoShmViewer2(QWidget):
             self.TABLE = False
             
         index = self.topSplitter.indexOf(self.graphWidget)
-        if self.TABLE:
-            self.graphWidget = QtWidgets.QTableWidget(1,1)
-            self.graphWidget.setItem(0, 0, QTableWidgetItem(str(data[0, 0])))
-            # Optional: Set text alignment for better readability
-            self.graphWidget.item(0, 0).setTextAlignment(Qt.AlignCenter)
-
-            # Optional: Customize the font or font size
-            font = self.graphWidget.font()
-            font.setPointSize(12)  # Set font size (adjust as needed)
-            # Resize the column and row to fit the content
-            self.graphWidget.setFont(font)
-            self.graphWidget.resizeColumnsToContents()
-            self.graphWidget.resizeRowsToContents()
-            
-        elif self.ShowTable:
-            model = NumpyTableModel(data)
+        if self.TABLE or self.ShowTable:
+            model = NumpyTableModel(data, shm=self.shm)
             self.graphWidget = QTableView()
             self.graphWidget.setModel(model)
         else:
@@ -232,15 +220,14 @@ class daoShmViewer2(QWidget):
         else:
             frequency = 10/diff
         self.updateMetadata(self.filenameEdit.text(), frequency)
-        if(self.TABLE):
-            self.graphWidget.setItem(0, 0, QTableWidgetItem(str(self.shm.get_data()[0, 0])))
-        elif self.ShowTable:
-            self.graphWidget.setModel(NumpyTableModel(self.shm.get_data()))
-        else:   
-            if(self.FLAT):
-                self.im.setData(self.shm.get_data().flatten())
-            else:
-                self.im.setData(self.shm.get_data())   
+        if diff !=0:
+            if(self.TABLE or self.ShowTable):
+                self.graphWidget.setModel(NumpyTableModel(self.shm.get_data(), self.shm))
+            else:   
+                if(self.FLAT):
+                    self.im.setData(self.shm.get_data().flatten())
+                else:
+                    self.im.setData(self.shm.get_data())   
 
 
     def record_file(self, filename, frames):
@@ -409,9 +396,10 @@ class GraphWidget(QWidget):
         self.canvas.draw()
 
 class NumpyTableModel(QAbstractTableModel):
-    def __init__(self, data, parent=None):
+    def __init__(self, data, shm, parent=None):
         super().__init__(parent)
         self._data = data  # Store the NumPy array
+        self._shm = shm
 
     def rowCount(self, parent=None):
         return self._data.shape[0]  # Number of rows
@@ -425,6 +413,28 @@ class NumpyTableModel(QAbstractTableModel):
             value = self._data[index.row(), index.column()]
             return f"{value:.3f}"  # Format to 3 decimal places if needed
         return None
+
+    def setData(self, index, value, role=Qt.EditRole):
+        if role == Qt.EditRole:
+            try:
+                # Update the NumPy array with the new value
+                self._data[index.row(), index.column()] = float(value)
+                # Emit the dataChanged signal
+                self.dataChanged.emit(index, index, [Qt.DisplayRole])
+                self._shm.set_data(self._data)
+                return True
+            except ValueError:
+                # Handle invalid input (e.g., non-numeric values)
+                return False
+        return False
+
+    def flags(self, index):
+        # Make cells editable
+        return Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsEditable
+
+    def on_cell_edited(self, row, column, new_value):
+        print(f"Cell at row {row}, column {column} was edited. New value: {new_value}")
+        print(f"Updated NumPy array:\n{self._data}")
 
 def main():
     app = QApplication(sys.argv)
