@@ -58,20 +58,14 @@ if __name__ == '__main__':
     #fig.canvas.mpl_connect('key_press_event', press)
     fig.canvas.mpl_connect('close_event', winClose)
     ax = fig.add_subplot(111)
-    im=shm.get_data()
-    im[0:2,0]=0
-    im=im.flatten().reshape((imageSizeX,imageSizeY))
-    a=plt.imshow(im, cmap='turbo')
+    a=plt.imshow(shm.get_data().flatten().reshape((imageSizeX,imageSizeY)), cmap='turbo')
     plt.title('press \'q\' to close')
     plt.colorbar()
     plt.tight_layout()
     plt.show()
     while True:
-        im=shm.get_data()
-        im[0:2,0]=0
-        im=im.flatten().reshape((imageSizeX,imageSizeY))
-        #data=shm.get_data().flatten().reshape((imageSizeX,imageSizeY))
-        data=im
+        data=shm.get_data().flatten().reshape((imageSizeX,imageSizeY))
+        data[0,0]=0
         dmax=data.max()
         a.set_data(data)
         a.set_clim(0,dmax)

@@ -28,7 +28,6 @@
 #include <sys/time.h>
 #include <pthread.h>
 
-#include "dao.h"
 #include "daoTools.h"
 
 /*==========================================================================*/
@@ -45,11 +44,11 @@ double tnowdouble;
 double tlastupdatedouble;
 
 char inShmName[32];
-char refShmName[32];
-char centroidShmName[32];
-char thresholdShmName[32];
-int subaSize;
-int nbSuba;
+char offsetShmName[32];
+char outShmName[32];
+char lpCmdShmName[32];
+char gainShmName[32];
+char leakyShmName[32];
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -70,11 +69,9 @@ static void ShowHelp(void)
     /*
      **	Post init tests
      */
-    daoInfo("   -L inShm refShm centroidShm thresholdShm subaSize nbSuba              real time control loop\n");
+    daoInfo("   -L inShm offsetShm outShm lpCmdShm leakyShm gainShm    real time control loop\n");
     daoInfo("\n");
 }
-
-
 
 /*--------------------------------------------------------------------------*/
 static int realTimeLoop()
@@ -82,67 +79,76 @@ static int realTimeLoop()
     // register interrupt signal to terminate the main loop
     signal(SIGINT, endme);
 
-    daoInfo("Starting loop, %s/%s/%s/%s \n", inShmName, refShmName, centroidShmName, thresholdShmName);
+    daoInfo("Starting loop, %s -> %s \n", inShmName, outShmName);
     fflush(stdout);
     IMAGE *inShm = (IMAGE*) malloc(sizeof(IMAGE));
-    IMAGE *centroidShm = (IMAGE*) malloc(sizeof(IMAGE));
-    IMAGE *refShm = (IMAGE*) malloc(sizeof(IMAGE));
-    IMAGE *thresholdShm = (IMAGE*) malloc(sizeof(IMAGE));
+    IMAGE *offsetShm = (IMAGE*) malloc(sizeof(IMAGE));
+    IMAGE *outShm = (IMAGE*) malloc(sizeof(IMAGE));
+    IMAGE *lpCmdShm = (IMAGE*) malloc(sizeof(IMAGE));
+    IMAGE *gainShm = (IMAGE*) malloc(sizeof(IMAGE));
+    IMAGE *leakyShm = (IMAGE*) malloc(sizeof(IMAGE));
     daoShmShm2Img(inShmName, &inShm[0]);
-    daoShmShm2Img(centroidShmName, &centroidShm[0]);
-    daoShmShm2Img(refShmName, &refShm[0]);
-    daoShmShm2Img(thresholdShmName, &thresholdShm[0]);
+    daoShmShm2Img(offsetShmName, &offsetShm[0]);
+    daoShmShm2Img(outShmName, &outShm[0]);
+    daoShmShm2Img(lpCmdShmName, &lpCmdShm[0]);
+    daoShmShm2Img(gainShmName, &gainShm[0]);
+    daoShmShm2Img(leakyShmName, &leakyShm[0]);
 
     int inSize = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
-    struct timespec t[3];
+    int outSize = outShm[0].md[0].size[0]*outShm[0].md[0].size[1];
     struct timespec timeout;
+    struct timespec t[3];
     double elapsedTime;
-    double compTime;
-    int cnt=0;
     clock_gettime(CLOCK_REALTIME, &t[1]);
-    usleep(2000000);
+    int j;
+    int cnt=0;
     while (end ==0)
     {
         t[0] = t[1];
-        // Wait for new image
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
-        if (sem_timedwait(inShm[0].semptr[2], &timeout) != -1)
+        // Wait for new image
+        if (sem_timedwait(inShm[0].semptr[1], &timeout) != -1)
         {
-            clock_gettime(CLOCK_REALTIME, &t[2]);
             // New image, insert something here
-            centroidShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
+            outShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
 
-            //usleep(10000);
-            daoCentroidSpotsRelative(inShm[0].array.F,
-                             inShm[0].md[0].size[0],
-                             refShm[0].array.F,
-                             subaSize,
-                             nbSuba,
-                             thresholdShm[0].array.F[0],
-                             centroidShm[0].array.F); 
-            daoShmImagePart2ShmFinalize(&centroidShm[0]); 
+            if (lpCmdShm[0].array.UI32[0] == 1)
+            {
+                daoToolsLeakyIntegrator(inShm[0].array.F, 
+                                        inSize,
+                                        leakyShm[0].array.F[0], 
+                                        gainShm[0].array.F[0], 
+                                        offsetShm[0].array.F,
+                                        outShm[0].array.F);
+            }
+            else
+            {
+                for (j=0; j< inSize; j++)
+                {
+                    outShm[0].array.F[j] = 0.0;
+                }
+
+            }
+            daoShmImagePart2ShmFinalize(&outShm[0]);
 
             clock_gettime(CLOCK_REALTIME, &t[1]);
             elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
             elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
-            compTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
-            compTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
-            printf("\rcompTime = %.3f us, fps = %8.3f Hz, %d in=[%6.3f,%6.3f,...,%6.3f], out[%6.3f, %6.3f,...,%6.3f]", compTime, 1e6/(1000*elapsedTime), 
-                                                                                  inSize, (float)inShm[0].array.F[0],
-                                                                                  (float)inShm[0].array.F[1],
-                                                                                  (float)inShm[0].array.F[inSize],
-                                                                                  centroidShm[0].array.F[0],
-                                                                                  centroidShm[0].array.F[1],
-                                                                                  centroidShm[0].array.F[2]);
-            fflush(stdout);
+            printf("\r fps = %8.3f Hz, %d in=[%6.3f,%6.3f,...,%6.3f], out[%6.3f, %6.3f,...,%6.3f]", 1e6/(1000*elapsedTime), 
+                                                                                  inSize, inShm[0].array.F[0],
+                                                                                  inShm[0].array.F[1],
+                                                                                  inShm[0].array.F[inSize],
+                                                                                  outShm[0].array.F[0],
+                                                                                  outShm[0].array.F[1],
+                                                                                  outShm[0].array.F[outSize]);
         }
         else
         {
-            printf("\r WAIT %d", cnt);
-            fflush(stdout);
             cnt++;
+            printf("\rWAIT ... %d", cnt);
         }
+        fflush(stdout);
     }
 
 
@@ -193,17 +199,17 @@ static void DecodeArgs(int argc, char **argv)
             case 'L':
                         daoInfo("Simple filter from SHM real time control\n");
                     	(void)sscanf(*argv++,"%s", inShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", centroidShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", refShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", thresholdShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%d", &subaSize); argc -= 1;
-                    	(void)sscanf(*argv++,"%d", &nbSuba); argc -= 1;
+                    	(void)sscanf(*argv++,"%s", offsetShmName); argc -= 1;
+                    	(void)sscanf(*argv++,"%s", outShmName); argc -= 1;
+                    	(void)sscanf(*argv++,"%s", lpCmdShmName); argc -= 1;
+                    	(void)sscanf(*argv++,"%s", gainShmName); argc -= 1;
+                    	(void)sscanf(*argv++,"%s", leakyShmName); argc -= 1;
                         daoInfo("inShmName = %s\n", inShmName);
-                        daoInfo("centroidShmName = %s\n", centroidShmName);
-                        daoInfo("refShmName = %s\n", refShmName);
-                        daoInfo("thresholdShmName = %s\n", thresholdShmName);
-                        daoInfo("subaSize = %d\n", subaSize);
-                        daoInfo("nbSUba = %d\n", nbSuba);
+                        daoInfo("offsetShmName = %s\n", offsetShmName);
+                        daoInfo("outShmName = %s\n", outShmName);
+                        daoInfo("lpCmdShmName = %s\n", lpCmdShmName);
+                        daoInfo("gainShmName = %s\n", gainShmName);
+                        daoInfo("leakyShmName = %s\n", leakyShmName);
                         realTimeLoop();
                         break;
             default:

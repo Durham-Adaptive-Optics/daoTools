@@ -47,6 +47,7 @@ char inShmName[32];
 char servoShmName[32];
 char offsetShmName[32];
 char outShmName[32];
+char lpCmdShmName[32];
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -83,10 +84,12 @@ static int realTimeLoop()
     IMAGE *servoShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *offsetShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *outShm = (IMAGE*) malloc(sizeof(IMAGE));
+    IMAGE *lpCmdShm = (IMAGE*) malloc(sizeof(IMAGE));
     daoShmShm2Img(inShmName, &inShm[0]);
     daoShmShm2Img(servoShmName, &servoShm[0]);
     daoShmShm2Img(offsetShmName, &offsetShm[0]);
     daoShmShm2Img(outShmName, &outShm[0]);
+    daoShmShm2Img(lpCmdShmName, &lpCmdShm[0]);
 
     int inSize = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
     int outSize = outShm[0].md[0].size[0]*outShm[0].md[0].size[1];
@@ -117,7 +120,32 @@ static int realTimeLoop()
         // New image, insert something here
         outShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
 
-        daoToolsCommandFilter(inShm[0].array.F, inSize, &filterHistory, servoShm[0].array.F, offsetShm[0].array.F, outShm[0].array.F);
+        if (lpCmdShm[0].array.UI32[0] == 1)
+        {
+            daoToolsCommandFilter(inShm[0].array.F, inSize,
+                                 &filterHistory, 
+                                 servoShm[0].array.F, 
+                                 offsetShm[0].array.F,
+                                 outShm[0].array.F);
+        }
+        else
+        {
+            for(k=0; k<inSize;k++)
+            {
+                // Use this loop to reset filter to zero
+                filterHistory.precal[k] = 0.0;
+                for (j = 0; j < FILTER_ORDER; j++)
+                {
+                    filterHistory.dlCmd[j][k] = filterHistory.dlRes[j][k] = 0.0;
+                }
+            }
+
+            for (j=0; j< inSize; j++)
+            {
+                outShm[0].array.F[j] = 0.0;
+            }
+
+        }
         daoShmImagePart2ShmFinalize(&outShm[0]);
         //daoShmImage2Shm((float*)outCmd, outSize, &outShm[0]);
         //ddaoShmmage2Shm(&inShm[0].array.F[0], outSize, &outShm[0]);
@@ -186,10 +214,12 @@ static void DecodeArgs(int argc, char **argv)
                     	(void)sscanf(*argv++,"%s", servoShmName); argc -= 1;
                     	(void)sscanf(*argv++,"%s", offsetShmName); argc -= 1;
                     	(void)sscanf(*argv++,"%s", outShmName); argc -= 1;
+                    	(void)sscanf(*argv++,"%s", lpCmdShmName); argc -= 1;
                         daoInfo("inShmName = %s\n", inShmName);
-                        daoInfo("servoShmName = %s\n", inShmName);
-                        daoInfo("offsetShmName = %s\n", inShmName);
-                        daoInfo("outShmName = %s\n", inShmName);
+                        daoInfo("servoShmName = %s\n", servoShmName);
+                        daoInfo("offsetShmName = %s\n", offsetShmName);
+                        daoInfo("outShmName = %s\n", outShmName);
+                        daoInfo("lpCmdShmName = %s\n", lpCmdShmName);
                         realTimeLoop();
                         break;
             default:

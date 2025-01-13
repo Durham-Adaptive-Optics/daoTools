@@ -4,14 +4,13 @@ from PyQt5.uic import loadUiType
 import sys, getopt
 from PyQt5 import QtGui
 from PyQt5 import QtCore
-from pyqtgraph.Qt import QtGui, QtCore, USE_PYSIDE
+from PyQt5.QtWidgets import QApplication
 import numpy as np
 import pyqtgraph as pg
-import pyqtgraph.ptime as ptime
 import time
 import os
 
-import daoShm
+import dao
 
 # get the directory of ui files
 path = os.getenv('DAOROOT')+'/data/'
@@ -31,9 +30,12 @@ class Main(QMainWindow, Ui_MainWindow):
         self.hist = pg.HistogramLUTItem()
         self.hist.setImageItem(self.img)
         self.graphicsView_2.setCentralItem(self.hist)        
+
+        self.hist.vb.setMouseEnabled(y=False)  # Disable auto-scaling
+
         # Create SHM object
         print(shmimName)
-        self.shmim = daoShm.shm(shmimName)
+        self.shmim = dao.shm(shmimName)
         # set display according to SHM size
         print(str(self.shmim.get_meta_data()['size'][0])+','+str(self.shmim.get_meta_data()['size'][1]))
         self.vb.setRange(QtCore.QRectF(0, 0, self.shmim.get_meta_data()['size'][0], self.shmim.get_meta_data()['size'][1]))
@@ -105,7 +107,7 @@ if __name__ == '__main__':
             sys.exit()
         elif opt in ("-s", "--shm"):
             shmimName = str(arg)
-    app = QtGui.QApplication([])
+    app = QApplication([])
     main = Main(shmimName)
     main.setWindowTitle(shmimName)
     main.show()

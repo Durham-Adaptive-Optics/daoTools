@@ -27,7 +27,14 @@ def configure(conf):
 				args='--cflags --libs',
 				uselib_store='PROTOBUF'
 				)
-
+	# Check for ZeroMQ
+	conf.check_cfg(package='libzmq',
+				args='--cflags --libs',
+				uselib_store='ZMQ'
+				)
+	# Enable draft API support
+	conf.env.CFLAGS += ['-DZMQ_BUILD_DRAFT_API']
+	conf.env.CXXFLAGS += ['-DZMQ_BUILD_DRAFT_API']
 
 def build(bld):
 	bld.env.DEFINES=['WAF=1']

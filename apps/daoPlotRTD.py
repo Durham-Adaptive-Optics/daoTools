@@ -31,50 +31,38 @@ def winClose(ha):
     sys.exit(0)
 
 if __name__ == '__main__':
-    shmimName = 'WFSim.im.sh'
-    axisFlip = False
+    shmimName = 'test.im.sh'
     try:
-        opts, args = getopt.getopt(sys.argv[1:],"hs:a",["help", "shmimName=", "axisFlip"])
+        opts, args = getopt.getopt(sys.argv[1:],"hs:",["help", "shmimName="])
     except getopt.GetoptError:
-      print('err, usage: doaImageRTD.py -s <shmimName> -a')
+      print('err, usage: daoPlotRTD.py -s <shmimName> -a')
       sys.exit(2)
     for opt, arg in opts:
         if opt == '-h':
-            print('daoImageRTD.py -s <shmimName>')
+            print('daoPlotRTD.py -s <shmimName>')
             sys.exit()
         elif opt in ("-s", "--shm"):
             shmimName = str(arg)
-        elif opt in ("-a", "--axisFlip"):
-            axisFlip = True
     shm = dao.shm(shmimName)
-    imageSizeX = shm.get_data().shape[0]
-    imageSizeY = shm.get_data().shape[1]
-    if axisFlip == True:
-        imageSizeX = shm.get_data().shape[1]
-        imageSizeY = shm.get_data().shape[0]
 
     plt.ion()
     fig = plt.figure(shmimName[5:])
-    #fig.canvas.mpl_connect('key_press_event', press)
+    fig.canvas.mpl_connect('key_press_event', press)
     fig.canvas.mpl_connect('close_event', winClose)
     ax = fig.add_subplot(111)
-    im=shm.get_data()
-    im[0:2,0]=0
-    im=im.flatten().reshape((imageSizeX,imageSizeY))
-    a=plt.imshow(im, cmap='turbo')
+
+    data = shm.get_data().flatten()  # Assuming shm.get_data() returns a 1D array
+    p = ax.plot(np.arange(len(data)), data, color='blue')
+    ax.set_ylim(0,1)
     plt.title('press \'q\' to close')
-    plt.colorbar()
+    plt.xlabel('Index')
+    plt.ylabel('Value')
     plt.tight_layout()
     plt.show()
+
     while True:
-        im=shm.get_data()
-        im[0:2,0]=0
-        im=im.flatten().reshape((imageSizeX,imageSizeY))
-        #data=shm.get_data().flatten().reshape((imageSizeX,imageSizeY))
-        data=im
-        dmax=data.max()
-        a.set_data(data)
-        a.set_clim(0,dmax)
+        data = shm.get_data().flatten()
+        p[0].set_ydata(data)
         fig.canvas.draw()
         fig.canvas.flush_events()
         time.sleep(1/60.)
