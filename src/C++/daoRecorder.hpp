@@ -1,22 +1,23 @@
 /******************************************************************************
- * Project:        daoRecorder
- * Description:    Records data to disk in FITS format from shared-memory sources.
+ * Project:        daoRecordingTarget
+ * Description:    A thread that awaits shared-memory updates and records the new data to disk.
  * Author:         Thomas Davies
  * Created:        10/01/2025
  ******************************************************************************/
 
-#ifndef DAO_RECORDER_HPP
-#define DAO_RECORDER_HPP
+#ifndef DAO_RECORDING_TARGET_HPP
+#define DAO_RECORDING_TARGET_HPP
 
 // === Includes ===
-
-#include <iostream>
-#include <vector>
-#include <thread>
 
 #include <yaml-cpp/yaml.h>
 #include <daoLog.hpp>
 #include <daoShmIfce.hpp>
+#include <daoNuma.hpp>
+#include <daoThread.hpp>
+#include <string>
+#include <cstdlib>
+#include <CCfits/CCfits>
 
 // === Code ===
 
@@ -24,132 +25,66 @@ namespace Dao
 {
     namespace Recording
     {
-        //
-        enum class Type : std::uint8_t
-        {
-            REALTIME = 0,
-            PERIODIC
-        };
-
-        struct Target
-        {
-            std::string data_location;
-            Type type;
-            std::thread *thread = nullptr;
-            bool record = false;
-        };
-
-        //
-        class Recorder
+        class Recorder : public Thread
         {
         public:
-            Recorder(const std::string &config_path)
-                : m_config_path(config_path)
+            Recorder(const std::string &shm_path, int core, Log::Logger &logger, const std::string &rec_root = ".") : 
+                Thread(shm_path, logger, core),
+                m_shm_path(shm_path),
+                m_log(logger),
+                m_shmCnt(0),
+                m_rec_path("")
             {
-                Dao::Log::Logger log("recorder", Dao::Log::Logger::DESTINATION::SCREEN);
-                log.SetLevel(Dao::Log::LEVEL::DEBUG);
-    
+                // Figure out the resulting recording file name. 
+                auto pos = shm_path.find('.');
+                std::string shm_name = pos == std::string::npos ? shm_path : shm_path.substr(0, pos);
+                m_rec_path = rec_root + "/" + shm_name + ".fits";
+                m_log.Info("Recording data from %s to %s", shm_path.c_str(), m_rec_path.c_str());
+
                 //
-                YAML::Node config = YAML::LoadFile(config_path);
-                std::cout << "Parsed configuration file\n";
-                CreateTargets(config);
+                m_FITS = new CCfits::FITS(m_rec_path, CCfits::Write);
+
+                // Open the shm
+                m_shm = new ShmIfce<std::uint8_t>(m_log);
+                m_shm->OpenShm(m_shm_path.c_str(), &m_img, Dao::Numa::Core2Node(m_core));
             }
 
-            ~Recorder() 
+            ~Recorder()
             {
-                // Free all target threads.
-                for(const auto &target : m_targets)
-                {
-                    delete target.thread;
-                }
+                m_log.Trace("~Recorder");
+                m_shm->CloseShm();
+                delete m_shm;
+                delete m_FITS;
             }
 
         private:
-            void Save(Dao::Log::Logger &log)
+            void OnceOnStart() override
             {
-                log.Debug("Saved data to disk");
-            }
+                m_shmCnt = m_shm->GetFrameCounter();
+            };
 
-            // Waits for the target data to be updated and then saves it off to disk.
-            void Record(const Target *target)
+            void RestartableThread() override
             {
-                // Each recording thread has its own logger.
-                Dao::Log::Logger log(target->data_location, Dao::Log::Logger::DESTINATION::SCREEN);
-                log.SetLevel(Dao::Log::LEVEL::DEBUG);
-
-                //
-                int numa_cpu_node = -1; 
-                switch(target->type) {
-                    case Type::PERIODIC {
-                        log.Debug("Getting shared NUMA node")
-                    }
-                    break;
-
-                    case Type::REALTIME: {
-                        log.Debug("Getting dedicated NUMA node")
-                    }
-                    break;
-                }
-
-                //
-                IMAGE shm;
-                Dao::ShmIfce<std::uint8_t*> shm_ifce(log);
-                shm_ifce.OpenShm(target->data_location, &shm, numa_cpu_node);
-
-                auto lastCnt = shm.GetFrameCounter();
-                while(target->record)
+                const auto cnt = m_shm->GetFrameCounter();
+                if (cnt > m_shmCnt)
                 {
-                    auto cnt = shm.GetFrameCounter();
-                    if(cnt > lastCnt) {
-                        log.Debug("Data was updated");
-                        const auto latest_data = shm.GetPtr(); // is this the data?
-                        Save(latest_data);
-                        lastCnt = cnt;
-                    }
+                    m_log.Debug("Data was updated");
+                    m_shmCnt = cnt;
+
+                    const std::uint8_t *new_data = m_shm->GetPtr();
+
+                    // Now we need to write the data into the FITS file.
+                    // TODO.
                 }
             }
 
-            // Creates a list of the specified targets within the
-            // provided YAML configuration.
-            void CreateTargets(const YAML::Node &config) 
-            {
-                for (const auto &target_spec : config["targets"]) 
-                {
-                    // Validate target fields.
-                    const auto &shmLocField = target_spec["shm"];
-                    const auto &realtimeField = target_spec["realtime"];
-                    if (!shmLocField) {
-                        std::cout << "Target missing shared-memory location\n";
-                        continue;
-                    }
-                    if (!realtimeField) {
-                        std::cout << "Target missing realtime specifier\n";
-                        continue;
-                    }
-
-                    // Create the target
-                    const bool isRealtime = realtimeField.as<bool>();
-                    Recording::Target target = {
-                        .data_location = shmLocField.as<std::string>(),
-                        .type = isRealtime ? Type::REALTIME : Type::PERIODIC,
-                        .thread = new std::thread()
-                    };
-
-                    //                    
-                    m_targets.push_back(target);
-                    const std::string typeStr = target.type == Type::REALTIME ? "Realtime" : "Periodic";
-                    std::cout << "Target: shm=" << target.data_location << " (" << typeStr << ")\n";
-                }
-
-                std::cout << m_targets.size() << " targets configured\n";
-                if (!m_targets.size()) {
-                    std::cout << "No targets were defined within the configuration file\n";
-                }
-            }
-
-            // Member variables.
-            std::string m_config_path;
-            std::vector<Target> m_targets;
+            Log::Logger &m_log;
+            ShmIfce<std::uint8_t> *m_shm;
+            std::string m_shm_path;
+            std::string m_rec_path;
+            std::size_t m_shmCnt;
+            CCfits::FITS *m_FITS;
+            IMAGE m_img;
         };
     };
 };
