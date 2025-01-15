@@ -36,7 +36,7 @@ namespace Dao
                 m_shmCnt(0)
             {
                 //
-                m_log.Info("Recording data from %s to %s", shm_path.c_str(), m_rec_path.c_str());
+                m_log.Info("Recording data from %s to %s on core %d", shm_path.c_str(), m_rec_path.c_str(), m_core);
 
                 //
                 m_FITS = new CCfits::FITS(m_rec_path, CCfits::Write);
