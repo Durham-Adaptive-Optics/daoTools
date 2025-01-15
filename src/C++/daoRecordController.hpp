@@ -25,12 +25,6 @@ namespace Dao
     {
         using CorePool = std::vector<std::size_t>;
 
-        struct RecorderConfig
-        {
-            std::string shm;
-            bool realtime;
-        };
-
         //
         class Controller : public Component
         {
