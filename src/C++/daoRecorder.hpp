@@ -28,17 +28,14 @@ namespace Dao
         class Recorder : public Thread
         {
         public:
-            Recorder(const std::string &shm_path, int core, Log::Logger &logger, const std::string &rec_root = ".") : 
+            Recorder(const std::string shm_path, const std::string rec_path, int core, Log::Logger &logger) : 
                 Thread(shm_path, logger, core),
                 m_shm_path(shm_path),
+                m_rec_path(rec_path),
                 m_log(logger),
-                m_shmCnt(0),
-                m_rec_path("")
+                m_shmCnt(0)
             {
-                // Figure out the resulting recording file name. 
-                auto pos = shm_path.find('.');
-                std::string shm_name = pos == std::string::npos ? shm_path : shm_path.substr(0, pos);
-                m_rec_path = rec_root + "/" + shm_name + ".fits";
+                //
                 m_log.Info("Recording data from %s to %s", shm_path.c_str(), m_rec_path.c_str());
 
                 //
