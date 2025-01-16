@@ -23,7 +23,7 @@
 
 namespace Dao
 {
-    namespace Recording
+    namespace Telemetry
     {
         class Recorder : public Thread
         {
@@ -38,12 +38,15 @@ namespace Dao
                 //
                 m_log.Info("Recording data from %s to %s on core %d", shm_path.c_str(), m_rec_path.c_str(), m_core);
 
-                //
-                m_FITS = new CCfits::FITS(m_rec_path, CCfits::Write);
-
                 // Open the shm
                 m_shm = new ShmIfce<std::uint8_t>(m_log);
                 m_shm->OpenShm(m_shm_path.c_str(), &m_img, Dao::Numa::Core2Node(m_core));
+
+                // Create the FITS file.
+                m_FITS = new CCfits::FITS(m_rec_path, CCfits::Write);
+                CCfits::PHDU &pHDU = m_FITS->pHDU();
+                pHDU.addKey("AUTHOR", "CfaI Durham University", "");
+                pHDU.addKey("CONTEXT", "DKIST AO Pipeline Data", "");
             }
 
             ~Recorder()
@@ -65,13 +68,21 @@ namespace Dao
                 const auto cnt = m_shm->GetFrameCounter();
                 if (cnt > m_shmCnt)
                 {
-                    m_log.Debug("Data was updated");
+                    //
+                    const std::string record_name = "FOO"; // TODO: Put descriptive name here.
+                    const int data_type = BYTE_IMG; // TODO: Data type needs to be extracted from shm and converted to FITS types.
+
+                    std::vector<long> dims;
+                    for(std::size_t k = 0; k < m_img.md->naxis; ++k){
+                        dims.push_back(m_img.md->size[k]);
+                    }
+
+                    CCfits::ExtHDU *ext = m_FITS->addImage(record_name, data_type, dims);
+                    ext->addKey("ATIME", m_shm->GetTimestamp(), "DAO Shared-Memory Acquisition Time");
+                    // TODO: Add data to image extension.
+                    const void* data = m_shm->GetPtr();
+
                     m_shmCnt = cnt;
-
-                    const std::uint8_t *new_data = m_shm->GetPtr();
-
-                    // Now we need to write the data into the FITS file.
-                    // TODO.
                 }
             }
 
@@ -81,6 +92,7 @@ namespace Dao
             std::string m_rec_path;
             std::size_t m_shmCnt;
             CCfits::FITS *m_FITS;
+            std::uint8_t m_data_type;
             IMAGE m_img;
         };
     };
