@@ -36,15 +36,15 @@ namespace Dao
         class Recorder : public Thread {
         public:
             Recorder(const std::string &name, const std::string &shm_path, const std::string &rec_path, int core,
-                Log::Logger &logger)
+                Log::Logger &logger, std::size_t bin_capacity = 30)
                 : Thread(name, logger, core), m_shm_path(shm_path),
-                m_rec_dir(rec_path), m_log(logger), m_shmCnt(0),
-                m_data_type(0), m_bin_capacity(0), m_bin(nullptr),
+                m_rec_path(rec_path), m_log(logger), m_shmCnt(0),
+                m_data_type(0), m_bin_capacity(bin_capacity), m_bin(nullptr),
                 m_bin_count(0)
             {
                 //
                 m_log.Info("Recording data from %s to %s on core %d", shm_path.c_str(),
-                    m_rec_dir.c_str(), m_core);
+                    m_rec_path.c_str(), m_core);
 
                 // Open the shm
                 m_shm = new ShmIfce<std::uint8_t>(m_log);
@@ -71,7 +71,12 @@ namespace Dao
             {
                 delete m_bin;
 
-                const std::string bin_name = m_rec_dir + "_" + std::to_string(m_bin_count) + ".fits";
+                #ifndef DAO_RECORDER_DISABLE_BINNING
+                    const std::string bin_name = m_rec_path + "_" + std::to_string(m_bin_count) + ".fits";
+                #else
+                    const std::string bin_name = m_rec_path + ".fits";
+                #endif
+
                 m_bin = new CCfits::FITS(bin_name, m_data_type, m_data_dims.size(), m_data_dims.data());
                 
                 m_bin_start = m_shm->GetTimestamp();
@@ -84,9 +89,12 @@ namespace Dao
                 if (cnt > m_shmCnt) {
                     //
                     const auto ts_curr = m_shm->GetTimestamp();
+
+                    #ifndef DAO_RECORDER_DISABLE_BINNING
                     if(ts_curr - m_bin_start >= m_bin_capacity) {
                         CreateFITSBin();
                     }
+                    #endif
 
                     // Copy the data into a std::valarray (required by CCfits).
                     const auto bytes_per_element = (m_data_type >= 0 ? m_data_type : -m_data_type) / 8;
@@ -171,7 +179,7 @@ namespace Dao
             ShmIfce<std::uint8_t> *m_shm;
             int m_data_type;
             std::string m_shm_path;
-            std::string m_rec_dir;
+            std::string m_rec_path;
             std::size_t m_shmCnt;
             CCfits::FITS *m_bin;
             std::vector<long> m_data_dims;
