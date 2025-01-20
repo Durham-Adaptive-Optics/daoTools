@@ -21,9 +21,9 @@
 /*
     By default, the recorder object bins every N seconds of recorded
     data into seperate FITS files. If instead you require all data
-    recorded to be saved into a single FITS file, please define the 
-    following preprocessor symbol. 
-    
+    recorded to be saved into a single FITS file, please define the
+    following preprocessor symbol.
+
     #define DAO_RECORDER_DISABLE_BINNING
 */
 
@@ -36,17 +36,25 @@ namespace Dao
         class Recorder : public Thread {
         public:
             Recorder(const std::string &name, const std::string &shm_path, const std::string &rec_path, int core,
-                Log::Logger &logger, std::size_t bin_capacity = 30)
-                : Thread(name, logger, core), m_shm_path(shm_path),
-                m_rec_path(rec_path), m_log(logger), m_shmCnt(0),
-                m_data_type(0), m_bin_capacity(bin_capacity), m_bin(nullptr),
-                m_bin_count(0)
+                Log::Logger &logger, std::size_t bin_capacity = 30) :
+                Thread(name, logger, core), m_shm_path(shm_path),
+                m_rec_path(rec_path),
+                m_log(logger),
+                m_shmCnt(0),
+                m_data_type(0),
+                m_bin_capacity(bin_capacity),
+                m_bin_count(0),
+                m_frameBeingRecorded(0)
             {
                 //
                 m_log.Info("Recording data from %s to %s on core %d", shm_path.c_str(),
                     m_rec_path.c_str(), m_core);
 
-                // Open the shm
+                // Open the time-keeping shm
+                m_tsShm = new ShmIfce<float>(m_log);
+                m_tsShm->OpenShm("ts.im.shm", &m_tsImg, Dao::Numa::Core2Node(m_core));
+
+                // Open the target shm
                 m_shm = new ShmIfce<std::uint8_t>(m_log);
                 m_shm->OpenShm(m_shm_path.c_str(), &m_img, Dao::Numa::Core2Node(m_core));
 
@@ -61,61 +69,74 @@ namespace Dao
                 m_log.Trace("~Recorder");
                 m_shm->CloseShm();
                 delete m_shm;
-                delete m_bin;
+                delete m_bin.writer;
             }
 
         private:
+
             void OnceOnStart() override { m_shmCnt = m_shm->GetFrameCounter(); };
-
-            void CreateFITSBin()
-            {
-                delete m_bin;
-
-                #ifndef DAO_RECORDER_DISABLE_BINNING
-                    const std::string bin_name = m_rec_path + "_" + std::to_string(m_bin_count) + ".fits";
-                #else
-                    const std::string bin_name = m_rec_path + ".fits";
-                #endif
-
-                m_bin = new CCfits::FITS(bin_name, m_data_type, m_data_dims.size(), m_data_dims.data());
-                
-                m_bin_start = m_shm->GetTimestamp();
-                ++m_bin_count;
-            }
 
             void RestartableThread() override
             {
                 const auto cnt = m_shm->GetFrameCounter();
                 if (cnt > m_shmCnt) {
-                    //
-                    const auto ts_curr = m_shm->GetTimestamp();
-
-                    #ifndef DAO_RECORDER_DISABLE_BINNING
-                    if(ts_curr - m_bin_start >= m_bin_capacity) {
-                        CreateFITSBin();
-                    }
-                    #endif
-
-                    // Copy the data into a std::valarray (required by CCfits).
-                    const auto bytes_per_element = (m_data_type >= 0 ? m_data_type : -m_data_type) / 8;
-                    std::size_t bytes = bytes_per_element * m_img.md->nelement;
-                    std::valarray<std::uint8_t> data_array(m_shm->GetPtr(), bytes);
-
-                    // Write extension to disk.
-                    CCfits::ExtHDU *ext = m_bin->addImage(
-                        std::to_string(ts_curr),
-                        m_data_type,
-                        m_data_dims
-                    );
-                    ext->write(1, bytes, data_array);
-                    ext->writeChecksum();
-
-                    //
+                    OnDataUpdate();
                     m_shmCnt = cnt;
-
-                    //
-                    m_log.Debug("%s - Data saved to disk", m_thread_name.c_str());
                 }
+            }
+
+            void CreateFITSBin()
+            {
+                delete m_bin.writer;
+
+                std::string bin_name = m_rec_path;
+#ifndef DAO_RECORDER_DISABLE_BINNING
+                bin_name += "-" + std::to_string(m_bin_count);
+#endif
+                bin_name += ".fits";
+
+                m_bin.writer = new CCfits::FITS(bin_name, m_data_type, m_data_dims.size(), m_data_dims.data());
+                m_bin.has_origin = false;
+                ++m_bin_count;
+            }
+
+            void OnDataUpdate()
+            {
+                // Check if we have missed any frames.
+                const auto frame_tracker = m_tsShm->GetFrameCounter();
+                const auto num_frames_catchup = frame_tracker - m_frameBeingRecorded;
+                if(num_frames_catchup > 1) {
+                    m_log.Warning("Missed %d frames", num_frames_catchup);
+                }
+                m_frameBeingRecorded = frame_tracker;
+
+
+                // Ensure we have the correct bin ready to receive data.
+                const auto ts_curr = *m_tsShm->GetPtr();
+#ifndef DAO_RECORDER_DISABLE_BINNING
+                const auto elapsed = (ts_curr - m_bin.origin) / 1e9; // seconds.
+                std::cout << elapsed << std::endl;
+                if (elapsed >= m_bin_capacity) {
+                    CreateFITSBin();
+                }
+#endif
+
+                if (!m_bin.has_origin) {
+                    m_bin.origin = ts_curr;
+                    m_bin.has_origin = true;
+                }
+
+                // Record the data.
+                const auto bytes_per_element = (m_data_type >= 0 ? m_data_type : -m_data_type) / 8;
+                std::size_t bytes = bytes_per_element * m_img.md->nelement;
+                std::valarray<std::uint8_t> data_array(m_shm->GetPtr(), bytes);
+                CCfits::ExtHDU *ext = m_bin.writer->addImage(
+                    std::to_string(ts_curr),
+                    m_data_type,
+                    m_data_dims
+                );
+                ext->write(1, bytes, data_array);
+                ext->writeChecksum();
             }
 
             void GetDataDimensionality()
@@ -176,17 +197,26 @@ namespace Dao
             }
 
             Log::Logger &m_log;
-            ShmIfce<std::uint8_t> *m_shm;
-            int m_data_type;
             std::string m_shm_path;
             std::string m_rec_path;
-            std::size_t m_shmCnt;
-            CCfits::FITS *m_bin;
+
+            int m_data_type;
             std::vector<long> m_data_dims;
-            std::int64_t m_bin_start;
-            std::size_t m_bin_capacity;
+
+            ShmIfce<std::uint8_t> *m_shm;
+            ShmIfce<float> *m_tsShm;
+            std::size_t m_shmCnt;
+            IMAGE m_img, m_tsImg;
+
+            std::size_t m_frameBeingRecorded;
+
+            std::size_t m_bin_capacity; // # seconds before bin is considered full.
             std::size_t m_bin_count;
-            IMAGE m_img;
+            struct {
+                CCfits::FITS *writer;
+                bool has_origin;
+                float origin;
+            } m_bin;
         };
     }; // namespace Telemetry
 }; // namespace Dao
