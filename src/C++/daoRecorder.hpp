@@ -1,7 +1,8 @@
 /******************************************************************************
- * Project:        daoRecordingTarget
+ * Project:        daoRecorder
  * Description:    A thread that awaits shared-memory updates and records the
- *new data to disk. Author:         Thomas Davies Created:        10/01/2025
+                   new data to disk.
+ Author:           Thomas Davies Created:        10/01/2025
  ******************************************************************************/
 
 #ifndef DAO_RECORDING_TARGET_HPP
@@ -23,9 +24,8 @@
     data into seperate FITS files. If instead you require all data
     recorded to be saved into a single FITS file, please define the
     following preprocessor symbol.
-
-    #define DAO_RECORDER_DISABLE_BINNING
 */
+// #define DAO_RECORDER_DISABLE_BINNING
 
 // === Code ===
 
@@ -40,11 +40,10 @@ namespace Dao
                 Thread(name, logger, core), m_shm_path(shm_path),
                 m_rec_path(rec_path),
                 m_log(logger),
-                m_shmCnt(0),
+                m_lastRecordedCnt(0),
                 m_data_type(0),
                 m_bin_capacity(bin_capacity),
-                m_bin_count(0),
-                m_frameBeingRecorded(0)
+                m_bin_count(0)
             {
                 //
                 m_log.Info("Recording data from %s to %s on core %d", shm_path.c_str(),
@@ -74,52 +73,41 @@ namespace Dao
 
         private:
 
-            void OnceOnStart() override { m_shmCnt = m_shm->GetFrameCounter(); };
+            void OnceOnStart() override
+            {
+                // Note: The frame after this is the first frame we record.
+                m_lastRecordedCnt = m_shm->GetFrameCounter();
+            };
 
             void RestartableThread() override
             {
-                const auto cnt = m_shm->GetFrameCounter();
-                if (cnt > m_shmCnt) {
-                    OnDataUpdate();
-                    m_shmCnt = cnt;
+                const auto frameCnt = m_shm->GetFrameCounter();
+                const std::size_t delta = frameCnt - m_lastRecordedCnt;
+
+                // We've already recorded the frame.
+                if (!delta) {
+                    return;
                 }
+
+                // We've missed one or more frames.
+                if (delta > 1) {
+                    m_log.Warning("Missed recording the last %d frames", delta - 1);
+                }
+
+                RecordFrame();
+                m_lastRecordedCnt = frameCnt;
             }
 
-            void CreateFITSBin()
+            void RecordFrame()
             {
-                delete m_bin.writer;
-
-                std::string bin_name = m_rec_path;
-#ifndef DAO_RECORDER_DISABLE_BINNING
-                bin_name += "-" + std::to_string(m_bin_count);
-#endif
-                bin_name += ".fits";
-
-                m_bin.writer = new CCfits::FITS(bin_name, m_data_type, m_data_dims.size(), m_data_dims.data());
-                m_bin.has_origin = false;
-                ++m_bin_count;
-            }
-
-            void OnDataUpdate()
-            {
-                // Check if we have missed any frames.
-                const auto frame_tracker = m_tsShm->GetFrameCounter();
-                const auto num_frames_catchup = frame_tracker - m_frameBeingRecorded;
-                if(num_frames_catchup > 1) {
-                    m_log.Warning("Missed %d frames", num_frames_catchup);
-                }
-                m_frameBeingRecorded = frame_tracker;
-
-
                 // Ensure we have the correct bin ready to receive data.
                 const auto ts_curr = *m_tsShm->GetPtr();
-#ifndef DAO_RECORDER_DISABLE_BINNING
+            #ifndef DAO_RECORDER_DISABLE_BINNING
                 const auto elapsed = (ts_curr - m_bin.origin) / 1e9; // seconds.
-                std::cout << elapsed << std::endl;
                 if (elapsed >= m_bin_capacity) {
                     CreateFITSBin();
                 }
-#endif
+            #endif
 
                 if (!m_bin.has_origin) {
                     m_bin.origin = ts_curr;
@@ -137,6 +125,21 @@ namespace Dao
                 );
                 ext->write(1, bytes, data_array);
                 ext->writeChecksum();
+            }
+
+            void CreateFITSBin()
+            {
+                delete m_bin.writer;
+
+                std::string bin_name = m_rec_path;
+            #ifndef DAO_RECORDER_DISABLE_BINNING
+                bin_name += "-" + std::to_string(m_bin_count);
+            #endif
+                bin_name += ".fits";
+
+                m_bin.writer = new CCfits::FITS(bin_name, m_data_type, m_data_dims.size(), m_data_dims.data());
+                m_bin.has_origin = false;
+                ++m_bin_count;
             }
 
             void GetDataDimensionality()
@@ -205,10 +208,8 @@ namespace Dao
 
             ShmIfce<std::uint8_t> *m_shm;
             ShmIfce<float> *m_tsShm;
-            std::size_t m_shmCnt;
+            std::size_t m_lastRecordedCnt;
             IMAGE m_img, m_tsImg;
-
-            std::size_t m_frameBeingRecorded;
 
             std::size_t m_bin_capacity; // # seconds before bin is considered full.
             std::size_t m_bin_count;
