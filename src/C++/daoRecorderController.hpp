@@ -63,7 +63,7 @@ namespace Dao
                     // Extract the shm name from the path.
                     auto pos = shm_path.find('.');
                     std::string shm_name = pos == std::string::npos ? shm_path : shm_path.substr(0, pos);
-                    std::string FITS_path = rec_root + shm_name;
+                    std::string FITS_name = rec_root + shm_name;
 
                     // Determine the optimal core to run the recorder on.
                     std::size_t rec_core = m_periodic_core;
@@ -79,7 +79,7 @@ namespace Dao
                     }
 
                     //
-                    Recorder *rec = new Recorder(shm_name, shm_path, FITS_path, rec_core, m_log);
+                    Recorder *rec = new Recorder(shm_name, shm_path, FITS_name, rec_core, m_log);
                     m_recorders.push_back(rec);
                     rec->Spawn();
                 }
@@ -88,7 +88,7 @@ namespace Dao
                     m_log.Info("%d recorders have been created", m_recorders.size());
                 }
                 else {
-                    m_log.Warning("No recorders were specified - No data will be recorded!!");
+                    m_log.Warning("No recorders were created - No data will be recorded!!");
                 }
             }
 
@@ -96,49 +96,37 @@ namespace Dao
             {
                 m_log.Trace("On_Run");
 
-                if (m_recorders.size()) {
-                    for (auto &rec : m_recorders) {
-                        rec->Start();
-                    }
+                for (auto &rec : m_recorders) {
+                    rec->Start();
+                }
 
-                    m_log.Debug("Recorders started");
-                }
-                else {
-                    m_log.Debug("No recorders to start");
-                }
+                const std::string log_msg = m_recorders.size() ? "Recorders started" : "No recorders to start!";
+                m_log.Debug(log_msg.c_str());
             }
 
             void transition_Running_Idle() override
             {
                 m_log.Trace("On_Idle");
 
-                if (m_recorders.size()) {
-                    for (auto &rec : m_recorders) {
-                        rec->Stop();
-                    }
+                for (auto &rec : m_recorders) {
+                    rec->Stop();
+                }
 
-                    m_log.Debug("Recorders stopped");
-                }
-                else {
-                    m_log.Debug("No recorders to stop");
-                }
+                const std::string log_msg = m_recorders.size() ? "Recorders stopped" : "No recorders to stop";
+                m_log.Debug(log_msg.c_str());
             }
 
             void transition_Idle_Standby() override
             {
                 m_log.Trace("On_Disable");
 
-                if (m_recorders.size()) {
-                    for (auto &rec : m_recorders) {
-                        rec->Join();
-                        delete rec;
-                    }
+                for (auto &rec : m_recorders) {
+                    rec->Join();
+                    delete rec;
+                }
 
-                    m_log.Debug("Recorders freed");
-                }
-                else {
-                    m_log.Debug("No recorders to free");
-                }
+                const std::string log_msg = m_recorders.size() ? "Recorders freed" : "No recorders to free";
+                m_log.Debug(log_msg.c_str());
             }
 
         private:
@@ -149,7 +137,8 @@ namespace Dao
             YAML::Node m_config;
             Log::Logger &m_log;
         };
-    };
-};
+        
+    }; // namespace Telemetry
+}; // namespace Dao
 
 #endif
