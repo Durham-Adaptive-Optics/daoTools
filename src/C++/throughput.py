@@ -16,11 +16,14 @@ period = int(sys.argv[2]) / 1000 # convert to seconds.
 
 # ========================== #
 
-ts = daoShm.shm('ts.im.shm', data=np.zeros((1,1)).astype(np.float32)) # Done by John's code.
+ts = daoShm.shm('ts.im.shm', data=np.zeros((1,1)).astype(np.uint32)) # Done by John's code.
+timestamp = 0
 
 def stamp_time():
-    t = clock_gettime(CLOCK_REALTIME)
-    ts.set_data(np.array([t]))
+    global timestamp
+    # t = clock_gettime(CLOCK_REALTIME)
+    ts.set_data(np.array([timestamp]))
+    timestamp += 1
 
 # ========================== #
 
@@ -28,6 +31,7 @@ shm = daoShm.shm('test.im.shm', data=np.zeros((nbytes,1)).astype(np.uint8))
 
 def update_data():
     data = np.random.random((nbytes,1))
+    stamp_time()
     shm.set_data(data)
 
 # ========================== #

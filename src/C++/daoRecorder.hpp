@@ -18,6 +18,9 @@
 #include <daoThread.hpp>
 #include <string>
 #include <yaml-cpp/yaml.h>
+#include <chrono>
+#include <thread>
+#include <fstream>
 
 /*
     By default, the recorder object bins every N seconds of recorded
@@ -25,7 +28,8 @@
     recorded to be saved into a single FITS file, please define the
     following preprocessor symbol.
 */
-// #define DAO_RECORDER_DISABLE_BINNING
+#define DAO_RECORDER_DISABLE_BINNING
+#define _DEBUG
 
 // === Code ===
 
@@ -43,14 +47,17 @@ namespace Dao
                 m_lastRecordedCnt(0),
                 m_data_type(0),
                 m_bin_capacity(bin_capacity),
-                m_bin_count(0)
+                m_bin_count(0),
+                m_bin(nullptr),
+                m_bin_has_origin(false),
+                m_bin_origin(0)
             {
                 //
                 m_log.Info("Recording data from %s to %s on core %d", shm_path.c_str(),
                     m_rec_path.c_str(), m_core);
 
                 // Open the time-keeping shm
-                m_tsShm = new ShmIfce<float>(m_log);
+                m_tsShm = new ShmIfce<std::uint32_t>(m_log);
                 m_tsShm->OpenShm("ts.im.shm", &m_tsImg, Dao::Numa::Core2Node(m_core));
 
                 // Open the target shm
@@ -60,7 +67,7 @@ namespace Dao
                 //
                 InferFITSDatatype();
                 GetDataDimensionality();
-                CreateFITSBin();
+                CreateBin();
             }
 
             ~Recorder()
@@ -68,7 +75,7 @@ namespace Dao
                 m_log.Trace("~Recorder");
                 m_shm->CloseShm();
                 delete m_shm;
-                delete m_bin.writer;
+                delete m_bin;
             }
 
         private:
@@ -77,7 +84,22 @@ namespace Dao
             {
                 // Note: The frame after this is the first frame we record.
                 m_lastRecordedCnt = m_shm->GetFrameCounter();
+
+            #ifdef _DEBUG
+                m_log.Debug("Creating profile file");
+                m_profile = new std::ofstream("profile.csv");
+                assert(m_profile->is_open());
+            #endif
             };
+
+            void OnceOnStop() override
+            {
+            #ifdef _DEBUG
+                m_log.Debug("Closing profile file");
+                m_profile->close();
+                delete m_profile;
+            #endif
+            }
 
             void RestartableThread() override
             {
@@ -94,42 +116,53 @@ namespace Dao
                     m_log.Warning("Missed recording the last %d frames", delta - 1);
                 }
 
+            #ifdef _DEBUG
+                const auto write_start = std::chrono::high_resolution_clock::now();
                 RecordFrame();
+                const auto write_end = std::chrono::high_resolution_clock::now();
+                const std::chrono::duration<double, std::milli> write_time = write_end - write_start;
+                m_log.Debug("Write took %fms", write_time.count());
+                *m_profile << write_time.count() << ",\n";
+            #else
+                RecordFrame();
+            #endif
+
                 m_lastRecordedCnt = frameCnt;
             }
 
             void RecordFrame()
             {
                 // Ensure we have the correct bin ready to receive data.
-                const auto ts_curr = *m_tsShm->GetPtr();
+                const auto timestamp = *m_tsShm->GetPtr();
             #ifndef DAO_RECORDER_DISABLE_BINNING
-                const auto elapsed = (ts_curr - m_bin.origin) / 1e9; // seconds.
+                const auto elapsed = (timestamp - m_bin_origin) / 1e9; // seconds.
                 if (elapsed >= m_bin_capacity) {
-                    CreateFITSBin();
+                    CreateBin();
                 }
             #endif
 
-                if (!m_bin.has_origin) {
-                    m_bin.origin = ts_curr;
-                    m_bin.has_origin = true;
+                if (!m_bin_has_origin) {
+                    m_bin_origin = timestamp;
+                    m_bin_has_origin = true;
                 }
 
-                // Record the data.
+                // @speed: can byte count calc be moved to Init?
                 const auto bytes_per_element = (m_data_type >= 0 ? m_data_type : -m_data_type) / 8;
                 std::size_t bytes = bytes_per_element * m_img.md->nelement;
+
                 std::valarray<std::uint8_t> data_array(m_shm->GetPtr(), bytes);
-                CCfits::ExtHDU *ext = m_bin.writer->addImage(
-                    std::to_string(ts_curr),
+                CCfits::ExtHDU *ext = m_bin->addImage(
+                    std::to_string(timestamp),
                     m_data_type,
                     m_data_dims
                 );
                 ext->write(1, bytes, data_array);
-                ext->writeChecksum();
+                ext->writeChecksum(); // @speed: how much time does this take?
             }
 
-            void CreateFITSBin()
+            void CreateBin()
             {
-                delete m_bin.writer;
+                delete m_bin;
 
                 std::string bin_name = m_rec_path;
             #ifndef DAO_RECORDER_DISABLE_BINNING
@@ -137,8 +170,8 @@ namespace Dao
             #endif
                 bin_name += ".fits";
 
-                m_bin.writer = new CCfits::FITS(bin_name, m_data_type, m_data_dims.size(), m_data_dims.data());
-                m_bin.has_origin = false;
+                m_bin = new CCfits::FITS(bin_name, m_data_type, m_data_dims.size(), m_data_dims.data());
+                m_bin_has_origin = false;
                 ++m_bin_count;
             }
 
@@ -207,17 +240,19 @@ namespace Dao
             std::vector<long> m_data_dims;
 
             ShmIfce<std::uint8_t> *m_shm;
-            ShmIfce<float> *m_tsShm;
+            ShmIfce<std::uint32_t> *m_tsShm;
             std::size_t m_lastRecordedCnt;
             IMAGE m_img, m_tsImg;
 
             std::size_t m_bin_capacity; // # seconds before bin is considered full.
             std::size_t m_bin_count;
-            struct {
-                CCfits::FITS *writer;
-                bool has_origin;
-                float origin;
-            } m_bin;
+            CCfits::FITS *m_bin;
+            bool m_bin_has_origin;
+            float m_bin_origin;
+
+        #ifdef _DEBUG
+            std::ofstream *m_profile;
+        #endif
         };
     }; // namespace Telemetry
 }; // namespace Dao
