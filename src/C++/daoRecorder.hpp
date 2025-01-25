@@ -29,7 +29,6 @@
     following preprocessor symbol.
 */
 #define DAO_RECORDER_DISABLE_BINNING
-#define _DEBUG
 
 // === Code ===
 
@@ -85,16 +84,26 @@ namespace Dao
                 // Note: The frame after this is the first frame we record.
                 m_lastRecordedCnt = m_shm->GetFrameCounter();
 
-            #ifdef _DEBUG
-                m_log.Debug("Creating profile file");
+            #ifdef PROFILE
                 m_profile = new std::ofstream("profile.csv");
                 assert(m_profile->is_open());
+                m_log.Debug("Created profiling file");
+
+                m_profile_times.clear();
+                m_profile_times.reserve(10000);
+                m_log.Debug("Cleared and pre-reserved internal profiling buffer");
             #endif
             };
 
             void OnceOnStop() override
             {
-            #ifdef _DEBUG
+            #ifdef PROFILE
+                *m_profile << "Time Unit: ms\n";
+                for (const auto &t : m_profile_times) {
+                    *m_profile << t << ",\n";
+                }
+                m_log.Debug("Dumped profile timings to file");
+
                 m_log.Debug("Closing profile file");
                 m_profile->close();
                 delete m_profile;
@@ -116,13 +125,13 @@ namespace Dao
                     m_log.Warning("Missed recording the last %d frames", delta - 1);
                 }
 
-            #ifdef _DEBUG
+            #ifdef PROFILE
                 const auto write_start = std::chrono::high_resolution_clock::now();
                 RecordFrame();
                 const auto write_end = std::chrono::high_resolution_clock::now();
                 const std::chrono::duration<double, std::milli> write_time = write_end - write_start;
-                m_log.Debug("Write took %fms", write_time.count());
-                *m_profile << write_time.count() << ",\n";
+                m_profile_times.emplace_back(write_time.count());
+                // m_log.Debug("Write took %fms", write_time.count());
             #else
                 RecordFrame();
             #endif
@@ -250,8 +259,9 @@ namespace Dao
             bool m_bin_has_origin;
             float m_bin_origin;
 
-        #ifdef _DEBUG
+        #ifdef PROFILE
             std::ofstream *m_profile;
+            std::vector<double> m_profile_times;
         #endif
         };
     }; // namespace Telemetry
