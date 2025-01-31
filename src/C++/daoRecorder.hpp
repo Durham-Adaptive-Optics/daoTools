@@ -74,47 +74,12 @@ const std::int8_t kBitsPerPixel[] =
     0               // atype=12 (Complex float64)
 };
 
-struct RecordingProfile {
-    std::chrono::milliseconds total;
-    std::chrono::milliseconds ts;
-    std::chrono::milliseconds stamp;
-    std::chrono::milliseconds bcalc;
-    std::chrono::milliseconds valarr;
-    std::chrono::milliseconds addimg;
-    std::chrono::milliseconds write;
-    std::chrono::milliseconds csum;
+#define PROFILE_START(prof_name)                                        \
+const auto prof_name##0 = std::chrono::high_resolution_clock::now();
 
-    void Log(Dao::Log::Logger &logger)
-    {
-        std::string msg;
-        msg += "\n================\n";
-        msg += "Recording Profile\n";
-        msg += "================\n";
-        msg += "TOTAL: %dms\n";
-        msg += "Read Timestamp: %dms\n";
-        msg += "Stamp bin: %dms\n";
-        msg += "Byte calc: %dms\n";
-        msg += "ValArray: %dms\n";
-        msg += "Add img: %dms\n";
-        msg += "Write img: %dms\n";
-        msg += "Add checksum: %dms\n";
-        msg += "----------------\n";
-
-        logger.Debug(msg.c_str(), 
-           total.count(), 
-           ts.count(), 
-           stamp.count(), 
-           bcalc.count(), 
-           valarr.count(), 
-           addimg.count(), 
-           write.count(), 
-           csum.count()
-        );
-    }
-};
-
-#define PROFILE_START(x)
-#define PROFILE_END(x)
+#define PROFILE_END(prof_name)                                          \
+const auto prof_name##1 = std::chrono::high_resolution_clock::now();    \
+const auto prof_name = prof_name##1 - prof_name##0;
 
 namespace Dao
 {
@@ -150,20 +115,19 @@ namespace Dao
                 m_FITS_dtype = kDataTypes[m_img.md->atype];
                 m_FITS_bpp = kBitsPerPixel[m_img.md->atype];
 
-                m_log.Debug("Dao Data type: %d",  m_img.md->atype);
+                m_log.Debug("Dao Data type: %d", m_img.md->atype);
                 m_log.Debug("FITS Data type: %d", m_FITS_dtype);
                 m_log.Debug("FITS Bpp: %d", m_FITS_bpp);
 
                 // todo: support complex types.
-                if(m_img.md->atype == 10 || m_img.md->atype == 12) {
+                if (m_img.md->atype == 10 || m_img.md->atype == 12) {
                     m_log.Error("Complex data types are not currently supported!");
                     assert(false); // todo: how to handle unsupported data format?
                 }
 
                 // Infer data dims from shm metadata.
                 m_data_dims.reserve(3);
-                for (std::size_t k = 0; k < m_img.md->naxis; ++k) 
-                {
+                for (std::size_t k = 0; k < m_img.md->naxis; ++k) {
                     m_data_dims.push_back(m_img.md->size[k]);
                 }
 
@@ -193,105 +157,113 @@ namespace Dao
             {
                 const auto frameCnt = m_shm->GetFrameCounter();
                 const std::size_t delta = frameCnt - m_lastRecordedCnt;
-                if(!delta) return; // Already recorded this frame.
-                
+                if (!delta) return; // Already recorded this frame.
+
                 // Missed one or more frames.
                 if (delta > 1) {
                     m_log.Warning("Missed recording the last %d frames", delta - 1);
                 }
 
                 //
-                RecordingProfile profile = {};
-                RecordFrame(profile);
-                profile.Log(m_log);
+                RecordFrame();
 
                 //
                 m_lastRecordedCnt = frameCnt;
             }
 
-            void RecordFrame(RecordingProfile &profile)
+            void RecordFrame()
             {
-                PROFILE_START("Record")
+                PROFILE_START(prof_record)
                 //
 
-                PROFILE_START("Read Timestamp")
+                PROFILE_START(prof_rts)
                 auto timestamp = *m_tsShm->GetPtr();
-                PROFILE_END()
+                PROFILE_END(prof_rts)
 
                 // Ensure we have the correct bin ready to receive data.
+                PROFILE_START(prof_bineval)
                 #ifndef DAO_RECORDER_DISABLE_BINNING
-                PROFILE_START("Bin Eval")
                 const auto elapsed = (timestamp - m_bin_origin) / 1e9; // seconds.
                 if (elapsed >= m_bin_capacity) {
                     CreateBin();
                 }
-                PROFILE_END()
                 #endif
+                PROFILE_END(prof_bineval)
 
-                PROFILE_START("Bin stamping")
+                PROFILE_START(prof_binstamp)
                 if (!m_bin_has_origin) {
                     m_bin_origin = timestamp;
                     m_bin_has_origin = true;
                 }
-                PROFILE_END()
+                PROFILE_END(prof_binstamp)
 
-                PROFILE_START("Write HDU metadata")
+                PROFILE_START(prof_whdu)
                 {
                     int status = 0;
                     fits_create_img(m_bin, m_FITS_bpp, m_data_dims.size(), m_data_dims.data(), &status);
-                    if(status) {
+                    if (status) {
                         char errbuff[FLEN_STATUS];
                         fits_get_errstatus(status, errbuff);
                         m_log.Error("Failed to create FITS hdu: %s", errbuff);
                         return; // Bail recording the frame.
                     }
                 }
-                PROFILE_END()
-
-                PROFILE_START("Write timestamp")
                 {
                     int status = 0;
                     fits_write_key(m_bin, TLONGLONG, "TIME-OBS", &timestamp, "", &status);
-                    if(status) {
+                    if (status) {
                         char errbuff[FLEN_STATUS];
                         fits_get_errstatus(status, errbuff);
                         m_log.Warning("Failed to write timestamp to FITS hdu: %s", errbuff);
                     }
                 }
-                PROFILE_END()
+                PROFILE_END(prof_whdu)
 
-                PROFILE_START("Write data")
+                PROFILE_START(prof_wdat)
                 {
                     int status = 0;
                     fits_write_img(m_bin, m_FITS_dtype, 1, m_img.md->nelement, m_shm->GetPtr(), &status);
-                    if(status) {
+                    if (status) {
                         char errbuff[FLEN_STATUS];
                         fits_get_errstatus(status, errbuff);
                         m_log.Error("Failed to write data to FITS file: %s", errbuff);
                         return; // Bail recording the frame.
                     }
                 }
-                PROFILE_END()
+                PROFILE_END(prof_wdat)
 
                 //
-                PROFILE_END()
-                // profile.total = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-                // profile.ts = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0);
-                // profile.stamp = std::chrono::duration_cast<std::chrono::milliseconds>(t3 - t2);
-                // profile.bcalc = std::chrono::duration_cast<std::chrono::milliseconds>(t5 - t4);
-                // profile.valarr = std::chrono::duration_cast<std::chrono::milliseconds>(t7 - t6);
-                // profile.addimg = std::chrono::duration_cast<std::chrono::milliseconds>(t9 - t8);
-                // profile.write = std::chrono::duration_cast<std::chrono::milliseconds>(t11 - t10);
-                // profile.csum = std::chrono::duration_cast<std::chrono::milliseconds>(t13 - t12);
+                PROFILE_END(prof_record)
+
+                std::string prof_str;
+                prof_str += "\n================\n";
+                prof_str += "Recording Profile\n";
+                prof_str += "================\n";
+                prof_str += "Total: %dms\n";
+                prof_str += "Read ts: %dms\n";
+                prof_str += "Bin eval: %dms\n";
+                prof_str += "Bin stamp: %dms\n";
+                prof_str += "Write HDU: %dms\n";
+                prof_str += "Write data: %dms\n";
+                prof_str += "----------------\n";
+
+                m_log.Debug(prof_str.c_str(),
+                    std::chrono::duration_cast<std::chrono::milliseconds>(prof_record).count(),
+                    std::chrono::duration_cast<std::chrono::milliseconds>(prof_rts).count(),
+                    std::chrono::duration_cast<std::chrono::milliseconds>(prof_bineval).count(),
+                    std::chrono::duration_cast<std::chrono::milliseconds>(prof_binstamp).count(),
+                    std::chrono::duration_cast<std::chrono::milliseconds>(prof_whdu).count(),
+                    std::chrono::duration_cast<std::chrono::milliseconds>(prof_wdat).count()
+                );
             }
 
             void CreateBin()
             {
                 // Release old bin.
-                if(m_bin) {
+                if (m_bin) {
                     int status = 0;
                     fits_close_file(m_bin, &status);
-                    if(status) { // non-zero code means error.
+                    if (status) { // non-zero code means error.
                         char errbuff[FLEN_STATUS];
                         fits_get_errstatus(status, errbuff);
                         m_log.Error("Failed to close FITS file: %s", errbuff);
@@ -307,8 +279,8 @@ namespace Dao
                 bin_name += ".fits";
 
                 int status = 0;
-                fits_create_file(&m_bin, bin_name.c_str(), &status); 
-                if(status) {
+                fits_create_file(&m_bin, bin_name.c_str(), &status);
+                if (status) {
                     char errbuff[FLEN_STATUS];
                     fits_get_errstatus(status, errbuff);
                     m_log.Error("Failed to create FITS file: %s", errbuff);
