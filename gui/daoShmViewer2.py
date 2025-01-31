@@ -14,7 +14,6 @@ from astropy.io import fits
 import numpy as np
 import dao
 
-
 class daoShmViewer2(QWidget):
     def __init__(self):
         super().__init__()
@@ -158,6 +157,24 @@ class daoShmViewer2(QWidget):
         self.mainSplitter.addWidget(tabWidget)
         # self.mainSplitter.setSizes([400, 200])  # Initial sizes
         
+        # snapshot tab
+        snapShotTab = QWidget()
+        snapShotLayout = QVBoxLayout()
+        self.snapshot_FilenameEdit = QLineEdit(self)
+        self.snapshot_FilenameEdit.setReadOnly(True)
+        self.snapshot_FilenameEdit.mousePressEvent = self.openLoadFileDialog
+        
+        self.snapshot_SaveButton = QPushButton("Save Snapshot", self)
+        self.snapshot_SaveButton.clicked.connect(self.snapshot_SaveFunction)
+        
+        self.snapshot_LoadButton = QPushButton("Load Snapshot", self)
+        self.snapshot_LoadButton.clicked.connect(self.snapshot_LoadFunction)
+        snapShotLayout.addWidget(QLabel("Filename:", self))
+        snapShotLayout.addWidget(self.loadFilenameEdit)
+        snapShotLayout.addWidget(self.snapshot_SaveButton)
+        snapShotLayout.addWidget(self.snapshot_LoadButton)
+        snapShotTab.setLayout(snapShotLayout)
+        tabWidget.addTab(snapShotTab, "Snapshot")
         mainLayout.addWidget(self.mainSplitter)
         self.setLayout(mainLayout)
 
@@ -222,6 +239,7 @@ class daoShmViewer2(QWidget):
         else:
             frequency = 10/diff
         self.updateMetadata(self.filenameEdit.text(), frequency)
+        print(f"Counter: {self.newCounter}, Frequency: {frequency}")
         if diff !=0:
             if(self.TABLE or self.ShowTable):
                 self.graphWidget.setModel(NumpyTableModel(self.shm.get_data(), self.shm))
@@ -373,6 +391,7 @@ class daoShmViewer2(QWidget):
             msg.setWindowTitle("Error")
             msg.exec_()
             return
+        
     def showTable(self):
         if self.ShowTable==False:
             self.ShowTable = True
@@ -381,6 +400,15 @@ class daoShmViewer2(QWidget):
             self.ShowTable = False
             self.tableButton.setText("Show as Table")
         self.onCellClicked(self.tableWidget.currentRow(), 0)
+    
+    def snapshot_SaveFunction(self):
+        filename = self.snapshot_FilenameEdit.text()
+        print(f"Snapshot Save Function: {filename}")
+        
+        
+    def snapshot_LoadFunction(self):
+        filename = self.snapshot_FilenameEdit.text()
+        print(f"Snapshot Load Function: {filename}")
 
 class GraphWidget(QWidget):
     def __init__(self, parent=None):
