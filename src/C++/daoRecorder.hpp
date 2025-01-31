@@ -74,12 +74,17 @@ const std::int8_t kBitsPerPixel[] =
     0               // atype=12 (Complex float64)
 };
 
+#ifdef ENABLE_PROFILING
 #define PROFILE_START(prof_name)                                        \
 const auto prof_name##0 = std::chrono::high_resolution_clock::now();
 
 #define PROFILE_END(prof_name)                                          \
 const auto prof_name##1 = std::chrono::high_resolution_clock::now();    \
 const auto prof_name = prof_name##1 - prof_name##0;
+#else
+#define PROFILE_START(prof_name)
+#define PROFILE_END(prof_name)
+#endif
 
 namespace Dao
 {
@@ -114,10 +119,6 @@ namespace Dao
                 m_shm->OpenShm(m_shm_path.c_str(), &m_img, Dao::Numa::Core2Node(m_core));
                 m_FITS_dtype = kDataTypes[m_img.md->atype];
                 m_FITS_bpp = kBitsPerPixel[m_img.md->atype];
-
-                m_log.Debug("Dao Data type: %d", m_img.md->atype);
-                m_log.Debug("FITS Data type: %d", m_FITS_dtype);
-                m_log.Debug("FITS Bpp: %d", m_FITS_bpp);
 
                 // todo: support complex types.
                 if (m_img.md->atype == 10 || m_img.md->atype == 12) {
@@ -177,7 +178,7 @@ namespace Dao
                 //
 
                 PROFILE_START(prof_rts)
-                auto timestamp = *m_tsShm->GetPtr();
+                auto timestamp = *m_tsShm->GetPtr(); //? Ask Tim/Katy when John gets an estimate if we can just use shm.md.atime?
                 PROFILE_END(prof_rts)
 
                 // Ensure we have the correct bin ready to receive data.
@@ -235,6 +236,7 @@ namespace Dao
                 //
                 PROFILE_END(prof_record)
 
+                #ifdef ENABLE_PROFILING
                 std::string prof_str;
                 prof_str += "\n================\n";
                 prof_str += "Recording Profile\n";
@@ -255,6 +257,7 @@ namespace Dao
                     std::chrono::duration_cast<std::chrono::milliseconds>(prof_whdu).count(),
                     std::chrono::duration_cast<std::chrono::milliseconds>(prof_wdat).count()
                 );
+                #endif
             }
 
             void CreateBin()

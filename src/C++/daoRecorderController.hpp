@@ -53,7 +53,8 @@ namespace Dao
 
                 // Determine where the recording files should be stored.
                 const char *rec_root_env = std::getenv("DAO_RECORDINGS_ROOT");
-                std::string rec_root = rec_root_env ? rec_root_env : "";
+                const std::string rec_root = rec_root_env ? rec_root_env : "";
+                m_log.Debug("Recording root set as: %s", rec_root.c_str());
 
                 for (const auto &rec_conf : m_config["Recorders"]) {
                     //
