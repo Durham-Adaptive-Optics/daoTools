@@ -5,7 +5,7 @@ from daoLog import daoLog
 import time
 import select
 
-def manage_process(action: str, tmuxname=None, user=None, machine=None, processExe=None, processArgs=None):
+def manage_process(action: str, tmuxname=None, user=None, machine=None, processExe=None, processArgs=None, workingDir='./'):
     """
     This function manages the starting and killing of a process in a tmux session.
 
@@ -25,8 +25,9 @@ def manage_process(action: str, tmuxname=None, user=None, machine=None, processE
     if action == 'launch':
         commands = [f'tmux send-keys -t {tmuxname} C-c 2> /dev/null',
                     f'sleep 0.1',
-                    f'echo "Executing {processExe} {processArgs} in tmux session {tmuxname}"',
                     f'tmux new -d -s {tmuxname}',
+                    f'tmux send-keys -t {tmuxname} "cd {workingDir}" C-M',
+                    f'echo "Executing {processExe} {processArgs} in tmux session {tmuxname}"',
                     f'tmux send-keys -t {tmuxname} "{processExe} {processArgs}" C-M',
                     f'echo "Done starting {processExe}."']
     else:
@@ -134,6 +135,8 @@ def send_commands(commands, user=None, machine=None, timeout=0.1):
                     output += process.stdout.readline().decode()
 
         process.stdin.close()
+        process.stdout.close()
+        process.stderr.close()
         process.wait()
 
     except Exception as e:
