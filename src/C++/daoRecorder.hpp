@@ -1,12 +1,12 @@
 /******************************************************************************
  * Project:        daoRecorder
- * Description:    A thread that awaits shared-memory updates and records the
-                   new data to disk.
- Author:           Thomas Davies Created:        10/01/2025
+ * Description:    Monitors a dao-shm and records frames to disk in FITS format.
+ * Author:         Thomas Davies
+ * Created:        10/01/2025
  ******************************************************************************/
 
-#ifndef DAO_RECORDING_TARGET_HPP
-#define DAO_RECORDING_TARGET_HPP
+#ifndef DAO_RECORDER__HPP
+#define DAO_RECORDER__HPP
 
  // === Includes ===
 
@@ -22,22 +22,23 @@
 #include <fstream>
 #include <fitsio.h>
 
-/*
-    By default, the recorder object bins every N seconds of recorded
-    data into seperate FITS files. If instead you require all data
-    recorded to be saved into a single FITS file, please define the
-    following preprocessor symbol.
+/* Note:
+    Define the following preprocessor symbol to have every N seconds
+    of data recorded, be stored into seperate FITS files.
+    
+    DAO_RECORDER_ENABLE_BINNING
 */
-#define DAO_RECORDER_DISABLE_BINNING
+
+/* Note:
+    Define the following preprocessor symbol to enable
+    profiling of recordings.
+
+    ENABLE_PROFILING
+*/
 
 // === Code ===
 
-// Bpp: 8
-// FITS dtype: 12
-// DAO dtype: 
-
-// Lookup table that provides a mapping from
-// Dao data types to cfitsio data types.
+// Mapping from Dao -> cfitsio data-types.
 const std::uint8_t kDataTypes[] =
 {
     0,           // Padding.
@@ -55,8 +56,8 @@ const std::uint8_t kDataTypes[] =
     TDBLCOMPLEX  // atype=12 (Complex float64)
 };
 
-// Lookup table that provides a mapping from
-// Dao data types to cfitsio data type sizes.
+// Mapping from Dao data-types -> cfitsio
+// bits-per-pixel.
 const std::int8_t kBitsPerPixel[] =
 {
     0,              // Padding.
@@ -69,21 +70,25 @@ const std::int8_t kBitsPerPixel[] =
     LONGLONG_IMG,   // atype=7 (uint64_t)
     LONGLONG_IMG,   // atype=8 (int64_t)
     FLOAT_IMG,      // atype=9 (Real float32)
-    0,              // atype=10 (Complex float32)
+    0,              //!atype=10 (Complex float32) - Not supported. 
     DOUBLE_IMG,     // atype=11 (Real float64)
-    0               // atype=12 (Complex float64)
+    0               //!atype=12 (Complex float64) - Not supported.
 };
 
 #ifdef ENABLE_PROFILING
+
 #define PROFILE_START(prof_name)                                        \
 const auto prof_name##0 = std::chrono::high_resolution_clock::now();
 
 #define PROFILE_END(prof_name)                                          \
 const auto prof_name##1 = std::chrono::high_resolution_clock::now();    \
 const auto prof_name = prof_name##1 - prof_name##0;
+
 #else
+
 #define PROFILE_START(prof_name)
 #define PROFILE_END(prof_name)
+
 #endif
 
 namespace Dao
@@ -92,38 +97,38 @@ namespace Dao
     {
         class Recorder : public Thread {
         public:
-            Recorder(const std::string &name, const std::string &shm_path, const std::string &rec_path, int core,
-                Log::Logger &logger, std::size_t bin_capacity = 30) :
-                Thread(name, logger, core), m_shm_path(shm_path),
-                m_rec_path(rec_path),
+            Recorder(const std::string &shm_name, const std::string &shm_path, 
+                const std::string &rec_root, int core, Log::Logger &logger) 
+                :
+                Thread(shm_name, logger, core),
+                m_shm_name(shm_name),
+                m_shm_path(shm_path),
+                m_rec_root(rec_root),
                 m_log(logger),
-                m_lastRecordedCnt(0),
+                m_shmCntRef(0),
                 m_FITS_dtype(0),
                 m_FITS_bpp(0),
-                m_bin_capacity(bin_capacity),
                 m_bin_count(0),
                 m_bin(nullptr),
                 m_bin_has_origin(false),
                 m_bin_origin(0)
             {
                 //
-                m_log.Info("Recording data from %s to %s on core %d", shm_path.c_str(),
-                    m_rec_path.c_str(), m_core);
+                m_log.Debug("Recording %s on numa node %d (core %d)", 
+                    m_shm_path.c_str(), m_node, m_core); 
 
-                // Open the time-keeping shm
-                m_tsShm = new ShmIfce<std::uint32_t>(m_log);
-                m_tsShm->OpenShm("ts.im.shm", &m_tsImg, Dao::Numa::Core2Node(m_core));
-
-                // Open the target shm
+                //
                 m_shm = new ShmIfce<std::uint8_t>(m_log);
-                m_shm->OpenShm(m_shm_path.c_str(), &m_img, Dao::Numa::Core2Node(m_core));
+                m_shm->OpenShm(m_shm_path.c_str(), &m_img, m_node);
                 m_FITS_dtype = kDataTypes[m_img.md->atype];
                 m_FITS_bpp = kBitsPerPixel[m_img.md->atype];
 
-                // todo: support complex types.
+                // todo(tom): support complex types.
+                // ! We don't support recording complex-valued data
+                // ! to FITS files currently, so throw exception
+                // ! in this case.  
                 if (m_img.md->atype == 10 || m_img.md->atype == 12) {
-                    m_log.Error("Complex data types are not currently supported!");
-                    assert(false); // todo: how to handle unsupported data format?
+                    throw std::logic_error("Dao complex-valued shared-memory unsupported");
                 }
 
                 // Infer data dims from shm metadata.
@@ -143,33 +148,24 @@ namespace Dao
             }
 
         private:
-
-            void OnceOnStart() override
-            {
-                m_lastRecordedCnt = m_shm->GetFrameCounter();
-            };
-
-            void OnceOnStop() override
-            {
-                //
-            }
+            void OnceOnStart() override { m_shmCntRef = m_shm->GetFrameCounter(); };
 
             void RestartableThread() override
             {
-                const auto frameCnt = m_shm->GetFrameCounter();
-                const std::size_t delta = frameCnt - m_lastRecordedCnt;
-                if (!delta) return; // Already recorded this frame.
+                const auto m_shmCnt = m_shm->GetFrameCounter();
+                const std::size_t delta = m_shmCnt - m_shmCntRef;
+                m_shmCntRef = m_shmCnt;
 
-                // Missed one or more frames.
-                if (delta > 1) {
+                if (!delta) {  // Already recorded this frame.
+                    return;
+                }
+
+                if (delta > 1) { // Missed one or more frames.
                     m_log.Warning("Missed recording the last %d frames", delta - 1);
                 }
 
                 //
                 RecordFrame();
-
-                //
-                m_lastRecordedCnt = frameCnt;
             }
 
             void RecordFrame()
@@ -178,16 +174,15 @@ namespace Dao
                 //
 
                 PROFILE_START(prof_rts)
-                auto timestamp = *m_tsShm->GetPtr(); //? Ask Tim/Katy when John gets an estimate if we can just use shm.md.atime?
+                const double timestamp = (double)m_img.md->atime.ts.tv_sec + m_img.md->atime.ts.tv_nsec / 1e9;
                 PROFILE_END(prof_rts)
 
                 // Ensure we have the correct bin ready to receive data.
                 PROFILE_START(prof_bineval)
-                #ifndef DAO_RECORDER_DISABLE_BINNING
-                const auto elapsed = (timestamp - m_bin_origin) / 1e9; // seconds.
-                if (elapsed >= m_bin_capacity) {
-                    CreateBin();
-                }
+                #ifdef DAO_RECORDER_ENABLE_BINNING
+                // todo: implement binning.
+                // todo: if fail to create next bin,
+                // todo: continue using current bin.
                 #endif
                 PROFILE_END(prof_bineval)
 
@@ -206,16 +201,18 @@ namespace Dao
                         char errbuff[FLEN_STATUS];
                         fits_get_errstatus(status, errbuff);
                         m_log.Error("Failed to create FITS hdu: %s", errbuff);
-                        return; // Bail recording the frame.
+                        return;
                     }
                 }
                 {
                     int status = 0;
-                    fits_write_key(m_bin, TLONGLONG, "TIME-OBS", &timestamp, "", &status);
+                    double ts = timestamp; // avoid const.
+                    fits_write_key(m_bin, TDOUBLE, "TIME-OBS", &ts, "", &status);
                     if (status) {
                         char errbuff[FLEN_STATUS];
                         fits_get_errstatus(status, errbuff);
                         m_log.Warning("Failed to write timestamp to FITS hdu: %s", errbuff);
+                        return;
                     }
                 }
                 PROFILE_END(prof_whdu)
@@ -228,7 +225,7 @@ namespace Dao
                         char errbuff[FLEN_STATUS];
                         fits_get_errstatus(status, errbuff);
                         m_log.Error("Failed to write data to FITS file: %s", errbuff);
-                        return; // Bail recording the frame.
+                        return;
                     }
                 }
                 PROFILE_END(prof_wdat)
@@ -262,41 +259,44 @@ namespace Dao
 
             void CreateBin()
             {
-                // Release old bin.
-                if (m_bin) {
+                //
+                if(m_bin) {
                     int status = 0;
                     fits_close_file(m_bin, &status);
-                    if (status) { // non-zero code means error.
+                    if (status) {
                         char errbuff[FLEN_STATUS];
                         fits_get_errstatus(status, errbuff);
-                        m_log.Error("Failed to close FITS file: %s", errbuff);
-                        assert(false); // todo: what should we do if we failed to close a bin?
+                        throw std::runtime_error("Failed to close FITS file");
                     }
                 }
-
-                // Create new bin.
-                std::string bin_name = m_rec_path;
-                #ifndef DAO_RECORDER_DISABLE_BINNING
-                bin_name += "-" + std::to_string(m_bin_count);
+                
+                //
+                std::string bin_path = m_rec_root + "/" + m_shm_name;
+                #ifdef DAO_RECORDER_ENABLE_BINNING
+                bin_path += "_" + std::to_string(m_bin_count);
                 #endif
-                bin_name += ".fits";
+                bin_path += ".fits";
+                m_log.Debug("Creating new bin: %s", bin_path.c_str());
 
                 int status = 0;
-                fits_create_file(&m_bin, bin_name.c_str(), &status);
+                fits_create_file(&m_bin, bin_path.c_str(), &status);
                 if (status) {
                     char errbuff[FLEN_STATUS];
                     fits_get_errstatus(status, errbuff);
-                    m_log.Error("Failed to create FITS file: %s", errbuff);
-                    assert(false); // todo: what should we do if we failed to create a bin?
+                    throw std::runtime_error("Failed to create FITS file");
                 }
 
                 m_bin_has_origin = false;
                 ++m_bin_count;
+
+                //
+                m_log.Info("Recording from %s to %s", m_shm_path.c_str(), bin_path.c_str());
             }
 
             Log::Logger &m_log;
+            std::string m_shm_name;
             std::string m_shm_path;
-            std::string m_rec_path;
+            std::string m_rec_root;
 
             std::vector<long> m_data_dims;
             int m_FITS_dtype;
@@ -304,13 +304,12 @@ namespace Dao
 
             ShmIfce<std::uint8_t> *m_shm;
             ShmIfce<std::uint32_t> *m_tsShm;
-            std::size_t m_lastRecordedCnt;
+            std::size_t m_shmCntRef;
             IMAGE m_img, m_tsImg;
 
-            std::size_t m_bin_capacity; // # seconds before bin is considered full.
             std::size_t m_bin_count;
             bool m_bin_has_origin;
-            float m_bin_origin;
+            double m_bin_origin;
             fitsfile *m_bin;
         };
     }; // namespace Telemetry

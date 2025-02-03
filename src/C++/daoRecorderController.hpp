@@ -1,6 +1,6 @@
 /******************************************************************************
  * Project:        daoRecorderController
- * Description:    A daoComponent that creates and manages daoRecorders.
+ * Description:    A daoComponent that creates and manages daoRecorder objects.
  * Author:         Thomas Davies
  * Created:        10/01/2025
  ******************************************************************************/
@@ -52,9 +52,9 @@ namespace Dao
                 m_log.Trace("On_Enable");
 
                 // Determine where the recording files should be stored.
-                const char *rec_root_env = std::getenv("DAO_RECORDINGS_ROOT");
-                const std::string rec_root = rec_root_env ? rec_root_env : "";
-                m_log.Debug("Recording root set as: %s", rec_root.c_str());
+                const char *rec_root_env = std::getenv("DAO_RECORDING_ROOT");
+                const std::string rec_root = rec_root_env ? rec_root_env : ".";
+                m_log.Debug("Configured Recording Root: %s", rec_root.c_str());
 
                 for (const auto &rec_conf : m_config["Recorders"]) {
                     //
@@ -62,9 +62,8 @@ namespace Dao
                     const bool realtime = rec_conf["realtime"].as<bool>();
 
                     // Extract the shm name from the path.
-                    auto pos = shm_path.find('.');
+                    const auto pos = shm_path.find('.');
                     std::string shm_name = pos == std::string::npos ? shm_path : shm_path.substr(0, pos);
-                    std::string FITS_name = rec_root + shm_name;
 
                     // Determine the optimal core to run the recorder on.
                     std::size_t rec_core = m_periodic_core;
@@ -80,9 +79,15 @@ namespace Dao
                     }
 
                     //
-                    Recorder *rec = new Recorder(shm_name, shm_path, FITS_name, rec_core, m_log);
-                    m_recorders.push_back(rec);
-                    rec->Spawn();
+                    try {
+                        Recorder *rec = new Recorder(shm_name, shm_path, rec_root, rec_core, m_log);
+                        m_recorders.push_back(rec);
+                        rec->Spawn();
+                    }
+                    catch(const std::exception &e) {
+                        m_log.Error("Failed to create recorder: %s", e.what());
+                        continue;
+                    }
                 }
 
                 if (m_recorders.size()) {
@@ -138,7 +143,7 @@ namespace Dao
             YAML::Node m_config;
             Log::Logger &m_log;
         };
-        
+
     }; // namespace Telemetry
 }; // namespace Dao
 
