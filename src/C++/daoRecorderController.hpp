@@ -79,15 +79,18 @@ namespace Dao
                     }
 
                     //
+                    Recorder *rec = nullptr;
                     try {
-                        Recorder *rec = new Recorder(shm_name, shm_path, rec_root, rec_core, m_log);
-                        m_recorders.push_back(rec);
-                        rec->Spawn();
+                        rec = new Recorder(shm_name, shm_path, rec_root, rec_core, m_log);
                     }
                     catch(const std::exception &e) {
                         m_log.Error("Failed to create recorder: %s", e.what());
+                        delete rec;
                         continue;
                     }
+
+                    m_recorders.push_back(rec);
+                    rec->Spawn();
                 }
 
                 if (m_recorders.size()) {
