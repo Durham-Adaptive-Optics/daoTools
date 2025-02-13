@@ -5,7 +5,7 @@ from daoLog import daoLog
 import time
 import select
 
-def manage_process(action: str, tmuxname=None, user=None, machine=None, processExe=None, processArgs=None, workingDir='./'):
+def manage_process(action: str, tmuxname=None, user=None, machine=None, processExe=None, processArgs=None, workingDir="."):
     """
     This function manages the starting and killing of a process in a tmux session.
 
