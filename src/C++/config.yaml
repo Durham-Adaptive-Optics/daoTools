@@ -1,9 +1,0 @@
-PeriodicCore: 0
-RealtimeCores: [1,2,3,4,5]
-
-Recorders:
-  - shm: test.im.shm
-    realtime: True
-
-  # - shm: test2.im.shm
-  #   realtime: False

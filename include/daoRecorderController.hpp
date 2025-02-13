@@ -35,7 +35,7 @@ namespace Dao
                 m_periodic_core(0),
                 m_log(logger)
             {
-                m_log.Trace("Controller-Component constructed");
+                m_log.Debug("Controller-Component constructed");
             }
 
             void transition_Off_Standby() override
@@ -43,7 +43,6 @@ namespace Dao
                 m_config = YAML::LoadFile(m_conf_path);
                 m_periodic_core = m_config["PeriodicCore"].as<std::size_t>();
                 m_rt_cores = m_config["RealtimeCores"].as<CorePool>();
-
                 m_log.Debug("Configuration loaded");
             }
 
