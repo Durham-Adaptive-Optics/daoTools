@@ -4,7 +4,7 @@ from PyQt5.uic import loadUiType
 import sys, getopt
 from PyQt5 import QtGui
 from PyQt5 import QtCore
-from pyqtgraph.Qt import QtGui, QtCore, USE_PYSIDE
+from pyqtgraph.Qt import QtGui, QtCore#, USE_PYSIDE
 import numpy as np
 import pyqtgraph as pg
 import pyqtgraph.ptime as ptime
