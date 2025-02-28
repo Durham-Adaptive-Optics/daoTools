@@ -1,14 +1,14 @@
-/******************************************************************************
- * Project:        daoRecorder
- * Description:    Monitors a dao-shm and records frames to disk in FITS format.
- * Author:         Thomas Davies
- * Created:        10/01/2025
- ******************************************************************************/
+/**
+ * @file    daoRecorder.h
+ * @brief   Monitors a DAO shared memory and records frames to disk (FITS format).
+ * 
+ * @author  T.N Davies
+ * 
+ * @date    10/01/2025
+ */
 
 #ifndef DAO_RECORDER__HPP
 #define DAO_RECORDER__HPP
-
- // === Includes ===
 
 #include <cstdlib>
 #include <daoLog.hpp>
@@ -21,61 +21,11 @@
 #include <thread>
 #include <fstream>
 #include <fitsio.h>
+#include <map>
 
-/* Note:
-    Define the following preprocessor symbol to have every N seconds
-    of data recorded, be stored into seperate FITS files.
-    
-    DAO_RECORDER_ENABLE_BINNING
-*/
+#define DAO_REC_PROFILING
 
-/* Note:
-    Define the following preprocessor symbol to enable
-    profiling of recordings.
-
-    ENABLE_PROFILING
-*/
-
-// === Code ===
-
-// Mapping from Dao -> cfitsio data-types.
-const std::uint8_t kDataTypes[] =
-{
-    0,           // Padding.
-    TBYTE,       // atype=1 (uint8_t)
-    TSBYTE,      // atype=2 (int8_t)
-    TUSHORT,     // atype=3 (uint16_t)
-    TSHORT,      // atype=4 (int16_t)
-    TUINT,       // atype=5 (uint32_t)
-    TINT,        // atype=6 (int32_t)
-    TULONGLONG,  // atype=7 (uint64_t)
-    TLONGLONG,   // atype=8 (int64_t)
-    TFLOAT,      // atype=9 (Real float32)
-    TCOMPLEX,    // atype=10 (Complex float32)
-    TDOUBLE,     // atype=11 (Real float64)
-    TDBLCOMPLEX  // atype=12 (Complex float64)
-};
-
-// Mapping from Dao data-types -> cfitsio
-// bits-per-pixel.
-const std::int8_t kBitsPerPixel[] =
-{
-    0,              // Padding.
-    BYTE_IMG,       // atype=1 (uint8_t)
-    BYTE_IMG,       // atype=2 (int8_t)
-    SHORT_IMG,      // atype=3 (uint16_t)
-    SHORT_IMG,      // atype=4 (int16_t)
-    LONG_IMG,       // atype=5 (uint32_t)
-    LONG_IMG,       // atype=6 (int32_t)
-    LONGLONG_IMG,   // atype=7 (uint64_t)
-    LONGLONG_IMG,   // atype=8 (int64_t)
-    FLOAT_IMG,      // atype=9 (Real float32)
-    0,              //!atype=10 (Complex float32) - Not supported. 
-    DOUBLE_IMG,     // atype=11 (Real float64)
-    0               //!atype=12 (Complex float64) - Not supported.
-};
-
-#ifdef ENABLE_PROFILING
+#ifdef DAO_REC_PROFILING
 
 #define PROFILE_START(prof_name)                                        \
 const auto prof_name##0 = std::chrono::high_resolution_clock::now();
@@ -91,226 +41,262 @@ const auto prof_name = prof_name##1 - prof_name##0;
 
 #endif
 
+#define DAO_REC_NOBINNING (0) // Pass this in for 'recordingFileCapacity' to disable binning.
+
 namespace Dao
 {
     namespace Telemetry
     {
         class Recorder : public Thread {
         public:
-            Recorder(const std::string &shm_name, const std::string &shm_path, 
-                const std::string &rec_root, int core, Log::Logger &logger) 
+            Recorder(const std::string &shmPath, const std::string &recordingRoot, const int core, 
+                Log::Logger &logger, const std::size_t recordingFileCapacity) 
                 :
-                Thread(shm_name, logger, core),
-                m_shm_name(shm_name),
-                m_shm_path(shm_path),
-                m_rec_root(rec_root),
-                m_log(logger),
-                m_shmCntRef(0),
-                m_FITS_dtype(0),
-                m_FITS_bpp(0),
-                m_bin_count(0),
-                m_bin(nullptr),
-                m_bin_has_origin(false),
-                m_bin_origin(0)
+                mRecordingFileCapacity(recordingFileCapacity),
+                Thread(shmPath, logger, core),
+                mRecordingRoot(recordingRoot),
+                mRecordingFile(nullptr),
+                mShmInterface(nullptr),
+                mRecordingFileCount(0),
+                mRecordingFileSize(0),
+                mShmPath(shmPath),
+                mShmRefCounter(0),
+                mFitsDataType(0),
+                mLogger(logger),
+                mLocalName(""),
+                mFitsBPP(0)
             {
-                //
-                m_log.Debug("Recording %s on numa node %d (core %d)", 
-                    m_shm_path.c_str(), m_node, m_core); 
-
-                //
-                m_shm = new ShmIfce<std::uint8_t>(m_log);
-                m_shm->OpenShm(m_shm_path.c_str(), &m_img, m_node);
-                m_FITS_dtype = kDataTypes[m_img.md->atype];
-                m_FITS_bpp = kBitsPerPixel[m_img.md->atype];
-
-                // todo(tom): support complex types.
-                // ! We don't support recording complex-valued data
-                // ! to FITS files currently, so throw exception
-                // ! in this case.  
-                if (m_img.md->atype == 10 || m_img.md->atype == 12) {
-                    throw std::logic_error("Dao complex-valued shared-memory unsupported");
+                mShmInterface = new ShmIfce<std::uint8_t>(mLogger);
+                mShmInterface->OpenShm(mShmPath.c_str(), &mShmImage, m_node);
+                if (mShmImage.md->atype == 10 || mShmImage.md->atype == 12) {
+                    throw std::logic_error("Dao complex-valued shared-memory is currently unsupported");
                 }
 
-                // Infer data dims from shm metadata.
-                m_data_dims.reserve(3);
-                for (std::size_t k = 0; k < m_img.md->naxis; ++k) {
-                    m_data_dims.push_back(m_img.md->size[k]);
+                // Extract local name from full shm name.
+                const std::string shmName = mShmImage.name;
+                const size_t lastSlash = shmName.find_last_of("/\\");
+                mLocalName = shmName.substr(lastSlash + 1);
+                const size_t extensionPos = mLocalName.find(".im.shm");
+                if (extensionPos != std::string::npos) {
+                    mLocalName = mLocalName.substr(0, extensionPos);
                 }
 
-                //
-                CreateBin();
+                // Infer information required by Cfitsio from Dao shm metadata. 
+                mFitsDataType = mFitsTypeMap.at(mShmImage.md->atype);
+                mFitsBPP = mFitsBppMap.at(mShmImage.md->atype);
+                for (std::size_t i = 0; i < mShmImage.md->naxis; ++i) 
+                {
+                    const auto nAxisElements = mShmImage.md->size[i];
+                    mDataDimensions.push_back(nAxisElements);
+                }
+
+                NewRecordingFile();
             }
 
             ~Recorder()
             {
-                m_shm->CloseShm();
-                delete m_shm;
+                CloseRecordingFile();
+                delete mShmInterface;
             }
 
         private:
-            void OnceOnStart() override { m_shmCntRef = m_shm->GetFrameCounter(); };
+            void OnceOnStart() override 
+            { 
+                mShmRefCounter = mShmInterface->GetFrameCounter(); 
+            }
 
             void RestartableThread() override
             {
-                const auto m_shmCnt = m_shm->GetFrameCounter();
-                const std::size_t delta = m_shmCnt - m_shmCntRef;
-                m_shmCntRef = m_shmCnt;
+                const auto counter = mShmInterface->GetFrameCounter();
+                const std::size_t shmFrameDelta = counter - mShmRefCounter;
+                mShmRefCounter = counter;
 
-                if (!delta) {  // Already recorded this frame.
-                    return;
+                if(shmFrameDelta) 
+                {
+                    // Setup a new recording file if needed.
+                    if(mRecordingFileCapacity != DAO_REC_NOBINNING &&
+                        mRecordingFileSize == mRecordingFileCapacity)
+                    {
+                        PROFILE_START(profNewRecFile)
+                        CloseRecordingFile();
+                        NewRecordingFile();
+                        if(!mRecordingFile) {
+                            Stop();
+                            mLogger.Warning("Recording for %s stopped due to no recording file", mShmPath);
+                            return;
+                        }
+                        PROFILE_END(profNewRecFile)
+
+                        #ifdef DAO_REC_PROFILING
+                        mLogger.Debug(
+                            "Recording file was filled, a new one was created within %dms", 
+                            std::chrono::duration_cast<std::chrono::milliseconds>(profNewRecFile).count()
+                        );
+                        #endif
+                    }
+
+                    RecordCurrentShmFrame();
+
+                    //! To avoid (costly) double-buffering we assume that the 
+                    //! time between shared memory updates is longer than the
+                    //! time to retire a frame to disk.
+                    if(mShmInterface->GetFrameCounter() > mShmRefCounter)
+                    {
+                        mLogger.Critical("%s recieved an update while frame %d was being retired to the disk", 
+                            mShmPath,
+                            mShmRefCounter
+                        );
+                    }
                 }
-
-                if (delta > 1) { // Missed one or more frames.
-                    m_log.Warning("Missed recording the last %d frames", delta - 1);
-                }
-
-                //
-                RecordFrame();
             }
 
-            void RecordFrame()
+            void RecordCurrentShmFrame()
             {
-                PROFILE_START(prof_record)
-                //
-
-                PROFILE_START(prof_rts)
-                const double timestamp = (double)m_img.md->atime.ts.tv_sec + m_img.md->atime.ts.tv_nsec / 1e9;
-                PROFILE_END(prof_rts)
-
-                // Ensure we have the correct bin ready to receive data.
-                PROFILE_START(prof_bineval)
-                #ifdef DAO_RECORDER_ENABLE_BINNING
-                // todo: implement binning.
-                // todo: if fail to create next bin,
-                // todo: continue using current bin.
-                #endif
-                PROFILE_END(prof_bineval)
-
-                PROFILE_START(prof_binstamp)
-                if (!m_bin_has_origin) {
-                    m_bin_origin = timestamp;
-                    m_bin_has_origin = true;
-                }
-                PROFILE_END(prof_binstamp)
-
-                PROFILE_START(prof_whdu)
+                PROFILE_START(profRecord)
+                PROFILE_START(profWriteHDU)
+                const double timestamp = (double)mShmImage.md->atime.ts.tv_sec + mShmImage.md->atime.ts.tv_nsec / 1e9;
                 {
                     int status = 0;
-                    fits_create_img(m_bin, m_FITS_bpp, m_data_dims.size(), m_data_dims.data(), &status);
+                    fits_create_img(mRecordingFile, mFitsBPP, mDataDimensions.size(), mDataDimensions.data(), &status);
                     if (status) {
                         char errbuff[FLEN_STATUS];
                         fits_get_errstatus(status, errbuff);
-                        m_log.Error("Failed to create FITS hdu: %s", errbuff);
+                        mLogger.Error("Failed to create FITS hdu: %s", errbuff);
                         return;
                     }
                 }
                 {
                     int status = 0;
                     double ts = timestamp; // avoid const.
-                    fits_write_key(m_bin, TDOUBLE, "TIME-OBS", &ts, "", &status);
+                    fits_write_key(mRecordingFile, TDOUBLE, "TIME-OBS", &ts, "", &status);
                     if (status) {
                         char errbuff[FLEN_STATUS];
                         fits_get_errstatus(status, errbuff);
-                        m_log.Warning("Failed to write timestamp to FITS hdu: %s", errbuff);
+                        mLogger.Warning("Failed to write timestamp to FITS hdu: %s", errbuff);
                         return;
                     }
                 }
-                PROFILE_END(prof_whdu)
+                PROFILE_END(profWriteHDU)
 
-                PROFILE_START(prof_wdat)
+                PROFILE_START(profWriteFrameData)
                 {
                     int status = 0;
-                    fits_write_img(m_bin, m_FITS_dtype, 1, m_img.md->nelement, m_shm->GetPtr(), &status);
+                    fits_write_img(mRecordingFile, mFitsDataType, 1, mShmImage.md->nelement, mShmInterface->GetPtr(), &status);
                     if (status) {
                         char errbuff[FLEN_STATUS];
                         fits_get_errstatus(status, errbuff);
-                        m_log.Error("Failed to write data to FITS file: %s", errbuff);
+                        mLogger.Error("Failed to write data to FITS file: %s", errbuff);
                         return;
                     }
                 }
-                PROFILE_END(prof_wdat)
 
-                //
-                PROFILE_END(prof_record)
+                PROFILE_END(profWriteFrameData)
+                
+                ++mRecordingFileSize;
+                PROFILE_END(profRecord)
 
-                #ifdef ENABLE_PROFILING
+                #ifdef DAO_REC_PROFILING
                 std::string prof_str;
                 prof_str += "\n================\n";
                 prof_str += "Recording Profile\n";
                 prof_str += "================\n";
                 prof_str += "Total: %dms\n";
-                prof_str += "Read ts: %dms\n";
-                prof_str += "Bin eval: %dms\n";
-                prof_str += "Bin stamp: %dms\n";
                 prof_str += "Write HDU: %dms\n";
-                prof_str += "Write data: %dms\n";
+                prof_str += "Write Frame Data: %dms\n";
                 prof_str += "----------------\n";
 
                 m_log.Debug(prof_str.c_str(),
-                    std::chrono::duration_cast<std::chrono::milliseconds>(prof_record).count(),
-                    std::chrono::duration_cast<std::chrono::milliseconds>(prof_rts).count(),
-                    std::chrono::duration_cast<std::chrono::milliseconds>(prof_bineval).count(),
-                    std::chrono::duration_cast<std::chrono::milliseconds>(prof_binstamp).count(),
-                    std::chrono::duration_cast<std::chrono::milliseconds>(prof_whdu).count(),
-                    std::chrono::duration_cast<std::chrono::milliseconds>(prof_wdat).count()
+                    std::chrono::duration_cast<std::chrono::milliseconds>(profRecord).count(),
+                    std::chrono::duration_cast<std::chrono::milliseconds>(profWriteHDU).count(),
+                    std::chrono::duration_cast<std::chrono::milliseconds>(profWriteFrameData).count()
                 );
                 #endif
             }
 
-            void CreateBin()
+            void CloseRecordingFile()
             {
-                //
-                if(m_bin) {
-                    int status = 0;
-                    fits_close_file(m_bin, &status);
-                    if (status) {
-                        char errbuff[FLEN_STATUS];
-                        fits_get_errstatus(status, errbuff);
-                        throw std::runtime_error("Failed to close FITS file");
-                    }
-                }
-                
-                //
-                std::string bin_path = m_rec_root + "/" + m_shm_name;
-                #ifdef DAO_RECORDER_ENABLE_BINNING
-                bin_path += "_" + std::to_string(m_bin_count);
-                #endif
-                bin_path += ".fits";
-                m_log.Debug("Creating new bin: %s", bin_path.c_str());
-
                 int status = 0;
-                fits_create_file(&m_bin, bin_path.c_str(), &status);
+                fits_close_file(mRecordingFile, &status);
+                mRecordingFile = nullptr;
                 if (status) {
                     char errbuff[FLEN_STATUS];
                     fits_get_errstatus(status, errbuff);
-                    throw std::runtime_error("Failed to create FITS file");
+                    mLogger.Error("%s", errbuff);
                 }
-
-                m_bin_has_origin = false;
-                ++m_bin_count;
-
-                //
-                m_log.Info("Recording from %s to %s", m_shm_path.c_str(), bin_path.c_str());
             }
 
-            Log::Logger &m_log;
-            std::string m_shm_name;
-            std::string m_shm_path;
-            std::string m_rec_root;
+            void NewRecordingFile()
+            {
+                const std::string recordingFilePath = mRecordingRoot + "/" + mLocalName +
+                    std::to_string(mRecordingFileCount) + ".fits";
+                
+                int status = 0;
+                fits_create_file(&mRecordingFile, recordingFilePath.c_str(), &status);
+                if (status) {
+                    char errbuff[FLEN_STATUS];
+                    fits_get_errstatus(status, errbuff);
+                    mLogger.Critical("Failed to create new recordings file: %s", errbuff);
+                    mRecordingFile = nullptr;
+                    return;
+                }
 
-            std::vector<long> m_data_dims;
-            int m_FITS_dtype;
-            int m_FITS_bpp;
+                ++mRecordingFileCount;
+                mLogger.Info("Recording %s to %s", mShmPath.c_str(), recordingFilePath.c_str());
+            }
 
-            ShmIfce<std::uint8_t> *m_shm;
-            ShmIfce<std::uint32_t> *m_tsShm;
-            std::size_t m_shmCntRef;
-            IMAGE m_img, m_tsImg;
+            // Cfitsio
+            std::vector<long> mDataDimensions;
+            int mFitsDataType;
+            int mFitsBPP;
 
-            std::size_t m_bin_count;
-            bool m_bin_has_origin;
-            double m_bin_origin;
-            fitsfile *m_bin;
+            // Shared Memory
+            ShmIfce<std::uint8_t> *mShmInterface;
+            std::size_t mShmRefCounter;
+            IMAGE mShmImage;
+
+            // Recording File.
+            std::size_t mRecordingFileCapacity; // How many frames a file will contain.
+            std::size_t mRecordingFileCount;    // How many recording files we have created.
+            std::size_t mRecordingFileSize;     // How many frames are in the current recording file.
+            fitsfile *mRecordingFile;
+
+            //
+            Log::Logger &mLogger;
+            std::string mShmPath;
+            std::string mLocalName;
+            std::string mRecordingRoot;
+
+            // Mapping from Dao -> Cfitsio datatypes.
+            const std::map<std::uint8_t, std::uint8_t> mFitsTypeMap
+            {
+                {1, TBYTE},
+                {2, TSBYTE},
+                {3, TUSHORT},
+                {4, TSHORT},
+                {5, TUINT},
+                {6, TINT},
+                {7, TULONGLONG},
+                {8, TLONGLONG},
+                {9, TFLOAT},
+                {10, TCOMPLEX},
+                {11, TDOUBLE},
+                {12, TDBLCOMPLEX}
+            };
+
+            // Mapping from Dao datatypes to Cfitsio element bit-sizes.
+            const std::map<std::size_t, std::int8_t>  mFitsBppMap 
+            {
+                {1, BYTE_IMG},
+                {2, BYTE_IMG},
+                {3, SHORT_IMG},
+                {4, SHORT_IMG},
+                {5, LONG_IMG},
+                {6, LONG_IMG},
+                {7, LONGLONG_IMG},
+                {8, LONGLONG_IMG},
+                {9, FLOAT_IMG},
+                {11, DOUBLE_IMG}
+            };
         };
     }; // namespace Telemetry
 }; // namespace Dao
