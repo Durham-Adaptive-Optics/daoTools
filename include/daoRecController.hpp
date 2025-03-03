@@ -80,8 +80,9 @@ namespace Dao
 
                     // Allocate recording object.
                     try {
-                        mRecorders.emplace_back(shmPath, mRecordingRoot, recordingCore, mLogger, mRecordingFileCapacity);
-                        mRecorders.back().Spawn();
+                        Recorder *recorder = new Recorder(shmPath, mRecordingRoot, recordingCore, mLogger, mRecordingFileCapacity);
+                        mRecorders.push_back(recorder);
+                        recorder->Spawn();
                     }
                     catch(const std::exception &e) {
                         mLogger.Error("Failed to create recorder for %s - %s", shmPath.c_str(), e.what());
@@ -100,26 +101,26 @@ namespace Dao
             void transition_Idle_Running() override
             {
                 mLogger.Trace("transition_Idle_Running()");
-                for (auto &recorder : mRecorders) { recorder.Start(); }
+                for (auto &recorder : mRecorders) { recorder->Start(); }
             }
 
             void transition_Running_Idle() override
             {
                 mLogger.Trace("transition_Running_Idle()");
-                for (auto &recorder : mRecorders) { recorder.Stop(); }
+                for (auto &recorder : mRecorders) { recorder->Stop(); }
             }
 
             void transition_Idle_Standby() override
             {
                 mLogger.Trace("transition_Idle_Standby()");
-                for (auto &recorder : mRecorders) { recorder.Join(); }
+                for (auto &recorder : mRecorders) { recorder->Join(); }
                 mRecorders.clear();
             }
 
         private:
             std::vector<std::size_t> mDedicatedCores;
             std::size_t mRecordingFileCapacity;
-            std::vector<Recorder> mRecorders;
+            std::vector<Recorder *> mRecorders; // todo: make more cache friendly by moving to contigouous objects.
             std::string mRecordingRoot;
             std::size_t mSharedCore;
             std::string mConfigPath;
