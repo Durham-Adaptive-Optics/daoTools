@@ -28,14 +28,14 @@ namespace Dao
                 const std::string &ip, const std::size_t port, Log::Logger &logger) 
                 :
                 Component("RecController", logger, ip, port),
-                mRecordingFileCapacity(DAO_REC_NOBINNING),
+                mRecordingFileCapacity(0),
                 mRecordingRoot(recordingRoot),
                 mConfigPath(configFilePath),
                 mLogger(logger),
                 mSharedCore(0)
             {
                 mLogger.Trace("RecorderController()");
-                mLogger.Debug("Recordings will be stored to %s", mRecordingRoot);
+                mLogger.Debug("Recordings will be stored to %s", mRecordingRoot.c_str());
             }
 
             void transition_Off_Standby() override
@@ -43,17 +43,21 @@ namespace Dao
                 mLogger.Trace("transition_Off_Standby()");
 
                 mConfig = YAML::LoadFile(mConfigPath);
+
                 mSharedCore = mConfig["PeriodicCore"].as<std::size_t>();
+                mLogger.Debug("Using core %d as shared recording core", mSharedCore);
+                
                 mDedicatedCores = mConfig["RealtimeCores"].as<std::vector<std::size_t>>();
+                mLogger.Debug("Assigned %d cores as dedicated recording cores", mDedicatedCores.size());
+                
                 const auto fileCapacityConfig = mConfig["FileCapacity"];
                 if(fileCapacityConfig)
                 {
                     mRecordingFileCapacity = fileCapacityConfig.as<std::size_t>();
+                    mLogger.Debug("Recording data will be spread across several FITS files (%d frames / file)", mRecordingFileCapacity);
                 }
                 
                 mLogger.Debug("Configuration loaded");
-                mLogger.Debug("Using core %d as shared recording core", mSharedCore);
-                mLogger.Debug("Assigned %d cores as dedicated recording cores", mDedicatedCores.size());
             }
 
             void transition_Standby_Idle() override
@@ -113,7 +117,11 @@ namespace Dao
             void transition_Idle_Standby() override
             {
                 mLogger.Trace("transition_Idle_Standby()");
-                for (auto &recorder : mRecorders) { recorder->Join(); }
+                for (auto &recorder : mRecorders) 
+                { 
+                    recorder->Join();
+                    delete recorder; 
+                }
                 mRecorders.clear();
             }
 

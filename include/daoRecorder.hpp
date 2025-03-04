@@ -23,8 +23,6 @@
 #include <fitsio.h>
 #include <map>
 
-#define DAO_REC_PROFILING
-
 #ifdef DAO_REC_PROFILING
 
 #define PROFILE_START(prof_name)                                        \
@@ -40,8 +38,6 @@ const auto prof_name = prof_name##1 - prof_name##0;
 #define PROFILE_END(prof_name)
 
 #endif
-
-#define DAO_REC_NOBINNING (0) // Pass this in for 'recordingFileCapacity' to disable binning.
 
 namespace Dao
 {
@@ -91,6 +87,11 @@ namespace Dao
                 }
 
                 NewRecordingFile();
+
+                if(!mRecordingFile)
+                {
+                    throw std::runtime_error("Failed to create initial recordings file");
+                }
             }
 
             ~Recorder()
@@ -103,6 +104,12 @@ namespace Dao
             void OnceOnStart() override 
             { 
                 mShmRefCounter = mShmInterface->GetFrameCounter(); 
+                mLogger.Info("%s's recorder has started", mShmPath.c_str());
+            }
+
+            void OnceOnStop() override
+            {
+                mLogger.Info("%s's recorder has stopped", mShmPath.c_str());
             }
 
             void RestartableThread() override
@@ -111,30 +118,34 @@ namespace Dao
                 const std::size_t shmFrameDelta = counter - mShmRefCounter;
                 mShmRefCounter = counter;
 
+                // Setup a new recording file if needed.
+                if(mRecordingFileCapacity && mRecordingFileSize == mRecordingFileCapacity)
+                {
+                    PROFILE_START(profNewRecFile)
+
+                    CloseRecordingFile();
+                    
+                    NewRecordingFile();
+                    
+                    if(!mRecordingFile) 
+                    {
+                        Stop();
+                        mLogger.Critical("Recording for %s stopped due to no recording file", mShmPath.c_str());
+                        return;
+                    }
+                    
+                    PROFILE_END(profNewRecFile)
+
+                    #ifdef DAO_REC_PROFILING
+                    mLogger.Debug(
+                        "Recording file was filled, a new one was created (%dms)", 
+                        std::chrono::duration_cast<std::chrono::milliseconds>(profNewRecFile).count()
+                    );
+                    #endif
+                }
+
                 if(shmFrameDelta) 
                 {
-                    // Setup a new recording file if needed.
-                    if(mRecordingFileCapacity != DAO_REC_NOBINNING &&
-                        mRecordingFileSize == mRecordingFileCapacity)
-                    {
-                        PROFILE_START(profNewRecFile)
-                        CloseRecordingFile();
-                        NewRecordingFile();
-                        if(!mRecordingFile) {
-                            Stop();
-                            mLogger.Warning("Recording for %s stopped due to no recording file", mShmPath);
-                            return;
-                        }
-                        PROFILE_END(profNewRecFile)
-
-                        #ifdef DAO_REC_PROFILING
-                        mLogger.Debug(
-                            "Recording file was filled, a new one was created within %dms", 
-                            std::chrono::duration_cast<std::chrono::milliseconds>(profNewRecFile).count()
-                        );
-                        #endif
-                    }
-
                     RecordCurrentShmFrame();
 
                     //! To avoid (costly) double-buffering we assume that the 
@@ -143,7 +154,7 @@ namespace Dao
                     if(mShmInterface->GetFrameCounter() > mShmRefCounter)
                     {
                         mLogger.Critical("%s recieved an update while frame %d was being retired to the disk", 
-                            mShmPath,
+                            mShmPath.c_str(),
                             mShmRefCounter
                         );
                     }
@@ -198,7 +209,7 @@ namespace Dao
                 #ifdef DAO_REC_PROFILING
                 std::string prof_str;
                 prof_str += "\n================\n";
-                prof_str += "Recording Profile\n";
+                prof_str += "Recording Profile (frameID: %d)\n";
                 prof_str += "================\n";
                 prof_str += "Total: %dms\n";
                 prof_str += "Write HDU: %dms\n";
@@ -206,6 +217,7 @@ namespace Dao
                 prof_str += "----------------\n";
 
                 m_log.Debug(prof_str.c_str(),
+                    mRecordingFileSize,
                     std::chrono::duration_cast<std::chrono::milliseconds>(profRecord).count(),
                     std::chrono::duration_cast<std::chrono::milliseconds>(profWriteHDU).count(),
                     std::chrono::duration_cast<std::chrono::milliseconds>(profWriteFrameData).count()
@@ -241,6 +253,7 @@ namespace Dao
                 }
 
                 ++mRecordingFileCount;
+                mRecordingFileSize = 0;
                 mLogger.Info("Recording %s to %s", mShmPath.c_str(), recordingFilePath.c_str());
             }
 
