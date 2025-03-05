@@ -147,6 +147,12 @@ namespace Dao
                 for (auto &recorder : mRecorders) { recorder->Stop(); }
             }
 
+            void entry_Off() override
+            {
+                m_log.Trace("entry_Off()");
+                mOkay = true; // Reset.
+            }
+
             std::vector<std::size_t> mDedicatedCores;
             std::size_t mRecordingFileCapacity;
             std::vector<Recorder *> mRecorders; // TODO: make more cache friendly by moving to contigouous objects.
