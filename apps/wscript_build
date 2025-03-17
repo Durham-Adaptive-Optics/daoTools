@@ -80,6 +80,16 @@ daoLeakyIntegrator = bld.program(
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
+# daoDMSend = bld.program(
+# 	source = 'daoDMSend.c',
+# 	target = 'daoDMSend',
+# 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+# 	linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
+# 	ldflags = ['-ldao' , '-lpthread', '-lm'] + my_ld_flags,
+# 	use = 'daoTools',
+# 	cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
+# 	)
+
 daoShmMonitoring = bld.program(
 	source = 'daoShmMonitoring.c',
 	target = 'daoShmMonitoring',
