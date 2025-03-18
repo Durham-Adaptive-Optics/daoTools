@@ -164,6 +164,7 @@ namespace Dao
                 if(shmCounter > mShmRefCounter)
                 {
                     mShmRefCounter = shmCounter;
+                    mLogger.Debug("New frame available for %s", mShmPath.c_str());
 
                     std::memcpy(mInternalBuffer, mShmInterface->GetPtr(), mShmBufferSize);
 
@@ -184,8 +185,8 @@ namespace Dao
                 }
             }
 
-            void RecordInternalBuffer(const bool internalBufferCorrupted)
-            {
+            void RecordInternalBuffer(const bool frameCorrupted)
+            {   
                 /* === Write the HDU for this frame into the FITS file === */
                 const double timestamp = (double)mShmImage.md->atime.ts.tv_sec + mShmImage.md->atime.ts.tv_nsec / 1e9;
 
@@ -204,8 +205,9 @@ namespace Dao
 
                 {
                     int status = 0;
-                    bool value = internalBufferCorrupted; // avoid const.
-                    fits_write_key(mRecordingFile, TLOGICAL, "VALID", &value, "", &status);
+                    bool isFrameValid = !frameCorrupted;
+                    mLogger.Debug("Recorded frame is valid: %s", isFrameValid ? "T" : "F");
+                    fits_write_key(mRecordingFile, TLOGICAL, "VALID", &isFrameValid, "", &status);
                     HandleFitsError(status, "Failed to write validation key to HDU");
                 }
 
