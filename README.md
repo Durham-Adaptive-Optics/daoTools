@@ -5,6 +5,12 @@ Useful tools using daoBase
 ## daoBase
 daoBase should be installed. See https://github.com/Durham-Adaptive-Optics/daoBase
 
+## cblas
+daoTools provides basic MVM tools using CBLAS. On Ubuntu
+````
+sudo apt install libblas-dev libopenblas-dev
+````
+
 ## ncurses
 on centos:
 ````

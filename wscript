@@ -36,6 +36,15 @@ def configure(conf):
 	conf.env.CFLAGS += ['-DZMQ_BUILD_DRAFT_API']
 	conf.env.CXXFLAGS += ['-DZMQ_BUILD_DRAFT_API']
 
+	# Check for CUDA
+	conf.env.CUDA_AVAILABLE = False  # Default to False
+	try:
+		conf.check_cfg(package='cuda', args='--cflags --libs', uselib_store='CUDA')
+		conf.env.CUDA_AVAILABLE = True
+		print("CUDA detected: enabling GPU build.")
+	except:
+		print("CUDA not found: skipping GPU.")
+
 def build(bld):
 	bld.env.DEFINES=['WAF=1']
 	bld.recurse('src')
