@@ -230,7 +230,7 @@ daoStatShm = bld.program(
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
-if bld.env.CUDA_AVAILABLE:
+if bld.env.BLAS_AVAILABLE:
 	daoMvM = bld.program(
 		source = 'daoMvM.c',
 		target = 'daoMvM',
