@@ -85,7 +85,7 @@ namespace Dao
                 // Infer information required by Cfitsio from Dao shm metadata. 
                 mFitsDataType = mFitsTypeMap.at(mShmImage.md->atype);
                 mFitsBPP = mFitsBppMap.at(mShmImage.md->atype);
-                for (std::size_t i = 0; i < mShmImage.md->naxis; ++i) 
+                for (std::int64_t i = mShmImage.md->naxis - 1; i >= 0 ; --i) 
                 {
                     const auto nAxisElements = mShmImage.md->size[i];
                     mDataDimensions.push_back(nAxisElements);
