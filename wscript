@@ -45,6 +45,15 @@ def configure(conf):
 	except:
 		print("CUDA not found: skipping GPU.")
 
+	# Check for BLAS
+	conf.env.BLAS_AVAILABLE = False  # Default to False
+	try:
+		conf.check_cfg(package='blas', args='--cflags --libs', uselib_store='BLAS')
+		conf.env.BLAS_AVAILABLE = True
+		print("BLAS detected: enabling BLAS build.")
+	except:
+		print("BLAS not found: skipping BLAS.")
+
 def build(bld):
 	bld.env.DEFINES=['WAF=1']
 	bld.recurse('src')

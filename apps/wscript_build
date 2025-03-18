@@ -230,15 +230,18 @@ daoStatShm = bld.program(
 	cflags = ['-Ofast', '-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
-daoMvM = bld.program(
-	source = 'daoMvM.c',
-	target = 'daoMvM',
-	includes = '../include '+os.getenv('DAOROOT')+'/include/',
-	linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses', '-lopenblas'] + my_ld_flags,
-	use= 'daoTools',
-	cflags = ['-Ofast', '-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
-	)
+if bld.env.CUDA_AVAILABLE:
+	daoMvM = bld.program(
+		source = 'daoMvM.c',
+		target = 'daoMvM',
+		includes = '../include '+os.getenv('DAOROOT')+'/include/',
+		linkflags = [ '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
+		ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses', '-lopenblas'] + my_ld_flags,
+		use= 'daoTools',
+		cflags = ['-Ofast', '-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
+		)
+else:
+    print("Skipping daoMvM build (BLAS not available).")
 
 # Conditionally build daoMvMGPU if CUDA is available
 if bld.env.CUDA_AVAILABLE:
