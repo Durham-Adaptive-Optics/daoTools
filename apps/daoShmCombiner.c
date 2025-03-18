@@ -61,6 +61,7 @@ double tlastupdatedouble;
 IMAGE *shm;
 char shmName[32];
 int nbShm;
+int masterChannel=-1;
 // Max 16 different SHM to combine
 IMAGE *shmIn[COMBINE_MAX];
 int updateCnt[COMBINE_MAX];
@@ -136,7 +137,7 @@ void * shmNRealTimeLoop(void *thread_data)
         clock_gettime(CLOCK_REALTIME, &t[1]);
         elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;    // sec to ms
         elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6; // us to ms
-        if (args->shmId == 0)
+        if (args->shmId == 1)
         { 
             shm[0].md[0].cnt2 = shmIn[0][0].md[0].cnt2;
             printf("\r combine time = %.3f us", elapsedTime*1e3);
@@ -190,24 +191,45 @@ static int prepRealTime()
     daoInfo("SHM monitoring init status = %d, init time=%.3f\n", status, diff);
     fflush(stdout);
 
+    daoInfo("masterChannel = %d\n", masterChannel);
+    // If master Channel == -1, everything channels can trigger a combination. If the master channel is not -1,
+    // the master channel is the only SHM which can trigger a command
     int threadVal[nbShm];
     struct arg_struct args[nbShm];
     int threadCounter = 0;
-    for (threadCounter=0; threadCounter<nbShm; threadCounter++)
+    if (masterChannel == -1)
     {
-        args[threadCounter].shmId = threadCounter;
-        threadVal[threadCounter] = pthread_create(&controllerThread[threadCounter],
+        for (threadCounter=0; threadCounter<nbShm; threadCounter++)
+        {
+            args[threadCounter].shmId = threadCounter;
+            threadVal[threadCounter] = pthread_create(&controllerThread[threadCounter],
+                                                         NULL,
+                                                         shmNRealTimeLoop,
+                                                         (void *)&args[threadCounter]);
+            if (threadVal[threadCounter] != 0)
+            {
+                daoError("Cannot create thread %d\n", threadCounter);
+                return DAO_ERROR;
+            }
+        }
+        // join last thread
+        pthread_join(controllerThread[threadCounter-1], NULL);
+    }
+    else
+    {
+        args[masterChannel].shmId = masterChannel;
+        threadVal[masterChannel] = pthread_create(&controllerThread[masterChannel],
                                                      NULL,
                                                      shmNRealTimeLoop,
-                                                     (void *)&args[threadCounter]);
-        if (threadVal[threadCounter] != 0)
+                                                     (void *)&args[masterChannel]);
+        if (threadVal[masterChannel] != 0)
         {
-            daoError("Cannot create thread %d\n", threadCounter);
+            daoError("Cannot create thread %d\n", masterChannel);
             return DAO_ERROR;
         }
+        // join last thread
+        pthread_join(controllerThread[masterChannel], NULL);
     }
-    // join last thread
-    pthread_join(controllerThread[threadCounter-1], NULL);
 
     return DAO_SUCCESS;
 }
@@ -247,6 +269,7 @@ static void DecodeArgs(int argc, char **argv)
                         daoDebug("will sleep for %d usec\n",a1);
                         (void)usleep(a1);
                         break;
+            case 'm':	(void)sscanf(*argv++,"%d",&masterChannel); argc -= 1;	break;
             case 'L':
                         daoInfo("CAM real time control\n");
                         (void)sscanf(*argv++,"%s", shmName);
