@@ -67,6 +67,7 @@ namespace Dao
 
                 mShmBufferSize = mDaoBppMap.at(mShmImage.md->atype) * mShmImage.md->nelement;
                 mInternalBuffer = new std::uint8_t[mShmBufferSize];
+                mLogger.Debug("Allocated %d bytes for %s's internal buffer", mShmBufferSize, mShmPath.c_str());
                 if(!mInternalBuffer)
                 {
                     throw std::runtime_error("Failed to allocate internal buffer");
@@ -214,7 +215,8 @@ namespace Dao
                 /* === Write the buffered frame data into the FITS file === */
                 {
                     int status = 0;
-                    fits_write_img(mRecordingFile, mFitsDataType, 1, mShmImage.md->nelement, mShmInterface->GetPtr(), &status);
+                    mLogger.Debug("Recorded frame data as %d elements of FITS type %d", mShmImage.md->nelement, mFitsDataType);
+                    fits_write_img(mRecordingFile, mFitsDataType, 1, mShmImage.md->nelement, mInternalBuffer, &status);
                     HandleFitsError(status, "Failed to write data to FITS file");
                 }
                 
