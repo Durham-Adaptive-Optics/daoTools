@@ -102,6 +102,7 @@ static int realTimeLoop()
     clock_gettime(CLOCK_REALTIME, &t[1]);
     int j;
     int cnt=0;
+    float avg=0;
     while (end ==0)
     {
         t[0] = t[1];
@@ -112,7 +113,7 @@ static int realTimeLoop()
         {
             // New image, insert something here
             outShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
-
+            avg=0;
             if (lpCmdShm[0].array.UI32[0] == 1)
             {
                 daoToolsLeakyIntegrator(inShm[0].array.F, 
@@ -121,6 +122,16 @@ static int realTimeLoop()
                                         gainShm[0].array.F[0], 
                                         offsetShm[0].array.F,
                                         outShm[0].array.F);
+                for (j=0; j< inSize; j++)
+                {
+                    avg+=outShm[0].array.F[j];
+                }
+                avg=avg/inSize;
+                for (j=0; j< inSize; j++)
+                {
+                    outShm[0].array.F[j] = outShm[0].array.F[j] - avg;;
+                }
+
             }
             else
             {
