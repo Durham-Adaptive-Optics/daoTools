@@ -239,7 +239,7 @@ class daoShmViewer2(QWidget):
         else:
             frequency = 10/diff
         self.updateMetadata(self.filenameEdit.text(), frequency)
-        print(f"Counter: {self.newCounter}, Frequency: {frequency}")
+        # print(f"Counter: {self.newCounter}, Frequency: {frequency}")
         if diff !=0:
             if(self.TABLE or self.ShowTable):
                 self.graphWidget.setModel(NumpyTableModel(self.shm.get_data(), self.shm))
