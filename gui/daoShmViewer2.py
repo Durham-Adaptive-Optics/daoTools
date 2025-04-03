@@ -170,7 +170,7 @@ class daoShmViewer2(QWidget):
         self.snapshot_LoadButton = QPushButton("Load Snapshot", self)
         self.snapshot_LoadButton.clicked.connect(self.snapshot_LoadFunction)
         snapShotLayout.addWidget(QLabel("Filename:", self))
-        snapShotLayout.addWidget(self.loadFilenameEdit)
+        snapShotLayout.addWidget(self.snapshot_FilenameEdit)
         snapShotLayout.addWidget(self.snapshot_SaveButton)
         snapShotLayout.addWidget(self.snapshot_LoadButton)
         snapShotTab.setLayout(snapShotLayout)
