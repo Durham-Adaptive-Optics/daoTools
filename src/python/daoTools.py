@@ -4,7 +4,7 @@
 Several useful tools for AO
 '''
 
-import os, sys, mmap, struct
+import os, sys, struct
 import numpy as np
 import astropy.io.fits as pf
 import time
