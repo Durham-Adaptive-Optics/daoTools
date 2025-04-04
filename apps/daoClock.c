@@ -32,6 +32,7 @@
 
 // DAO header
 #include "dao.h" 
+#include "daoTools.h" 
 
 typedef int bool_t;
 #ifndef TRUE

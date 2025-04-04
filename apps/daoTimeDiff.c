@@ -30,6 +30,7 @@
 #include <ncurses.h>
 
 #include "dao.h"
+#include "daoTools.h"
 
 /*==========================================================================*/
 static int	sNdx=0;							/* board index */

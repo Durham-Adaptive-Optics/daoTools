@@ -688,3 +688,73 @@ void daoDescrambleOcam2Image(uint8_t img[], int imgRows, int imgCols, uint16_t *
         output[i] = img16[row][col];
     }
 }
+
+#ifdef __APPLE__
+
+#include <errno.h>
+#include <stdio.h>
+#include <mach/mach_time.h>
+#include <sys/time.h>
+
+int sem_timedwait(sem_t *sem, const struct timespec *abs_timeout) {
+    struct timespec now, sleep_duration = {0, 1000000}; // 1 ms
+
+    while (1) {
+        if (sem_trywait(sem) == 0) {
+            return 0;
+        }
+
+        if (errno != EAGAIN) {
+            return -1;
+        }
+
+        clock_gettime(CLOCK_REALTIME, &now);
+        if ((now.tv_sec > abs_timeout->tv_sec) ||
+            (now.tv_sec == abs_timeout->tv_sec && now.tv_nsec >= abs_timeout->tv_nsec)) {
+            errno = ETIMEDOUT;
+            return -1;
+        }
+
+        nanosleep(&sleep_duration, NULL);
+    }
+}
+
+// Fallback for sched_setscheduler
+int sched_setscheduler(pid_t pid, int policy, const struct sched_param *param) {
+    // macOS does not support real-time policies (SCHED_FIFO, etc.)
+    // Just log and return success as a no-op
+    (void)pid;
+    (void)policy;
+    (void)param;
+    fprintf(stderr, "Warning: sched_setscheduler is not supported on macOS, ignoring.\n");
+    return 0;
+}
+
+// Fallback for clock_nanosleep
+int clock_nanosleep(clockid_t clock_id, int flags, const struct timespec *request, struct timespec *remain) {
+    if (flags == TIMER_ABSTIME) {
+        // Absolute time mode: wait until the specified time
+        struct timespec now;
+        clock_gettime(clock_id, &now);
+
+        time_t sec_diff = request->tv_sec - now.tv_sec;
+        long nsec_diff = request->tv_nsec - now.tv_nsec;
+
+        if (nsec_diff < 0) {
+            sec_diff -= 1;
+            nsec_diff += 1000000000L;
+        }
+
+        if (sec_diff < 0 || (sec_diff == 0 && nsec_diff <= 0)) {
+            return 0; // Already past deadline
+        }
+
+        struct timespec delay = { sec_diff, nsec_diff };
+        return nanosleep(&delay, remain);
+    } else {
+        // Relative sleep
+        return nanosleep(request, remain);
+    }
+}
+
+#endif // __APPLE__

@@ -84,4 +84,31 @@ int_fast8_t daoCentroidPws(float *im, float *slopes,
 
 void daoDescrambleOcam2Image(uint8_t img[], int imgRows, int imgCols, uint16_t *img16[],
                              int descrambler[], int descramblerSize, uint16_t output[]);
+
+
+#ifdef __APPLE__
+
+#include <semaphore.h>
+#include <time.h>
+#include <unistd.h>
+
+// Fallback declaration for sem_timedwait on macOS
+int sem_timedwait(sem_t *sem, const struct timespec *abs_timeout);
+
+// Define missing constants
+#ifndef TIMER_ABSTIME
+#define TIMER_ABSTIME 1
+#endif
+
+// Fallback for clock_nanosleep
+int clock_nanosleep(clockid_t clock_id, int flags, const struct timespec *request, struct timespec *remain);
+
+// Fallback for sched_
+#include <sched.h>  // needed for struct sched_param
+
+int sched_setscheduler(pid_t pid, int policy, const struct sched_param *param);
+
+#endif // __APPLE__
+
+                             
 #endif
