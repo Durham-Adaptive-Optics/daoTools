@@ -21,7 +21,7 @@ def get_output(command):
         return ""
 
 def create_process_snapshot():
-     # Initialize the data structure for storing tmux session details
+    # Initialize the data structure for storing tmux session details
     tmux_data = []
 
     # Get the list of tmux sessions
@@ -47,18 +47,79 @@ def create_process_snapshot():
             for pane in panes:
                 pane_data = {"pane": int(pane)}
 
-                # Get the process ID of the pane
+                # Get the pane_pid
                 pane_pid = get_output(f"tmux list-panes -t {session}:{window} -F '#{{pane_pid}}'").splitlines()
-                pane_pid = pane_pid[int(pane)] if pane_pid else None
+                pane_pid = pane_pid[int(pane)] if pane_pid and int(pane) < len(pane_pid) else None
 
                 if pane_pid:
                     # Get the child process of the pane PID
                     child_pid = get_output(f"pgrep -P {pane_pid}")
 
                     if child_pid:
-                        # Get the command line of the child process
-                        cmdline = get_output(f"ps -p {child_pid} -o args=")
-                        pane_data["running_command"] = cmdline
+                        # Instead of relying on ps or /proc directly, 
+                        # Use a combination of readlink and ps to get the full command with arguments
+                        cmd_path = get_output(f"readlink -f /proc/{child_pid}/exe")
+                        
+                        # Get command arguments from /proc/[pid]/cmdline with careful handling
+                        try:
+                            with open(f"/proc/{child_pid}/cmdline", 'rb') as f:
+                                cmdline_bytes = f.read()
+                                print(f"Command line bytes: {cmdline_bytes}")
+                            
+                            # Split by null bytes
+                            args = cmdline_bytes.split(b'\0')
+                            args = [arg.decode('utf-8', errors='replace') for arg in args if arg]
+                            
+                            if args:
+                                # First element is the command itself
+                                cmd = args[0]
+                                
+                                # Reconstruct with proper quoting
+                                for i in range(1, len(args)):
+                                    arg = args[i]
+                                    if ' ' in arg:
+                                        args[i] = f'"{arg}"'
+                                
+                                final_cmd = ' '.join(args)
+                                pane_data["running_command"] = final_cmd
+                            else:
+                                # Fallback to basic command if we couldn't get args
+                                pane_data["running_command"] = cmd_path if cmd_path else "(Unknown command)"
+                        except (IOError, FileNotFoundError):
+                            # If /proc access fails, try a direct ps approach with custom format
+                            cmdline = get_output(f"ps -p {child_pid} -o command=")
+                            print(f"Command line from ps: {cmdline}")
+                            # Try to add quotes manually for arguments with spaces
+                            words = []
+                            current_word = ""
+                            in_quotes = False
+                            quote_char = None
+                            
+                            for char in cmdline:
+                                if char == ' ' and not in_quotes:
+                                    if current_word:
+                                        words.append(current_word)
+                                        current_word = ""
+                                elif char in ['"', "'"]:
+                                    if not in_quotes:
+                                        in_quotes = True
+                                        quote_char = char
+                                    elif char == quote_char:
+                                        in_quotes = False
+                                        quote_char = None
+                                    current_word += char
+                                else:
+                                    current_word += char
+                            
+                            if current_word:
+                                words.append(current_word)
+                            
+                            # Add quotes to words with spaces that don't already have quotes
+                            for i in range(len(words)):
+                                if ' ' in words[i] and not (words[i].startswith('"') or words[i].startswith("'")):
+                                    words[i] = f'"{words[i]}"'
+                            
+                            pane_data["running_command"] = ' '.join(words)
                     else:
                         pane_data["running_command"] = "(No active child process)"
                 else:
@@ -72,6 +133,7 @@ def create_process_snapshot():
 
         # Add session data to the overall tmux data
         tmux_data.append(session_data)
+    
     return tmux_data
 
 def create_shm_snapshot(output_file, config_data):
@@ -100,6 +162,7 @@ def load_process_snapshot(process):
             for pane_data in window_data['panes']:
                 pane_index = pane_data['pane']
                 running_command = pane_data.get('running_command', '')
+                print(f"Running command: {running_command}") 
 
                 # Split the command and create a new pane with the specified command
                 if running_command:
