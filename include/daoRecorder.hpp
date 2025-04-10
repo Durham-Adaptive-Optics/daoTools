@@ -38,12 +38,14 @@ namespace Dao
         class Recorder : public Thread {
         public:
             Recorder(const std::string &shmPath, const std::string &recordingRoot, const int core, 
-                const std::size_t recordingFileCapacity, Log::Logger &logger, bool &errorFlag) 
+                const std::size_t recordingFileCapacity, const std::size_t frameTarget,  
+                Log::Logger &logger, bool &errorFlag) 
                 :
                 mRecordingFileCapacity(recordingFileCapacity),
                 Thread(shmPath, logger, core),
                 mControllerErrorFlag(errorFlag),
                 mRecordingRoot(recordingRoot),
+                mFrameTarget(frameTarget),
                 mInternalBuffer(nullptr),
                 mRecordingFile(nullptr),
                 mShmInterface(nullptr),
@@ -234,11 +236,13 @@ namespace Dao
 
             void NewRecordingFile()
             {
-                const std::string recordingFilePath = 
-                    mRecordingRoot + "/" + mLocalName + std::to_string(mRecordingFileCount) + ".fits";
+                const std::string fileName = mLocalName + std::to_string(mRecordingFileCount) + ".fits";
+                const std::string filePath = mRecordingRoot + "/" + fileName;
+                mLogger.Debug("localName: %s, file: %s, path: %s", mLocalName.c_str(), fileName.c_str(), filePath.c_str());
+                mLogger.Debug("Creating new FITS file: %s", filePath.c_str());
                 
                 int status = 0;
-                fits_create_file(&mRecordingFile, recordingFilePath.c_str(), &status);
+                fits_create_file(&mRecordingFile, filePath.c_str(), &status);
                 HandleFitsError(status, "Failed to create new recordings file");
                 if(status) 
                 {
@@ -248,7 +252,7 @@ namespace Dao
 
                 ++mRecordingFileCount;
                 mRecordingFileSize = 0;
-                mLogger.Info("Recording %s to %s", mShmPath.c_str(), recordingFilePath.c_str());
+                mLogger.Info("Recording %s to %s", mShmPath.c_str(), filePath.c_str());
             }
 
             // Cfitsio
@@ -271,9 +275,10 @@ namespace Dao
 
             //
             std::chrono::time_point<std::chrono::high_resolution_clock> mt0; // Used for estimating recording rate.
-            std::size_t mRetiredAccumulator; // Used for estimating recording rate.
+            std::size_t mRetiredAccumulator;     // Used for estimating recording rate.
             std::string mRecordingRoot;
             bool &mControllerErrorFlag;
+            std::size_t mFrameTarget;            // How many frames to record, or 0 to record indefinitely.
             std::string mLocalName;
             Log::Logger &mLogger;
             std::string mShmPath;
@@ -328,4 +333,4 @@ namespace Dao
     }; // namespace Telemetry
 }; // namespace Dao
 
-#endif
+#endif // DAO_RECORDER__HPP

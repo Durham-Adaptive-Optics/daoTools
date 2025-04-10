@@ -24,29 +24,76 @@ namespace Dao
         class RecorderController : public Component 
         {
         public:
-            RecorderController(const std::string &configFilePath, const std::string &recordingRoot, 
-                const std::string &ip, const std::size_t port, Log::Logger &logger) 
+            RecorderController(const std::string &configFilePath, const std::string &ip, 
+                const std::size_t port, Log::Logger &logger) 
                 :
+                // todo: sync recording name with main somehow?
                 Component("RecController", logger, ip, port),
-                mRecordingRoot(recordingRoot),
                 mConfigPath(configFilePath),
+                mRecordingDirectory("."),
                 mRecordingFileCapacity(0),
                 mLogger(logger),
                 mSharedCore(0),
                 mOkay(true)
             {
                 mLogger.Trace("RecorderController()");
-                mLogger.Debug("Recordings will be stored to %s", mRecordingRoot.c_str());
+                mLogger.Debug("Recordings will be stored to %s", mRecordingDirectory.c_str());
             }
 
             bool isOkay() const { return mOkay; }
 
         private:
+            void PROCESS_OTHER(std::string payload) override
+            {
+                mLogger.Trace("PROCESS_OTHER");
+                mLogger.Debug("Parsing frame targets: ", payload.c_str());
+
+                // todo: in what states should we accept & reject the payload?
+                /*
+                    We expect the payload to have the following format:
+
+                    Payload: "n1,n2,n3..." or "n"
+
+                    So you can specify the frameCounts for each shm (in the config order)
+                    or you can set them all to the same value. Note, we default to 0
+                    which means record all frames forever.
+                */
+
+                mFrameTargets.clear(); //? What happens if the parsing crashes, now we have no targets!
+                std::size_t ridx = 0;
+                do {
+                    // Extract token substring from payload.
+                    const auto delimIdx = payload.find(",", ridx);
+                    const std::size_t tokenLen = delimIdx - ridx; //! this isn't always right.
+                    const std::string token = payload.substr(delimIdx, tokenLen);
+                    mLogger.Debug("Extracted target token: %s", token.c_str());
+                    ridx = delimIdx;
+
+                    // Store the desired frame target.
+                    const std::size_t frameTarget = std::atoi(token);
+                    mFrameTargets.emplace_back(frameTarget);
+
+                } while(delimIdx != std::string::npos);
+            }
+
             void transition_Off_Standby() override
             {
                 mLogger.Trace("transition_Off_Standby()");
 
-                mConfig = YAML::LoadFile(mConfigPath);
+                // Parse out YAML configuration file.
+                try {
+                    mConfig = YAML::LoadFile(mConfigPath);
+                }
+                catch(const YAML::ParserException& e) {
+                    mLogger.Error("Failed to parse configuration file: %s", e.what());
+                    mOkay = false;
+                    return;
+                }
+                catch(const YAML::BadFile& e) {
+                    mLogger.Error("Failed to load configuration file: %s", e.what());
+                    mOkay = false;
+                    return;
+                }
 
                 mSharedCore = mConfig["PeriodicCore"].as<std::size_t>();
                 mLogger.Debug("Using core %d as shared recording core", mSharedCore);
@@ -54,14 +101,30 @@ namespace Dao
                 mDedicatedCores = mConfig["RealtimeCores"].as<std::vector<std::size_t>>();
                 mLogger.Debug("Assigned %d cores as dedicated recording cores", mDedicatedCores.size());
 
-                const auto fileCapacityConfig = mConfig["FileCapacity"];
-                if(fileCapacityConfig)
+                const auto fileCapacityField = mConfig["FileCapacity"];
+                if(fileCapacityField) 
                 {
-                    mRecordingFileCapacity = fileCapacityConfig.as<std::size_t>();
-                    mLogger.Debug("Recording data will be spread across several FITS files (%d frames / file)", mRecordingFileCapacity);
+                    mRecordingFileCapacity = fileCapacityField.as<std::size_t>();                
                 }
 
-                mLogger.Debug("Configuration loaded");
+                if(mRecordingFileCapacity)
+                {
+                    mLogger.Debug("Recorded data will be spread across several FITS files (%d frames / file)", 
+                        mRecordingFileCapacity);
+                }
+                else
+                {
+                    mLogger.Debug("Recorded data will occupy a single FITS file");
+                }
+
+                const auto recordingDirField = mConfig["RecordingDirectory"];
+                if(recordingDirField) 
+                {
+                    mRecordingDirectory = recordingDirField.as<std::string>();
+                }
+                mLogger.Debug("FITS files will be stored in the directory: %s", mRecordingDirectory.c_str());
+
+                mLogger.Debug("Configuration successfully loaded");
             }
 
             void transition_Standby_Idle() override
@@ -88,11 +151,13 @@ namespace Dao
 
                     // Allocate recording object.
                     try {
-                        Recorder *recorder = new Recorder(
+                        Recorder *recorder = new Recorder
+                        (
                             shmPath, 
-                            mRecordingRoot, 
+                            mRecordingDirectory, 
                             recordingCore, 
                             mRecordingFileCapacity,
+                            mTargetFrameCount,
                             mLogger,
                             mOkay
                         );
@@ -154,9 +219,10 @@ namespace Dao
             }
 
             std::vector<std::size_t> mDedicatedCores;
+            std::vector<std::size_t> mFrameTargets;
             std::size_t mRecordingFileCapacity;
             std::vector<Recorder *> mRecorders; // TODO: make more cache friendly by moving to contigouous objects.
-            std::string mRecordingRoot;
+            std::string mRecordingDirectory;
             std::size_t mSharedCore;
             std::string mConfigPath;
             Log::Logger &mLogger;
