@@ -1,17 +1,20 @@
 /**
  * @file    daoRecorderController.h
  * @brief   daoComponent to manage multiple daoRecorders.
- * 
+ *
  * @author  T.N Davies
- * 
+ *
  * @date    10/01/2025
  */
 
 #ifndef DAO_REC_CONTROLLER_HPP
 #define DAO_REC_CONTROLLER_HPP
 
+#define DAO_REC_INDEFINITE -1
+
 #include <yaml-cpp/yaml.h>
 #include <daoRecorder.hpp>
+#include <daoThread.hpp>
 #include <daoShmIfce.hpp>
 #include <daoComponent.hpp>
 #include <daoLog.hpp>
@@ -21,59 +24,43 @@ namespace Dao
 {
     namespace Telemetry
     {
-        class RecorderController : public Component 
-        {
+        class RecorderController : public Component, Thread {
         public:
-            RecorderController(const std::string &configFilePath, const std::string &ip, 
-                const std::size_t port, Log::Logger &logger) 
+            RecorderController(const std::string &configFilePath, const std::string &ip,
+                const std::size_t port, Log::Logger &logger)
                 :
-                // todo: sync recording name with main somehow?
                 Component("RecController", logger, ip, port),
+                Thread("RecControllerThread", logger),
+                mGlobalFrameTarget(DAO_REC_INDEFINITE),
                 mConfigPath(configFilePath),
                 mRecordingDirectory("."),
                 mRecordingFileCapacity(0),
                 mLogger(logger),
-                mSharedCore(0),
-                mOkay(true)
+                mError(false),
+                mSharedCore(0)
             {
                 mLogger.Trace("RecorderController()");
                 mLogger.Debug("Recordings will be stored to %s", mRecordingDirectory.c_str());
+                
+                // Create and start our state-commander thread.
+                Spawn();
+                Start();
             }
-
-            bool isOkay() const { return mOkay; }
 
         private:
             void PROCESS_OTHER(std::string payload) override
             {
                 mLogger.Trace("PROCESS_OTHER");
-                mLogger.Debug("Parsing frame targets: ", payload.c_str());
 
-                // todo: in what states should we accept & reject the payload?
-                /*
-                    We expect the payload to have the following format:
-
-                    Payload: "n1,n2,n3..." or "n"
-
-                    So you can specify the frameCounts for each shm (in the config order)
-                    or you can set them all to the same value. Note, we default to 0
-                    which means record all frames forever.
-                */
-
-                mFrameTargets.clear(); //? What happens if the parsing crashes, now we have no targets!
-                std::size_t ridx = 0;
-                do {
-                    // Extract token substring from payload.
-                    const auto delimIdx = payload.find(",", ridx);
-                    const std::size_t tokenLen = delimIdx - ridx; //! this isn't always right.
-                    const std::string token = payload.substr(delimIdx, tokenLen);
-                    mLogger.Debug("Extracted target token: %s", token.c_str());
-                    ridx = delimIdx;
-
-                    // Store the desired frame target.
-                    const std::size_t frameTarget = std::atoi(token);
-                    mFrameTargets.emplace_back(frameTarget);
-
-                } while(delimIdx != std::string::npos);
+                if (GetStateText() == "Off" && payload.length()) {
+                    try {
+                        mGlobalFrameTarget = std::stoi(payload); 
+                        mLogger.Info("New global frame target: %d", mGlobalFrameTarget);
+                    }
+                    catch(const std::exception& e) {
+                        mLogger.Error("Failed to parse frame target: %s", e.what());
+                    }
+                }
             }
 
             void transition_Off_Standby() override
@@ -84,42 +71,38 @@ namespace Dao
                 try {
                     mConfig = YAML::LoadFile(mConfigPath);
                 }
-                catch(const YAML::ParserException& e) {
+                catch (const YAML::ParserException &e) {
                     mLogger.Error("Failed to parse configuration file: %s", e.what());
-                    mOkay = false;
+                    mError = true;
                     return;
                 }
-                catch(const YAML::BadFile& e) {
+                catch (const YAML::BadFile &e) {
                     mLogger.Error("Failed to load configuration file: %s", e.what());
-                    mOkay = false;
+                    mError = true;
                     return;
                 }
 
                 mSharedCore = mConfig["PeriodicCore"].as<std::size_t>();
                 mLogger.Debug("Using core %d as shared recording core", mSharedCore);
-                
+
                 mDedicatedCores = mConfig["RealtimeCores"].as<std::vector<std::size_t>>();
                 mLogger.Debug("Assigned %d cores as dedicated recording cores", mDedicatedCores.size());
 
                 const auto fileCapacityField = mConfig["FileCapacity"];
-                if(fileCapacityField) 
-                {
-                    mRecordingFileCapacity = fileCapacityField.as<std::size_t>();                
+                if (fileCapacityField) {
+                    mRecordingFileCapacity = fileCapacityField.as<std::size_t>();
                 }
 
-                if(mRecordingFileCapacity)
-                {
-                    mLogger.Debug("Recorded data will be spread across several FITS files (%d frames / file)", 
+                if (mRecordingFileCapacity) {
+                    mLogger.Debug("Recorded data will be spread across several FITS files (%d frames / file)",
                         mRecordingFileCapacity);
                 }
-                else
-                {
+                else {
                     mLogger.Debug("Recorded data will occupy a single FITS file");
                 }
 
                 const auto recordingDirField = mConfig["RecordingDirectory"];
-                if(recordingDirField) 
-                {
+                if (recordingDirField) {
                     mRecordingDirectory = recordingDirField.as<std::string>();
                 }
                 mLogger.Debug("FITS files will be stored in the directory: %s", mRecordingDirectory.c_str());
@@ -131,15 +114,15 @@ namespace Dao
             {
                 mLogger.Trace("transition_Standby_Idle()");
 
-                for (const auto &recConfig : mConfig["Recorders"])
-                {
-                    // Parse configuration recorder's data.
+                // Allocate recorders.
+                for (const auto &recConfig : mConfig["Recorders"]) {
+                    // Get configuration.
                     const std::string &shmPath = recConfig["shm"].as<std::string>();
                     const bool realtime = recConfig["realtime"].as<bool>();
-
+                    
                     // Assign it a core.
                     std::size_t recordingCore = mSharedCore;
-                    if(realtime && !mDedicatedCores.size()) {
+                    if (realtime && !mDedicatedCores.size()) {
                         mLogger.Error("No dedicated cores available for recording %s", shmPath.c_str());
                         mLogger.Warning("The data for %s will not be recorded!", shmPath.c_str());
                         continue;
@@ -153,33 +136,32 @@ namespace Dao
                     try {
                         Recorder *recorder = new Recorder
                         (
-                            shmPath, 
-                            mRecordingDirectory, 
-                            recordingCore, 
+                            shmPath,
+                            mRecordingDirectory,
+                            recordingCore,
                             mRecordingFileCapacity,
-                            mTargetFrameCount,
-                            mLogger,
-                            mOkay
+                            mGlobalFrameTarget,
+                            mLogger
                         );
-            
+
                         mRecorders.push_back(recorder);
-                        recorder->Spawn();
                     }
-                    catch(const std::exception &e) {
-                        mLogger.Error("Failed to create recorder for %s: %s", 
-                            shmPath.c_str(), 
+                    catch (const std::exception &e) {
+                        mLogger.Error("Failed to create recorder for %s: %s",
+                            shmPath.c_str(),
                             e.what()
                         );
-                        
-                        mOkay = false;
+
+                        mError = true;
                         return;
                     }
                 }
 
-                mLogger.Info("%d recorders created", mRecorders.size());
-                if (!mRecorders.size()) 
-                {
-                    mLogger.Warning("No data has been configured to be recorded!");
+                if(mRecorders.size()) {
+                    mLogger.Info("%d recorders created", mRecorders.size());
+                }
+                else {
+                    mLogger.Warning("No recorders created!");
                 }
             }
 
@@ -198,36 +180,61 @@ namespace Dao
             void transition_Idle_Standby() override
             {
                 mLogger.Trace("transition_Idle_Standby()");
-                for (auto &recorder : mRecorders) 
-                { 
+                for (auto &recorder : mRecorders) {
                     recorder->Join();
-                    delete recorder; 
+                    delete recorder;
                 }
                 mRecorders.clear();
             }
 
             void entry_Error() override
             {
-                m_log.Trace("entry_Error()");
+                mLogger.Trace("entry_Error()");
+                mLogger.Debug("Controller has entered error state");
                 for (auto &recorder : mRecorders) { recorder->Stop(); }
             }
 
-            void entry_Off() override
+            void RestartableThread() override
             {
-                m_log.Trace("entry_Off()");
-                mOkay = true; // Reset.
+                if (GetStateText() == "Running") {
+                    std::size_t nFinished = 0;
+
+                    for (Recorder *recorder : mRecorders) {
+                        if (recorder->isRunning()) continue;
+
+                        if (recorder->inError()) {
+                            mLogger.Debug("Detected %s's recorder is stopped and in error", recorder->getShmName());
+                            OnFailure();
+                        }
+                        else {
+                            mLogger.Debug("Detected %s's recorder has met target", recorder->getShmName().c_str());
+                            ++nFinished;
+                        }
+                    }
+
+                    if (nFinished == mRecorders.size()) {
+                        mLogger.Debug("All recorders have met their targets");
+                        Idle();
+                        Disable();
+                    }
+                }
+                else if(mError) {
+                    mLogger.Debug("Controller flagged an error - commanding it into error state");
+                    mError = false; // reset.
+                    OnFailure();
+                }
             }
 
             std::vector<std::size_t> mDedicatedCores;
-            std::vector<std::size_t> mFrameTargets;
             std::size_t mRecordingFileCapacity;
-            std::vector<Recorder *> mRecorders; // TODO: make more cache friendly by moving to contigouous objects.
+            std::vector<Recorder *> mRecorders;
             std::string mRecordingDirectory;
+            std::int64_t mGlobalFrameTarget;
             std::size_t mSharedCore;
             std::string mConfigPath;
             Log::Logger &mLogger;
             YAML::Node mConfig;
-            bool mOkay;
+            bool mError;
         };
 
     }; // namespace Telemetry
