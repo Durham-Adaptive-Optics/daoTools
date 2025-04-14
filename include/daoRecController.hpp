@@ -196,7 +196,12 @@ namespace Dao
 
             void RestartableThread() override
             {
-                if (GetStateText() == "Running") {
+                if(mError) {
+                    mLogger.Debug("Controller flagged an error - commanding it into error state");
+                    mError = false; // reset.
+                    OnFailure();
+                }
+                else if (GetStateText() == "Running") {
                     std::size_t nFinished = 0;
 
                     for (Recorder *recorder : mRecorders) {
@@ -217,11 +222,6 @@ namespace Dao
                         Idle();
                         Disable();
                     }
-                }
-                else if(mError) {
-                    mLogger.Debug("Controller flagged an error - commanding it into error state");
-                    mError = false; // reset.
-                    OnFailure();
                 }
             }
 
