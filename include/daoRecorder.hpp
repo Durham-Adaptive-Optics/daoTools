@@ -1,9 +1,9 @@
 /**
  * @file    daoRecorder.h
  * @brief   Monitors a DAO shared memory and records frames to disk (FITS format).
- * 
+ *
  * @author  T.N Davies
- * 
+ *
  * @date    10/01/2025
  */
 
@@ -17,6 +17,7 @@
 #include <daoThread.hpp>
 #include <string>
 #include <yaml-cpp/yaml.h>
+#include <iomanip>
 #include <chrono>
 #include <thread>
 #include <fstream>
@@ -24,52 +25,45 @@
 #include <map>
 #include <functional>
 
-// @DAO_REC_LOGRATE_INTERVAL:
-// Specifies the period (secs) to wait
-// before estimating & logging the
-// recording rate of the assigned
-// shared memory.
-#define DAO_REC_LOGRATE_INTERVAL 5
-
 namespace Dao
 {
     namespace Telemetry
     {
         class Recorder : public Thread {
         public:
-            Recorder(const std::string &shmPath, const std::string &recordingRoot, const int core, 
-                const std::size_t recordingFileCapacity, Log::Logger &logger, bool &errorFlag) 
+            Recorder(const std::string &shmPath, const std::string &recordingRoot, const int core,
+                const std::size_t recordingFileCapacity, const std::int64_t frameTarget,
+                Log::Logger &logger)
                 :
                 mRecordingFileCapacity(recordingFileCapacity),
                 Thread(shmPath, logger, core),
-                mControllerErrorFlag(errorFlag),
-                mRecordingRoot(recordingRoot),
+                mRecordingDirectory(recordingRoot),
+                mFrameTarget(frameTarget),
                 mInternalBuffer(nullptr),
                 mRecordingFile(nullptr),
                 mShmInterface(nullptr),
-                mRetiredAccumulator(0),
-                mRecordingFileCount(0),
                 mRecordingFileSize(0),
+                mNumRecordedFrames(0),
+                mCurrentFilePath(""),
                 mShmBufferSize(0),
                 mShmPath(shmPath),
-                mShmRefCounter(0),
                 mFitsDataType(0),
                 mLogger(logger),
                 mLocalName(""),
-                mFitsBPP(0)
+                mError(false),
+                mFitsBPP(0),
+                mCnt0(0)
             {
                 mShmInterface = new ShmIfce<std::uint8_t>(mLogger);
                 mShmInterface->OpenShm(mShmPath.c_str(), &mShmImage, m_node);
-                if (mShmImage.md->atype == 10 || mShmImage.md->atype == 12) 
-                {
+                if (mShmImage.md->atype == 10 || mShmImage.md->atype == 12) {
                     throw std::logic_error("Dao complex-valued shared-memory is currently unsupported");
                 }
 
                 mShmBufferSize = mDaoBppMap.at(mShmImage.md->atype) * mShmImage.md->nelement;
                 mInternalBuffer = new std::uint8_t[mShmBufferSize];
                 mLogger.Debug("Allocated %d bytes for %s's internal buffer", mShmBufferSize, mShmPath.c_str());
-                if(!mInternalBuffer)
-                {
+                if (!mInternalBuffer) {
                     throw std::runtime_error("Failed to allocate internal buffer");
                 }
 
@@ -78,51 +72,40 @@ namespace Dao
                 const size_t lastSlash = shmName.find_last_of("/\\");
                 mLocalName = shmName.substr(lastSlash + 1);
                 const size_t extensionPos = mLocalName.find(".im.shm");
-                if (extensionPos != std::string::npos) 
-                {
+                if (extensionPos != std::string::npos) {
                     mLocalName = mLocalName.substr(0, extensionPos);
                 }
 
                 // Infer information required by Cfitsio from Dao shm metadata. 
                 mFitsDataType = mFitsTypeMap.at(mShmImage.md->atype);
                 mFitsBPP = mFitsBppMap.at(mShmImage.md->atype);
-                for (std::int64_t i = mShmImage.md->naxis - 1; i >= 0 ; --i) 
-                {
+                for (std::int64_t i = mShmImage.md->naxis - 1; i >= 0; --i) {
                     const auto nAxisElements = mShmImage.md->size[i];
                     mDataDimensions.push_back(nAxisElements);
                 }
 
-                NewRecordingFile();
-                if(!mRecordingFile)
-                {
+                if (!CreateFitsFile()) {
                     throw std::runtime_error("Failed to create initial recordings file");
                 }
+
+                Spawn();
             }
 
             ~Recorder()
             {
-                CloseRecordingFile();
+                CloseFitsFile();
                 delete mShmInterface;
                 delete[] mInternalBuffer;
             }
 
-        private:
-            void HandleFitsError(const int fitsStatus, const std::string &msgPreamble)
-            {
-                if (fitsStatus) 
-                {
-                    char errbuff[FLEN_STATUS];
-                    fits_get_errstatus(fitsStatus, errbuff);
-                    mLogger.Error("%s: %s", msgPreamble.c_str(), errbuff);
-                    mControllerErrorFlag = false;
-                }
-            }
+            bool inError() const { return mError; }
+            std::string getShmName() const { return mShmPath.c_str(); }
 
-            void OnceOnStart() override 
-            { 
-                mt0 = std::chrono::high_resolution_clock::now();
-                mShmRefCounter = mShmInterface->GetFrameCounter(); 
-                mLogger.Info("%s's recorder has started", mShmPath.c_str());
+        private:
+            void OnceOnStart() override
+            {
+                mCnt0 = mShmInterface->GetFrameCounter();
+                mLogger.Info("%s's recorder has started (target=%d)", mShmPath.c_str(), mFrameTarget);
             }
 
             void OnceOnStop() override
@@ -132,123 +115,172 @@ namespace Dao
 
             void RestartableThread() override
             {
-                // Estimate and log the recording rate.
-                const auto mt1 = std::chrono::high_resolution_clock::now();
-                const auto timeElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(mt1 - mt0);
-                const auto thresholdMs = 1000 * DAO_REC_LOGRATE_INTERVAL;
-                if(timeElapsed.count() >= thresholdMs)
-                {
-                    const float rateEstimate = mRetiredAccumulator / (float)DAO_REC_LOGRATE_INTERVAL;
-                    mLogger.Info("Recording %s @ %.2fHz", mShmPath.c_str(), rateEstimate);
-                    mRetiredAccumulator = 0;
-                    mt0 = std::chrono::high_resolution_clock::now();
+                // Check if we have met our target.
+                if (mNumRecordedFrames == mFrameTarget) {
+                    mLogger.Info("Successfully recorded %d frames from %s",
+                        mNumRecordedFrames,
+                        mShmPath.c_str()
+                    );
+
+                    Exit();
+                    return;
                 }
 
-                // If binning is enabled, create new fits file if
-                // the current file is full.
-                if(mRecordingFileCapacity && mRecordingFileSize == mRecordingFileCapacity)
+                // Switch over to a new FITS file if the current has met the specified capacity.
+                if (mRecordingFileCapacity && mRecordingFileSize == mRecordingFileCapacity) 
                 {
-                    CloseRecordingFile();
+                    if(!CloseFitsFile()) {
+                        mLogger.Error("%s's recorder couldn't close its current FITS file", mShmPath.c_str());
+                        SignalError();
+                        return;
+                    }
 
-                    NewRecordingFile();
-                    if(!mRecordingFile) 
-                    {
-                        mLogger.Critical("Recording for %s stopped due to no recording file", mShmPath.c_str());
-                        mControllerErrorFlag = false;
-                        Stop();
+                    if(!CreateFitsFile()) {
+                        mLogger.Error("%s's recorder couldn't create a new FITS file", mShmPath.c_str());
+                        SignalError();
                         return;
                     }
                 }
 
                 // Wait until a new frame is pushed and record it.
-                const auto shmCounter = mShmInterface->GetFrameCounter();
-                if(shmCounter > mShmRefCounter)
-                {
-                    mShmRefCounter = shmCounter;
-                    mLogger.Debug("New frame available for %s", mShmPath.c_str());
+                const auto cnt0_ = mShmInterface->GetFrameCounter();
+                const auto delta = cnt0_ - mCnt0;
+                if(delta > 1) {
+                    const auto nMissedFrames = delta - 1;
+                    mLogger.Warning("Missed %d frames from %s", nMissedFrames, mShmPath.c_str());
+                }
 
+                if (delta) {
+                    mCnt0 = cnt0_;
+                    const double timestamp = (double)mShmImage.md->atime.ts.tv_sec + mShmImage.md->atime.ts.tv_nsec / 1e9;
                     std::memcpy(mInternalBuffer, mShmInterface->GetPtr(), mShmBufferSize);
 
                     // Once the copy has completed we check the shm hasn't been updated;
-                    // if it has then the internal buffer may contain a mix of the old
-                    // and new frame data and so we mark it as corrupted when we record
-                    // it to disk.
-                    const bool internalBufferCorrupted = mShmInterface->GetFrameCounter() > mShmRefCounter;  
-                    if(internalBufferCorrupted)
-                    {
-                        mLogger.Warning("%s was updated while frame %d was being copied (recorded as corrupted)", 
+                    // if it has then the internal buffer may not contain the frame 
+                    // we wanted.
+                    const bool internalBufferCorrupted = mShmInterface->GetFrameCounter() > mCnt0;
+                    if (internalBufferCorrupted) {
+                        mLogger.Warning("%s didn't record frame %d as copy stage was interrupted",
                             mShmPath.c_str(),
-                            mShmRefCounter
+                            mCnt0
                         );
+                        return;
                     }
-
-                    RecordInternalBuffer(internalBufferCorrupted);
+                    
+                    if(!RecordInternalBuffer(mCnt0, timestamp)) {
+                        mLogger.Error("Failed to record frame %d for %s", mCnt0, mShmPath.c_str());
+                        SignalError();
+                        return;
+                    }
                 }
             }
 
-            void RecordInternalBuffer(const bool frameCorrupted)
-            {   
+            bool RecordInternalBuffer(const std::uint64_t frameCounter, const double timestamp)
+            {
                 /* === Write the HDU for this frame into the FITS file === */
-                const double timestamp = (double)mShmImage.md->atime.ts.tv_sec + mShmImage.md->atime.ts.tv_nsec / 1e9;
-
                 {
                     int status = 0;
                     fits_create_img(mRecordingFile, mFitsBPP, mDataDimensions.size(), mDataDimensions.data(), &status);
-                    HandleFitsError(status, "Failed to create FITS HDU");
+                    if (status) {
+                        char errbuff[FLEN_STATUS];
+                        fits_get_errstatus(status, errbuff);
+                        mLogger.Error("Failed to create FITS HDU: %s", errbuff);
+                        return false;
+                    }
+                }
+
+                {
+                    int status = 0;
+                    std::uint64_t cnt = frameCounter; // avoid const.
+                    fits_write_key(mRecordingFile, TULONGLONG, "cnt0", &cnt, "", &status);
+                    if (status) {
+                        char errbuff[FLEN_STATUS];
+                        fits_get_errstatus(status, errbuff);
+                        mLogger.Error("Failed to write cnt0 field to HDU: %s", errbuff);
+                        return false;
+                    }
                 }
 
                 {
                     int status = 0;
                     double ts = timestamp; // avoid const.
                     fits_write_key(mRecordingFile, TDOUBLE, "TIME-OBS", &ts, "", &status);
-                    HandleFitsError(status, "Failed to write timestamp key to HDU");
-                }
-
-                {
-                    int status = 0;
-                    bool isFrameValid = !frameCorrupted;
-                    mLogger.Debug("Recorded frame is valid: %s", isFrameValid ? "T" : "F");
-                    fits_write_key(mRecordingFile, TLOGICAL, "VALID", &isFrameValid, "", &status);
-                    HandleFitsError(status, "Failed to write validation key to HDU");
+                    if (status) {
+                        char errbuff[FLEN_STATUS];
+                        fits_get_errstatus(status, errbuff);
+                        mLogger.Error("Failed to write timestamp field to HDU: %s", errbuff);
+                        return false;
+                    }
                 }
 
                 /* === Write the buffered frame data into the FITS file === */
                 {
                     int status = 0;
-                    mLogger.Debug("Recorded frame data as %d elements of FITS type %d", mShmImage.md->nelement, mFitsDataType);
                     fits_write_img(mRecordingFile, mFitsDataType, 1, mShmImage.md->nelement, mInternalBuffer, &status);
-                    HandleFitsError(status, "Failed to write data to FITS file");
+                    if (status) {
+                        char errbuff[FLEN_STATUS];
+                        fits_get_errstatus(status, errbuff);
+                        mLogger.Error("Failed to write frame data: %s", errbuff);
+                        return false;
+                    }
+                    
+                    mLogger.Debug("Recorded frame of %d elements (FITS type: %d)", 
+                        mShmImage.md->nelement, 
+                        mFitsDataType
+                    );
                 }
-                
+
                 ++mRecordingFileSize;
-                ++mRetiredAccumulator;
+                ++mNumRecordedFrames;
+                
+                return true;
             }
 
-            void CloseRecordingFile()
+            bool CreateFitsFile()
+            {
+                // Determine the new file's name.
+                char fmtBuffer[256];
+                const std::time_t unixTimestamp = std::time(nullptr);
+                const std::tm *utcDate = std::gmtime(&unixTimestamp);
+                std::strftime(fmtBuffer, sizeof(fmtBuffer), "%Y-%m-%d-%H%M%S-%Z", utcDate);
+                const std::string fileName = mLocalName + "_" + std::string(fmtBuffer);
+
+                // Determine the new file's path.
+                const std::string filePath = mRecordingDirectory + "/" + fileName + ".fits";
+                mLogger.Debug("Creating new FITS file: %s", filePath.c_str());
+                
+                // Attempt to create it.
+                int status = 0;
+                fits_create_file(&mRecordingFile, filePath.c_str(), &status);
+                
+                // Housekeeping upon creation.
+                if(!status) {
+                    mLogger.Info("Recording %s to %s", mShmPath.c_str(), filePath.c_str());
+                    mCurrentFilePath = filePath;
+                    mRecordingFileSize = 0;
+                }
+
+                return !status;
+            }
+
+            bool CloseFitsFile()
             {
                 int status = 0;
                 fits_close_file(mRecordingFile, &status);
-                HandleFitsError(status, "Failed to close current recording file");
-                mRecordingFile = nullptr;
-            }
 
-            void NewRecordingFile()
-            {
-                const std::string recordingFilePath = 
-                    mRecordingRoot + "/" + mLocalName + std::to_string(mRecordingFileCount) + ".fits";
-                
-                int status = 0;
-                fits_create_file(&mRecordingFile, recordingFilePath.c_str(), &status);
-                HandleFitsError(status, "Failed to create new recordings file");
-                if(status) 
-                {
-                    mRecordingFile = nullptr;
-                    return;
+                if(!status) {
+                    mLogger.Info("Succesfully closed %s", mCurrentFilePath.c_str());
                 }
 
-                ++mRecordingFileCount;
-                mRecordingFileSize = 0;
-                mLogger.Info("Recording %s to %s", mShmPath.c_str(), recordingFilePath.c_str());
+                mRecordingFile = nullptr;
+                mCurrentFilePath = "";
+                return !status;
+            }
+            
+            void SignalError()
+            {
+                mError = true;
+                Exit();
             }
 
             // Cfitsio
@@ -259,24 +291,24 @@ namespace Dao
             // Shared Memory
             ShmIfce<std::uint8_t> *mShmInterface;
             std::uint8_t *mInternalBuffer;
-            std::size_t mShmRefCounter;
             std::size_t mShmBufferSize;
+            std::size_t mCnt0;
             IMAGE mShmImage;
 
             // Recording File.
             std::size_t mRecordingFileCapacity; // How many frames a file will contain.
-            std::size_t mRecordingFileCount;    // How many recording files we have created.
             std::size_t mRecordingFileSize;     // How many frames are in the current recording file.
+            std::size_t mNumRecordedFrames;      // How many frames in total we have recorded.
             fitsfile *mRecordingFile;
 
             //
-            std::chrono::time_point<std::chrono::high_resolution_clock> mt0; // Used for estimating recording rate.
-            std::size_t mRetiredAccumulator; // Used for estimating recording rate.
-            std::string mRecordingRoot;
-            bool &mControllerErrorFlag;
+            std::string mRecordingDirectory;
+            std::string mCurrentFilePath;      // Path of the current fits file we are recording to.
+            std::int64_t mFrameTarget;         // How many frames to record, or -1 to record indefinitely.
             std::string mLocalName;
             Log::Logger &mLogger;
             std::string mShmPath;
+            bool mError;
 
             // Mapping from Dao -> Cfitsio datatypes.
             const std::map<std::uint8_t, std::uint8_t> mFitsTypeMap
@@ -296,7 +328,7 @@ namespace Dao
             };
 
             // Mapping from Dao datatypes to Cfitsio element bit-sizes.
-            const std::map<std::size_t, std::int8_t>  mFitsBppMap 
+            const std::map<std::size_t, std::int8_t>  mFitsBppMap
             {
                 {1, BYTE_IMG},
                 {2, BYTE_IMG},
@@ -323,9 +355,9 @@ namespace Dao
                 {8, sizeof(std::int64_t)},
                 {9, sizeof(float)},
                 {10, sizeof(double)}
-            } ;
+            };
         };
     }; // namespace Telemetry
 }; // namespace Dao
 
-#endif
+#endif // DAO_RECORDER__HPP
