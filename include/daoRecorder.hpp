@@ -144,7 +144,13 @@ namespace Dao
 
                 // Wait until a new frame is pushed and record it.
                 const auto cnt0_ = mShmInterface->GetFrameCounter();
-                if (cnt0_ > mCnt0) {
+                const auto delta = cnt0_ - mCnt0;
+                if(delta > 1) {
+                    const auto nMissedFrames = delta - 1;
+                    mLogger.Warning("Missed %d frames from %s", nMissedFrames, mShmPath.c_str());
+                }
+
+                if (delta) {
                     mCnt0 = cnt0_;
                     const double timestamp = (double)mShmImage.md->atime.ts.tv_sec + mShmImage.md->atime.ts.tv_nsec / 1e9;
                     std::memcpy(mInternalBuffer, mShmInterface->GetPtr(), mShmBufferSize);
