@@ -216,7 +216,8 @@ class daoShmViewer(QMainWindow):
         self.init_ui()
         self.setup_timers()
         self.setup_connections()
-
+        self.slice_selector = None  # Add slice selector variable
+        self.slice_widget = None  # Add slice widget container variable
         self.resize(1024, 768)
 
     def init_variables(self):
@@ -228,6 +229,8 @@ class daoShmViewer(QMainWindow):
         self.ShowTable = False
         self.dataCounter = 0
         self.stillRunning = False
+        self.current_slice = 0
+        self.is_3d = False
         
         # Directory to monitor
         self.dir = QDir("/tmp")
@@ -544,7 +547,7 @@ class daoShmViewer(QMainWindow):
         try:
             array = np.zeros(shape, dtype=dtype_str)
             filename = f'/tmp/{name}.im.shm'
-            shm = dao.shm(filename, array)
+            shm = dao.shm(filename, array, logLevel=0)
             QMessageBox.information(self, "Success", f"Shared memory created with shape {shape} and dtype {dtype_str}")
             self.updateFileList()
         except Exception as e:
@@ -608,8 +611,7 @@ class daoShmViewer(QMainWindow):
             self.filenameEdit.setText(output_filename)
             
             # Open the shared memory
-            print(f"Opening shared memory file: /tmp/{filename}")
-            self.shm = dao.shm(f"/tmp/{filename}")
+            self.shm = dao.shm(f"/tmp/{filename}", logLevel=0)
             self.lastCounter = self.shm.get_counter()
             
             # Update metadata and selected files list
@@ -644,14 +646,20 @@ class daoShmViewer(QMainWindow):
 
     def update_visualization(self):
         """Update the visualization widget based on data type."""
+        if self.shm is None:
+            return
+
+        # Remove existing slice selector if it exists
+        if hasattr(self, 'slice_widget') and self.slice_widget is not None:
+            self.statusBar.removeWidget(self.slice_widget)
+            self.slice_widget = None
+            self.slice_selector = None
+
         index = self.top_splitter.indexOf(self.graphWidget)
         if self.graphWidget:
-            # Tell Qt to queue this widget for deletion when event processing returns to the main loop
             self.graphWidget = None
-            # self.top_splitter.replaceWidget(index, None)
-            # time.sleep(0.1)
             gc.collect()
-            
+
         if self.TABLE or self.ShowTable:
             model = NumpyTableModel(self.shm.get_data(), shm=self.shm)
             self.graphWidget = QTableView()
@@ -660,7 +668,29 @@ class daoShmViewer(QMainWindow):
             self.graphWidget = magicplot.MagicPlot()
             
         self.top_splitter.replaceWidget(index, self.graphWidget)
-        
+
+        # Check if data is 3D and set up slice selector
+        data = self.shm.get_data()
+        self.is_3d = len(data.shape) == 3
+
+        if self.is_3d:
+            # Create new slice selector
+            slice_layout = QHBoxLayout()
+            slice_label = QLabel("Slice:")
+            self.slice_selector = QSpinBox()
+            self.slice_selector.setRange(0, data.shape[0]-1)
+            self.slice_selector.setValue(self.current_slice)
+            self.slice_selector.valueChanged.connect(self.update_slice)
+            
+            slice_layout.addWidget(slice_label)
+            slice_layout.addWidget(self.slice_selector)
+            slice_layout.addStretch()
+            
+            # Add the slice selector to the main window's status bar
+            self.slice_widget = QWidget()
+            self.slice_widget.setLayout(slice_layout)
+            self.statusBar.addPermanentWidget(self.slice_widget)
+
         # Update visualization data
         if not (self.TABLE or self.ShowTable):
             if self.FLAT:
@@ -668,10 +698,20 @@ class daoShmViewer(QMainWindow):
                 self.im.setData(self.shm.get_data().flatten())
             else:
                 self.im = self.graphWidget.getImageItem()
-                self.im.setData(self.shm.get_data())
+                if self.is_3d:
+                    self.im.setData(self.shm.get_data()[self.current_slice])
+                else:
+                    self.im.setData(self.shm.get_data())
                 
             self.graphWidget.updatePanBounds()
             self.graphWidget.viewBox.autoRange()
+
+    def update_slice(self, value):
+        """Update the displayed slice for 3D data."""
+        if self.shm and self.is_3d and not (self.TABLE or self.ShowTable):
+            self.current_slice = value
+            self.im.setData(self.shm.get_data()[value])
+            self.graphWidget.updatePanBounds()
 
     def on_timer_triggered(self):
         """Handle timer tick events for data updates."""
@@ -683,11 +723,9 @@ class daoShmViewer(QMainWindow):
             diff = self.newCounter - self.lastCounter
             self.lastCounter = self.newCounter
             
-            # Calculate update frequency
             frequency = 0 if diff == 0 else 10/diff
             self.updateMetadata(self.filenameEdit.text(), frequency)
             
-            # Update visualization if data changed
             if diff != 0:
                 if self.TABLE or self.ShowTable:
                     self.graphWidget.setModel(NumpyTableModel(self.shm.get_data(), self.shm))
@@ -695,7 +733,11 @@ class daoShmViewer(QMainWindow):
                     if self.FLAT:
                         self.im.setData(self.shm.get_data().flatten())
                     else:
-                        self.im.setData(self.shm.get_data())
+                        data = self.shm.get_data()
+                        if self.is_3d:
+                            self.im.setData(data[self.current_slice])
+                        else:
+                            self.im.setData(data)
         except Exception as e:
             self.timer.stop()
             self.show_error(f"Error updating data: {e}")
@@ -715,7 +757,7 @@ class daoShmViewer(QMainWindow):
             else:
                 buffer = np.zeros((frames, *data.shape), dtype=data.dtype)
                 self.statusBar.showMessage(f"Recording {frames} frames...")
-                for i in range(frames):
+                for i in frames:
                     buffer[i] = self.shm.get_data(check=True)
                     if i % 10 == 0:  # Update status every 10 frames
                         self.statusBar.showMessage(f"Recording frames: {i+1}/{frames}")
