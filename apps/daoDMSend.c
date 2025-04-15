@@ -82,17 +82,17 @@ int main(int argc, char* argv[])
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
         // Get data
-        if (sem_timedwait(inShm[0].semptr[2], &timeout) != -1)
+        if (daoShmWaitForSemaphoreTimeout(inShm, 2, timeout) != -1)
         {
             // Send data
-            sendto(udp_socket, dmImg.md[0].array.F, data_size, 0, (struct sockaddr*)&dest_addr, sizeof(dest_addr));
+            sendto(udp_socket, dmImg[0].array.F, data_size, 0, (struct sockaddr*)&dest_addr, sizeof(dest_addr));
             clock_gettime(CLOCK_REALTIME, &t[1]);
             elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
             elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
             printf("\r fps = %8.3f Hz, %d in=[%6.3f,%6.3f,...,%6.3f]", 1e6/(1000*elapsedTime), 
-                                                                                  inSize, dmImg[0].array.F[0],
+                                                                                  nActs, dmImg[0].array.F[0],
                                                                                   dmImg[0].array.F[1],
-                                                                                  dmImg[0].array.F[inSize]);
+                                                                                  dmImg[0].array.F[nActs-1]);
         }
         else
         {
