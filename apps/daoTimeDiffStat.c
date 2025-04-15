@@ -119,6 +119,7 @@ void * statRealTimeLoop(void *thread_data)
     int tail=0;
     int head=0;
     int c=0;
+    int cnt=0;
     daoInfo("Avg/Rms telemetry running for %s -> %s/%s, popSize=%d\n",shmName, shmNameAvg, shmNameRms, popSize );
 
     struct timespec timeout;
@@ -128,7 +129,7 @@ void * statRealTimeLoop(void *thread_data)
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
         // Wait for new image
-        if (sem_timedwait(shm[0].semptr[9], &timeout) != -1)
+        if (daoShmWaitForSemaphoreTimeout(shm, 9, timeout) != -1)
         {
             // if new image, add it in the cir buf.
             for (k = 0; k < nbValue; k++)
@@ -184,6 +185,11 @@ void * statRealTimeLoop(void *thread_data)
                    shmRms[0].array.F[0], shmRms[0].array.F[1]);
             fflush(stdout);
         }
+        else
+        {
+            printf("\rtimeout waiting for semaphore, waiting %d", cnt++);
+            fflush(stdout);
+        }
     }
 
     daoInfo("EXITING MAIN LOOP\n");
@@ -217,6 +223,7 @@ static int realTimeLoop()
     pthread_t controllerThread;
     int threadIdCtrl = 0;
     int statThreadVal=0;
+    usleep(1e6);
     statThreadVal = pthread_create(&controllerThread, NULL, statRealTimeLoop, (void *)&threadIdCtrl);
     if (statThreadVal != 0)
     {

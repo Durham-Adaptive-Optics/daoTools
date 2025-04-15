@@ -123,6 +123,7 @@ static int realTimeLoop()
         mvprintw(0, 0, "Measure timing script between\n");
         printw("SHM0 %s\n", shm0Name);
         printw("SHM1 %s\n", shm1Name);
+        printw(" -> %s\n", latencyShmName);
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
         // wait for 2nd shm
