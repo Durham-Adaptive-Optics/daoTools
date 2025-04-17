@@ -98,7 +98,7 @@ static int realTimeLoop()
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
         // Wait for the clock frame using semaphore
-        if (daoShmWaitForSemaphoreTimeout(clockShm, 0, timeout) != DAO_TIMEOUT)
+        if (daoShmWaitForSemaphoreTimeout(clockShm, 0, &timeout) != DAO_TIMEOUT)
         {
             t[0] = t[1];
             outShm[0].md[0].cnt2 = clockShm[0].md[0].cnt2;

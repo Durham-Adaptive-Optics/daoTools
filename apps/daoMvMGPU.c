@@ -121,7 +121,7 @@ void * realTimeLoop(void *thread_data)
     {
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec +=1;
-        if (daoShmWaitForSemaphoreTimeout(inputShm, 1, timeout) != -1)
+        if (daoShmWaitForSemaphoreTimeout(inputShm, 1, &timeout) != -1)
         {
             printf("\rcomputing output, ");  
             

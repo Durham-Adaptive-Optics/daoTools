@@ -129,7 +129,7 @@ void * statRealTimeLoop(void *thread_data)
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
         // Wait for new image
-        if (daoShmWaitForSemaphoreTimeout(shm, 9, timeout) != -1)
+        if (daoShmWaitForSemaphoreTimeout(shm, 9, &timeout) != -1)
         {
             // if new image, add it in the cir buf.
             for (k = 0; k < nbValue; k++)

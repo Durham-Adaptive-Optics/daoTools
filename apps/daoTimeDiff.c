@@ -127,7 +127,7 @@ static int realTimeLoop()
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
         // wait for 2nd shm
-        if (daoShmWaitForSemaphoreTimeout(shm1, sem1, timeout) != DAO_TIMEOUT)
+        if (daoShmWaitForSemaphoreTimeout(shm1, sem1, &timeout) != DAO_TIMEOUT)
         {
             t[0] = shm0[0].md[0].atime.tsfixed.secondlong;
             frameId0 = daoShmGetCounter(shm0);//shm0[0].md[0].cnt2;
