@@ -48,19 +48,27 @@ namespace Dao
                 mShmBufferSize(0),
                 mShmPath(shmPath),
                 mFitsDataType(0),
+                mElementCount(0),
                 mLogger(logger),
                 mLocalName(""),
                 mError(false),
                 mFitsBPP(0),
+                mAtype(0),
                 mCnt0(0)
             {
                 mShmInterface = new ShmIfce<std::uint8_t>(mLogger);
                 mShmInterface->OpenShm(mShmPath.c_str(), &mShmImage, m_node);
-                if (mShmImage.md->atype == 10 || mShmImage.md->atype == 12) {
+
+                mElementCount = mShmImage.md->nelement;
+                mAtype = mShmImage.md->atype;
+                mFitsBPP = mFitsBppMap.at(mAtype);
+                mFitsDataType = mFitsTypeMap.at(mAtype);
+
+                if (mAtype == 10 || mAtype == 12) {
                     throw std::logic_error("Dao complex-valued shared-memory is currently unsupported");
                 }
 
-                mShmBufferSize = mDaoBppMap.at(mShmImage.md->atype) * mShmImage.md->nelement;
+                mShmBufferSize = mDaoBppMap.at(mAtype) * mElementCount;
                 mInternalBuffer = new std::uint8_t[mShmBufferSize];
                 mLogger.Debug("Allocated %d bytes for %s's internal buffer", mShmBufferSize, mShmPath.c_str());
                 if (!mInternalBuffer) {
@@ -76,9 +84,7 @@ namespace Dao
                     mLocalName = mLocalName.substr(0, extensionPos);
                 }
 
-                // Infer information required by Cfitsio from Dao shm metadata. 
-                mFitsDataType = mFitsTypeMap.at(mShmImage.md->atype);
-                mFitsBPP = mFitsBppMap.at(mShmImage.md->atype);
+                // Infer array dimensions for fits header. 
                 for (std::int64_t i = mShmImage.md->naxis - 1; i >= 0; --i) {
                     const auto nAxisElements = mShmImage.md->size[i];
                     mDataDimensions.push_back(nAxisElements);
@@ -136,7 +142,7 @@ namespace Dao
                     }
 
                     if(!CreateFitsFile()) {
-                        mLogger.Error("%s's recorder couldn't create a new FITS file", mShmPath.c_str());
+                    mLogger.Error("%s's recorder couldn't create a new FITS file", mShmPath.c_str());
                         SignalError();
                         return;
                     }
@@ -145,6 +151,7 @@ namespace Dao
                 // Wait until a new frame is pushed and record it.
                 const auto cnt0_ = mShmInterface->GetFrameCounter();
                 const auto delta = cnt0_ - mCnt0;
+               
                 if(delta > 1) {
                     const auto nMissedFrames = delta - 1;
                     mLogger.Warning("Missed %d frames from %s", nMissedFrames, mShmPath.c_str());
@@ -152,22 +159,16 @@ namespace Dao
 
                 if (delta) {
                     mCnt0 = cnt0_;
-                    const double timestamp = (double)mShmImage.md->atime.ts.tv_sec + mShmImage.md->atime.ts.tv_nsec / 1e9;
-                    std::memcpy(mInternalBuffer, mShmInterface->GetPtr(), mShmBufferSize);
-
-                    // Once the copy has completed we check the shm hasn't been updated;
-                    // if it has then the internal buffer may not contain the frame 
-                    // we wanted.
-                    const bool internalBufferCorrupted = mShmInterface->GetFrameCounter() > mCnt0;
-                    if (internalBufferCorrupted) {
-                        mLogger.Warning("%s didn't record frame %d as copy stage was interrupted",
+                    
+                    if(!CopyFrameData()) {
+                        mLogger.Warning("%s didn't record frame %d as copy was interrupted",
                             mShmPath.c_str(),
                             mCnt0
                         );
                         return;
                     }
-                    
-                    if(!RecordInternalBuffer(mCnt0, timestamp)) {
+
+                    if(!RecordFrame()) {
                         mLogger.Error("Failed to record frame %d for %s", mCnt0, mShmPath.c_str());
                         SignalError();
                         return;
@@ -175,7 +176,22 @@ namespace Dao
                 }
             }
 
-            bool RecordInternalBuffer(const std::uint64_t frameCounter, const double timestamp)
+            bool CopyFrameData()
+            {
+                // Copy frame metadata.
+                mFrameData.cnt0 = mShmImage.md->cnt0;
+                mFrameData.cnt1 = mShmImage.md->cnt1;
+                mFrameData.cnt2 = mShmImage.md->cnt2;
+                mFrameData.timestamp = (double)mShmImage.md->atime.ts.tv_sec + mShmImage.md->atime.ts.tv_nsec / 1e9;
+
+                // Copy frame data.
+                std::memcpy(mInternalBuffer, mShmInterface->GetPtr(), mShmBufferSize);
+
+                // Return true if the copy was successful, and false if it was interrupted.
+                return mShmInterface->GetFrameCounter() == mCnt0;
+            }
+
+            bool RecordFrame()
             {
                 /* === Write the HDU for this frame into the FITS file === */
                 {
@@ -189,10 +205,10 @@ namespace Dao
                     }
                 }
 
+                 /* === Write the HDU key-pairs === */
                 {
                     int status = 0;
-                    std::uint64_t cnt = frameCounter; // avoid const.
-                    fits_write_key(mRecordingFile, TULONGLONG, "cnt0", &cnt, "", &status);
+                    fits_write_key(mRecordingFile, TULONGLONG, "cnt0", &mFrameData.cnt0, "", &status);
                     if (status) {
                         char errbuff[FLEN_STATUS];
                         fits_get_errstatus(status, errbuff);
@@ -203,8 +219,40 @@ namespace Dao
 
                 {
                     int status = 0;
-                    double ts = timestamp; // avoid const.
-                    fits_write_key(mRecordingFile, TDOUBLE, "TIME-OBS", &ts, "", &status);
+                    fits_write_key(mRecordingFile, TULONGLONG, "cnt1", &mFrameData.cnt1, "", &status);
+                    if (status) {
+                        char errbuff[FLEN_STATUS];
+                        fits_get_errstatus(status, errbuff);
+                        mLogger.Error("Failed to write cnt1 field to HDU: %s", errbuff);
+                        return false;
+                    }
+                }
+
+                {
+                    int status = 0;
+                    fits_write_key(mRecordingFile, TULONGLONG, "cnt2", &mFrameData.cnt2, "", &status);
+                    if (status) {
+                        char errbuff[FLEN_STATUS];
+                        fits_get_errstatus(status, errbuff);
+                        mLogger.Error("Failed to write cnt2 field to HDU: %s", errbuff);
+                        return false;
+                    }
+                }
+
+                {
+                    int status = 0;
+                    fits_write_key(mRecordingFile, TBYTE, "atype", &mAtype, "", &status);
+                    if (status) {
+                        char errbuff[FLEN_STATUS];
+                        fits_get_errstatus(status, errbuff);
+                        mLogger.Error("Failed to write atype field to HDU: %s", errbuff);
+                        return false;
+                    }
+                }
+
+                {
+                    int status = 0;
+                    fits_write_key(mRecordingFile, TDOUBLE, "atime", &mFrameData.timestamp, "", &status);
                     if (status) {
                         char errbuff[FLEN_STATUS];
                         fits_get_errstatus(status, errbuff);
@@ -213,10 +261,10 @@ namespace Dao
                     }
                 }
 
-                /* === Write the buffered frame data into the FITS file === */
+                /* === Write the buffered frame data === */
                 {
                     int status = 0;
-                    fits_write_img(mRecordingFile, mFitsDataType, 1, mShmImage.md->nelement, mInternalBuffer, &status);
+                    fits_write_img(mRecordingFile, mFitsDataType, 1, mElementCount, mInternalBuffer, &status);
                     if (status) {
                         char errbuff[FLEN_STATUS];
                         fits_get_errstatus(status, errbuff);
@@ -224,15 +272,16 @@ namespace Dao
                         return false;
                     }
                     
-                    mLogger.Debug("Recorded frame of %d elements (FITS type: %d)", 
-                        mShmImage.md->nelement, 
-                        mFitsDataType
-                    );
                 }
-
+                
                 ++mRecordingFileSize;
                 ++mNumRecordedFrames;
-                
+
+                mLogger.Debug("Recorded frame of %d elements (FITS type: %d)", 
+                    mElementCount, 
+                    mFitsDataType
+                );
+
                 return true;
             }
 
@@ -292,6 +341,8 @@ namespace Dao
             ShmIfce<std::uint8_t> *mShmInterface;
             std::uint8_t *mInternalBuffer;
             std::size_t mShmBufferSize;
+            std::uint64_t mElementCount;
+            std::uint8_t mAtype;
             std::size_t mCnt0;
             IMAGE mShmImage;
 
@@ -309,6 +360,13 @@ namespace Dao
             Log::Logger &mLogger;
             std::string mShmPath;
             bool mError;
+
+            struct {
+                std::uint64_t cnt0;
+                std::uint64_t cnt1;
+                std::uint64_t cnt2;
+                double timestamp;
+            } mFrameData;                   // Holds frame-specific data to be recorded.
 
             // Mapping from Dao -> Cfitsio datatypes.
             const std::map<std::uint8_t, std::uint8_t> mFitsTypeMap
