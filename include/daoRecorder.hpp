@@ -24,6 +24,7 @@
 #include <fitsio.h>
 #include <map>
 #include <functional>
+#include <atomic>
 
 namespace Dao
 {
@@ -32,16 +33,18 @@ namespace Dao
         class Recorder : public Thread {
         public:
             Recorder(const std::string &shmPath, const std::string &recordingRoot, const int core,
-                const std::size_t recordingFileCapacity, const std::int64_t frameTarget,
-                Log::Logger &logger)
+                const std::size_t recordingFileCapacity, const std::int64_t frameTarget, bool &errorFlag,
+                std::atomic<std::size_t> &finishedCount, Log::Logger &logger)
                 :
                 mRecordingFileCapacity(recordingFileCapacity),
                 Thread(shmPath, logger, core),
                 mRecordingDirectory(recordingRoot),
+                mFinishedCount(finishedCount),
                 mFrameTarget(frameTarget),
                 mInternalBuffer(nullptr),
                 mRecordingFile(nullptr),
                 mShmInterface(nullptr),
+                mErrorFlag(errorFlag),
                 mRecordingFileSize(0),
                 mNumRecordedFrames(0),
                 mCurrentFilePath(""),
@@ -51,7 +54,6 @@ namespace Dao
                 mElementCount(0),
                 mLogger(logger),
                 mLocalName(""),
-                mError(false),
                 mFitsBPP(0),
                 mAtype(0),
                 mCnt0(0)
@@ -104,7 +106,6 @@ namespace Dao
                 delete[] mInternalBuffer;
             }
 
-            bool inError() const { return mError; }
             std::string getShmName() const { return mShmPath.c_str(); }
 
         private:
@@ -121,14 +122,15 @@ namespace Dao
 
             void RestartableThread() override
             {
-                // Check if we have met our target.
+                // Terminate recording once the target is met.
                 if (mNumRecordedFrames == mFrameTarget) {
                     mLogger.Info("Successfully recorded %d frames from %s",
                         mNumRecordedFrames,
                         mShmPath.c_str()
                     );
 
-                    Exit();
+                    mFinishedCount++; // @thread-safe increment.
+                    Join();
                     return;
                 }
 
@@ -137,13 +139,15 @@ namespace Dao
                 {
                     if(!CloseFitsFile()) {
                         mLogger.Error("%s's recorder couldn't close its current FITS file", mShmPath.c_str());
-                        SignalError();
+                        mErrorFlag = true;
+                        Join();
                         return;
                     }
 
                     if(!CreateFitsFile()) {
-                    mLogger.Error("%s's recorder couldn't create a new FITS file", mShmPath.c_str());
-                        SignalError();
+                        mLogger.Error("%s's recorder couldn't create a new FITS file", mShmPath.c_str());
+                        mErrorFlag = true;
+                        Join();
                         return;
                     }
                 }
@@ -170,7 +174,8 @@ namespace Dao
 
                     if(!RecordFrame()) {
                         mLogger.Error("Failed to record frame %d for %s", mCnt0, mShmPath.c_str());
-                        SignalError();
+                        mErrorFlag = true;
+                        Join();
                         return;
                     }
                 }
@@ -326,12 +331,6 @@ namespace Dao
                 return !status;
             }
             
-            void SignalError()
-            {
-                mError = true;
-                Exit();
-            }
-
             // Cfitsio
             std::vector<long> mDataDimensions;
             int mFitsDataType;
@@ -353,13 +352,14 @@ namespace Dao
             fitsfile *mRecordingFile;
 
             //
+            std::atomic<std::size_t> &mFinishedCount; // Signals to the controller we are finished.
             std::string mRecordingDirectory;
             std::string mCurrentFilePath;      // Path of the current fits file we are recording to.
             std::int64_t mFrameTarget;         // How many frames to record, or -1 to record indefinitely.
             std::string mLocalName;
             Log::Logger &mLogger;
             std::string mShmPath;
-            bool mError;
+            bool &mErrorFlag;                  // Signals to the controller that we encountered an error.
 
             struct {
                 std::uint64_t cnt0;
