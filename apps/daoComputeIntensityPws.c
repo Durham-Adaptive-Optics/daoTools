@@ -127,7 +127,7 @@ static int realTimeLoop()
         // Wait for new image
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
-        if (sem_timedwait(imShm[0].semptr[3], &timeout) != -1)
+        if (daoShmWaitForSemaphoreTimeout(imShm, 3, &timeout) != -1)
         {
             clock_gettime(CLOCK_REALTIME, &t[2]);
             // New image, insert something here

@@ -96,7 +96,7 @@ static int realTimeLoop()
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
         // Wait for new image
-        if (sem_timedwait(ocamRawShm[0].semptr[2], &timeout) != -1)
+        if (daoShmWaitForSemaphoreTimeout(ocamRawShm, 2, &timeout) != -1)
         {
             clock_gettime(CLOCK_REALTIME, &t[0]);
             // Process the scrambled image directly to unscrambled image

@@ -97,7 +97,7 @@ static int realTimeLoop()
     while (end ==0)
     {
         // Wait for the clock frame using semaphore
-        if (sem_timedwait(clockShm[0].semptr[0], &timeout) != -1)
+        if (daoShmWaitForSemaphoreTimeout(clockShm, 0, &timeout) != -1)
         {
             t[0] = t[1];
             outShm[0].md[0].cnt2 = outShm[0].md[0].cnt2 + 1;

@@ -696,29 +696,6 @@ void daoDescrambleOcam2Image(uint8_t img[], int imgRows, int imgCols, uint16_t *
 #include <mach/mach_time.h>
 #include <sys/time.h>
 
-int sem_timedwait(sem_t *sem, const struct timespec *abs_timeout) {
-    struct timespec now, sleep_duration = {0, 1000000}; // 1 ms
-
-    while (1) {
-        if (sem_trywait(sem) == 0) {
-            return 0;
-        }
-
-        if (errno != EAGAIN) {
-            return -1;
-        }
-
-        clock_gettime(CLOCK_REALTIME, &now);
-        if ((now.tv_sec > abs_timeout->tv_sec) ||
-            (now.tv_sec == abs_timeout->tv_sec && now.tv_nsec >= abs_timeout->tv_nsec)) {
-            errno = ETIMEDOUT;
-            return -1;
-        }
-
-        nanosleep(&sleep_duration, NULL);
-    }
-}
-
 // Fallback for sched_setscheduler
 int sched_setscheduler(pid_t pid, int policy, const struct sched_param *param) {
     // macOS does not support real-time policies (SCHED_FIFO, etc.)

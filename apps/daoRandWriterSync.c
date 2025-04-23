@@ -93,11 +93,12 @@ static int realTimeLoop()
     int k;
     float outCmd[outSize];
     struct timespec timeout;
-    timeout.tv_sec = 1; // 1 second timeout
     while (end ==0)
     {
+        clock_gettime(CLOCK_REALTIME, &timeout);
+        timeout.tv_sec += 1; // 1 second timeout
         // Wait for the clock frame using semaphore
-        if (sem_timedwait(clockShm[0].semptr[0], &timeout) != -1)
+        if (daoShmWaitForSemaphoreTimeout(clockShm, 0, &timeout) != DAO_TIMEOUT)
         {
             t[0] = t[1];
             outShm[0].md[0].cnt2 = clockShm[0].md[0].cnt2;

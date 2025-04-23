@@ -92,9 +92,6 @@ void daoDescrambleOcam2Image(uint8_t img[], int imgRows, int imgCols, uint16_t *
 #include <time.h>
 #include <unistd.h>
 
-// Fallback declaration for sem_timedwait on macOS
-int sem_timedwait(sem_t *sem, const struct timespec *abs_timeout);
-
 // Define missing constants
 #ifndef TIMER_ABSTIME
 #define TIMER_ABSTIME 1

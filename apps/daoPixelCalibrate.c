@@ -108,7 +108,7 @@ static int realTimeLoop()
         t[0] = t[1];
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
-        if (sem_timedwait(inShm[0].semptr[2], &timeout) != -1)
+        if (daoShmWaitForSemaphoreTimeout(inShm, 2, &timeout) != -1)
         {
             clock_gettime(CLOCK_REALTIME, &t[2]);
             daoToolsShmCalibrate(inShm, ffShm, bgShm, calShm);
