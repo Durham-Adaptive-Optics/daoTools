@@ -130,7 +130,7 @@ namespace Dao
                     );
 
                     mFinishedCount++; // @thread-safe increment.
-                    Join();
+                    Exit();
                     return;
                 }
 
@@ -140,14 +140,14 @@ namespace Dao
                     if(!CloseFitsFile()) {
                         mLogger.Error("%s's recorder couldn't close its current FITS file", mShmPath.c_str());
                         mErrorFlag = true;
-                        Join();
+                        Exit();
                         return;
                     }
 
                     if(!CreateFitsFile()) {
                         mLogger.Error("%s's recorder couldn't create a new FITS file", mShmPath.c_str());
                         mErrorFlag = true;
-                        Join();
+                        Exit();
                         return;
                     }
                 }
@@ -175,7 +175,7 @@ namespace Dao
                     if(!RecordFrame()) {
                         mLogger.Error("Failed to record frame %d for %s", mCnt0, mShmPath.c_str());
                         mErrorFlag = true;
-                        Join();
+                        Exit();
                         return;
                     }
                 }
