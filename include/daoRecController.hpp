@@ -35,7 +35,6 @@ namespace Dao
                 mGlobalFrameTarget(DAO_REC_INDEFINITE),
                 mConfigPath(configFilePath),
                 mRecordingDirectory("."),
-                mRecordingFileCapacity(0),
                 mNumFinished(0),
                 mLogger(logger),
                 mError(false),
@@ -63,19 +62,6 @@ namespace Dao
 
                     mDedicatedCores = mConfig["RealtimeCores"].as<std::vector<std::size_t>>();
                     mLogger.Debug("Assigned %d cores as dedicated recording cores", mDedicatedCores.size());
-
-                    const auto fileCapacityField = mConfig["FileCapacity"];
-                    if (fileCapacityField) {
-                        mRecordingFileCapacity = fileCapacityField.as<std::size_t>();
-                    }
-
-                    if (mRecordingFileCapacity) {
-                        mLogger.Debug("Recorded data will be spread across several FITS files (%d frames / file)",
-                            mRecordingFileCapacity);
-                    }
-                    else {
-                        mLogger.Debug("Recorded data will occupy a single FITS file");
-                    }
 
                     const auto recordingDirField = mConfig["RecordingDirectory"];
                     if (recordingDirField) {
@@ -106,7 +92,8 @@ namespace Dao
                     try {
                         // Get configuration.
                         const std::string &shmPath = recConfig["shm"].as<std::string>();
-                        const bool realtime = recConfig["realtime"].as<bool>();
+                        const std::size_t capacity = recConfig["capacity"].as<std::size_t>();
+                        const bool realtime = recConfig["dynamic"].as<bool>();
                         
                         // Assign it a core.
                         std::size_t recordingCore = mSharedCore;
@@ -126,7 +113,7 @@ namespace Dao
                             shmPath,
                             mRecordingDirectory,
                             recordingCore,
-                            mRecordingFileCapacity,
+                            capacity,
                             mGlobalFrameTarget,
                             mError,
                             mNumFinished,
@@ -213,7 +200,6 @@ namespace Dao
             }
 
             std::vector<std::size_t> mDedicatedCores;
-            std::size_t mRecordingFileCapacity;
             std::vector<Recorder *> mRecorders;
             std::string mRecordingDirectory;
             std::int64_t mGlobalFrameTarget;
