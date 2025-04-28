@@ -60,16 +60,15 @@ namespace Dao
             {
                 mShmInterface = new ShmIfce<std::uint8_t>(mLogger);
                 mShmInterface->OpenShm(mShmPath.c_str(), &mShmImage, m_node);
-
                 mElementCount = mShmImage.md->nelement;
                 mAtype = mShmImage.md->atype;
-                mFitsBPP = mFitsBppMap.at(mAtype);
-                mFitsDataType = mFitsTypeMap.at(mAtype);
 
                 if (mAtype == 10 || mAtype == 12) {
                     throw std::logic_error("Dao complex-valued shared-memory is currently unsupported");
                 }
 
+                mFitsBPP = mFitsBppMap.at(mAtype);
+                mFitsDataType = mFitsTypeMap.at(mAtype);
                 mShmBufferSize = mDaoBppMap.at(mAtype) * mElementCount;
                 mInternalBuffer = new std::uint8_t[mShmBufferSize];
                 mLogger.Debug("Allocated %d bytes for %s's internal buffer", mShmBufferSize, mShmPath.c_str());
@@ -86,7 +85,6 @@ namespace Dao
                     mLocalName = mLocalName.substr(0, extensionPos);
                 }
 
-                // Infer array dimensions for fits header. 
                 for (std::int64_t i = mShmImage.md->naxis - 1; i >= 0; --i) {
                     const auto nAxisElements = mShmImage.md->size[i];
                     mDataDimensions.push_back(nAxisElements);
