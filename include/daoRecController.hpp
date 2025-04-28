@@ -93,16 +93,22 @@ namespace Dao
                         // Get configuration.
                         const std::string &shmPath = recConfig["shm"].as<std::string>();
                         const std::size_t capacity = recConfig["capacity"].as<std::size_t>();
-                        const bool realtime = recConfig["dynamic"].as<bool>();
+                        const bool dynamic = recConfig["dynamic"].as<bool>();
+
+                        mLogger.Debug("Loaded recorder configuration: %s, %d frames per file, %s",
+                            shmPath.c_str(),
+                            capacity,
+                            dynamic ? "dynamic" : "shared"
+                        );
                         
                         // Assign it a core.
                         std::size_t recordingCore = mSharedCore;
-                        if (realtime && !mDedicatedCores.size()) {
+                        if (dynamic && !mDedicatedCores.size()) {
                             mLogger.Error("No dedicated cores available for recording %s", shmPath.c_str());
                             mLogger.Warning("The data for %s will not be recorded!", shmPath.c_str());
                             continue;
                         }
-                        else if (realtime) {
+                        else if (dynamic) {
                             recordingCore = mDedicatedCores.back();
                             mDedicatedCores.pop_back();
                         }
