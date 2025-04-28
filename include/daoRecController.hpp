@@ -192,6 +192,11 @@ namespace Dao
 
             void RestartableThread() override
             {
+                if(mError) {
+                    mLogger.Debug("Controller error flagged");
+                    OnFailure();
+                }
+
                 if(GetStateText() == "Running" && 
                     mNumFinished == mRecorders.size()) 
                 {
@@ -200,10 +205,6 @@ namespace Dao
                     Disable();
                 }
 
-                if(mError) {
-                    mLogger.Debug("Controller error flagged");
-                    OnFailure();
-                }
             }
 
             std::vector<std::size_t> mDedicatedCores;
