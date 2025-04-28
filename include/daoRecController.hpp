@@ -103,12 +103,13 @@ namespace Dao
                         
                         // Assign it a core.
                         std::size_t recordingCore = mSharedCore;
-                        if (dynamic && !mDedicatedCores.size()) {
-                            mLogger.Error("No dedicated cores available for recording %s", shmPath.c_str());
-                            mLogger.Warning("The data for %s will not be recorded!", shmPath.c_str());
-                            continue;
-                        }
-                        else if (dynamic) {
+                        if(dynamic) {
+                            if(!mDedicatedCores.size()) {
+                                mLogger.Critical("No dedicated cores available for recording %s", shmPath.c_str());
+                                mError = true;
+                                return;
+                            }
+
                             recordingCore = mDedicatedCores.back();
                             mDedicatedCores.pop_back();
                         }
