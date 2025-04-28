@@ -99,7 +99,6 @@ namespace Dao
 
             ~Recorder()
             {
-                CloseFitsFile();
                 delete mShmInterface;
                 delete[] mInternalBuffer;
             }
@@ -115,6 +114,7 @@ namespace Dao
 
             void OnceOnStop() override
             {
+                CloseFitsFile();
                 mLogger.Info("%s's recorder has stopped", mShmPath.c_str());
             }
 
@@ -280,9 +280,9 @@ namespace Dao
                 ++mRecordingFileSize;
                 ++mNumRecordedFrames;
 
-                mLogger.Debug("Recorded frame of %d elements (FITS type: %d)", 
-                    mElementCount, 
-                    mFitsDataType
+                mLogger.Trace("Recorded frame of %s frame %d", 
+                    mShmPath.c_str(), 
+                    mCnt0
                 );
 
                 return true;
