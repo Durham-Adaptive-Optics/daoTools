@@ -190,7 +190,7 @@ if __name__ == '__main__':
     print('Turbulence Simulator Tool')
     
     shmName = '/tmp/dm.im.shm'
-    shmMapName = '/tmp/dmMap.im.shm'
+    shmMapName = '/tmp/dm241Map.im.shm'
     diameter = 10 # m
     r0 = 0.1 # m
     wSpeed = 10 # m/s

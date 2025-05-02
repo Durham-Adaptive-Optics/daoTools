@@ -48,6 +48,7 @@ char imShmName[32];
 char intensityShmName[32];
 char pixIdShmName[32];
 char validPixShmName[32];
+char validSubPixShmName[32];
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -84,9 +85,11 @@ static int realTimeLoop()
     IMAGE *imShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *intensityShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *validPixShm = (IMAGE*) malloc(sizeof(IMAGE));
+    IMAGE *validSubPixShm = (IMAGE*) malloc(sizeof(IMAGE));
     daoShmShm2Img(imShmName, &imShm[0]);
     daoShmShm2Img(intensityShmName, &intensityShm[0]);
     daoShmShm2Img(validPixShmName, &validPixShm[0]);
+    daoShmShm2Img(validSubPixShmName, &validSubPixShm[0]);
 
     int validPixSize = validPixShm[0].md[0].size[0] * validPixShm[0].md[0].size[1];
 
@@ -95,7 +98,7 @@ static int realTimeLoop()
     int validPixSum = 0;
     for (i = 0; i < validPixSize; i++)
     {
-        if (validPixShm[0].array.UI32[i] == 1)
+        if (validPixShm[0].array.UI64[i] == 1)
         {
             validPixSum++;
         }
@@ -107,13 +110,13 @@ static int realTimeLoop()
     int k=0;
     for (i = 0; i < validPixSize; i++)
     {
-        if (validPixShm[0].array.UI32[i] == 1)
+        if (validPixShm[0].array.UI64[i] == 1)
         {
             lut[k] = i;
             k++;
         }
     }
-
+    float sum = 0;
 
     struct timespec t[3];
     struct timespec timeout;
@@ -127,15 +130,25 @@ static int realTimeLoop()
         // Wait for new image
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
-        if (daoShmWaitForSemaphoreTimeout(imShm, 3, &timeout) != -1)
+        if (daoShmWaitForSemaphoreTimeout(imShm, 1, &timeout) != -1)
         {
             clock_gettime(CLOCK_REALTIME, &t[2]);
             // New image, insert something here
             intensityShm[0].md[0].cnt2 = imShm[0].md[0].cnt2;
 
+            sum=0;
             for (k=0; k<validPixSum; k++)
             {
-                intensityShm[0].array.F[k] = imShm[0].array.F[lut[k]];
+                //sum += imShm[0].array.F[lut[k]];
+                if (validSubPixShm[0].array.UI32[lut[k]] == 1)
+                {
+                    sum += imShm[0].array.F[lut[k]];
+                }
+            }
+
+            for (k=0; k<validPixSum; k++)
+            {
+                intensityShm[0].array.F[k] =  imShm[0].array.F[lut[k]]/sum * validSubPixShm[0].array.UI32[lut[k]];
             }
 
             daoShmImagePart2ShmFinalize(&intensityShm[0]); 
@@ -206,9 +219,11 @@ static void DecodeArgs(int argc, char **argv)
                     	(void)sscanf(*argv++,"%s", imShmName); argc -= 1;
                     	(void)sscanf(*argv++,"%s", intensityShmName); argc -= 1;
                     	(void)sscanf(*argv++,"%s", validPixShmName); argc -= 1;
+                    	(void)sscanf(*argv++,"%s", validSubPixShmName); argc -= 1;
                         daoInfo("imShmName = %s\n", imShmName);
                         daoInfo("intensityShmName = %s\n", intensityShmName);
                         daoInfo("validPixShmName = %s\n", validPixShmName);
+                        daoInfo("validSubPixShmName = %s\n", validSubPixShmName);
                         realTimeLoop();
                         break;
             default:
