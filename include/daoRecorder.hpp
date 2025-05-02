@@ -90,10 +90,6 @@ namespace Dao
                     mDataDimensions.push_back(nAxisElements);
                 }
 
-                if (!CreateFitsFile()) {
-                    throw std::runtime_error("Failed to create initial recordings file");
-                }
-
                 Spawn();
             }
 
@@ -108,6 +104,7 @@ namespace Dao
         private:
             void OnceOnStart() override
             {
+                CreateFitsFile();
                 mCnt0 = mShmInterface->GetFrameCounter();
                 mLogger.Info("%s's recorder has started (target=%d)", mShmPath.c_str(), mFrameTarget);
             }
@@ -120,6 +117,13 @@ namespace Dao
 
             void RestartableThread() override
             {
+                // Stop recording if we have no recording file.
+                if(!mRecordingFile) {
+                    mErrorFlag = true;
+                    Exit();
+                    return;
+                }
+
                 // Terminate recording once the target is met.
                 if (mNumRecordedFrames == mFrameTarget) {
                     mLogger.Info("Successfully recorded %d frames from %s",
@@ -311,6 +315,10 @@ namespace Dao
                     mCurrentFilePath = filePath;
                     mRecordingFileSize = 0;
                 }
+                else {
+                    mLogger.Error("Failed to create %s", filePath.c_str());
+                    mRecordingFile = nullptr;
+                }
 
                 return !status;
             }
@@ -322,6 +330,9 @@ namespace Dao
 
                 if(!status) {
                     mLogger.Info("Succesfully closed %s", mCurrentFilePath.c_str());
+                }
+                else {
+                    mLogger.Error("Failed to close %s", mCurrentFilePath.c_str());
                 }
 
                 mRecordingFile = nullptr;
