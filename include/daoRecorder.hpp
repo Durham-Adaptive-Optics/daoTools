@@ -63,7 +63,7 @@ namespace Dao
                 mElementCount = mShmImage.md->nelement;
                 mAtype = mShmImage.md->atype;
 
-                if (mAtype == 10 || mAtype == 12) {
+                if (mAtype == 11 || mAtype == 12) {
                     throw std::logic_error("Dao complex-valued shared-memory is currently unsupported");
                 }
 
@@ -378,9 +378,9 @@ namespace Dao
                 {7, TULONGLONG},
                 {8, TLONGLONG},
                 {9, TFLOAT},
-                {10, TCOMPLEX},
-                {11, TDOUBLE},
-                {12, TDBLCOMPLEX}
+                {10, TDOUBLE}
+                // 11 - Not supported.
+                // 12 - Not supported.
             };
 
             // Mapping from Dao datatypes to Cfitsio element bit-sizes.
@@ -395,7 +395,9 @@ namespace Dao
                 {7, LONGLONG_IMG},
                 {8, LONGLONG_IMG},
                 {9, FLOAT_IMG},
-                {11, DOUBLE_IMG}
+                {10, DOUBLE_IMG}
+                // 11 - Not supported.
+                // 12 - Not supported.
             };
 
             // Mapping of Dao datatypes to element sizes.
@@ -411,6 +413,8 @@ namespace Dao
                 {8, sizeof(std::int64_t)},
                 {9, sizeof(float)},
                 {10, sizeof(double)}
+                // 11 - Not supported.
+                // 12 - Not supported.
             };
         };
     }; // namespace Telemetry
