@@ -129,14 +129,14 @@ int_fast8_t daoToolsShmCalibrate(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IMAGE
             calShm[0].array.F[k] = ((float)inShm[0].array.SI16[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_INT32)
+    else if (inShm[0].md[0].atype == _DATATYPE_UINT32)
     {
         for (k = 0; k < calSize; k++)
         {
             calShm[0].array.F[k] = ((float)inShm[0].array.UI32[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_UINT32)
+    else if (inShm[0].md[0].atype == _DATATYPE_INT32)
     {
         for (k = 0; k < calSize; k++)
         {
@@ -175,6 +175,96 @@ int_fast8_t daoToolsShmCalibrate(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IMAGE
 
     return DAO_SUCCESS;
 }
+
+/**
+ * @brief Calibrate an image by applying flatfield and background to DOUBLE precision
+ * 
+ * @param inShm raw image 
+ * @param ffShm flat field
+ * @param bgShm background
+ * @param calShm output calibrated image
+ * @return int_fast8_t 
+ */
+ int_fast8_t daoToolsShmCalibrate64(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IMAGE *calShm)
+ {
+     daoTrace("\n");
+     int k;
+     int calSize = calShm[0].md[0].size[0] * calShm[0].md[0].size[1];
+     calShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
+     if (inShm[0].md[0].atype == _DATATYPE_UINT8)
+     {
+         for (k = 0; k < calSize; k++)
+         {
+             calShm[0].array.D[k] = ((double)inShm[0].array.UI8[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
+         }
+     }
+     else if (inShm[0].md[0].atype == _DATATYPE_INT8)
+     {
+         for (k = 0; k < calSize; k++)
+         {
+             calShm[0].array.D[k] = ((double)inShm[0].array.SI8[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
+         }
+     }
+     else if (inShm[0].md[0].atype == _DATATYPE_UINT16)
+     {
+         for (k = 0; k < calSize; k++)
+         {
+             calShm[0].array.D[k] = ((double)inShm[0].array.UI16[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
+         }
+     }
+     else if (inShm[0].md[0].atype == _DATATYPE_INT16)
+     {
+         for (k = 0; k < calSize; k++)
+         {
+             calShm[0].array.D[k] = ((double)inShm[0].array.SI16[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
+         }
+     }
+     else if (inShm[0].md[0].atype == _DATATYPE_UINT32)
+     {
+         for (k = 0; k < calSize; k++)
+         {
+             calShm[0].array.D[k] = ((double)inShm[0].array.UI32[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
+         }
+     }
+     else if (inShm[0].md[0].atype == _DATATYPE_INT32)
+     {
+         for (k = 0; k < calSize; k++)
+         {
+             calShm[0].array.D[k] = ((double)inShm[0].array.SI32[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
+         }
+     }
+     else if (inShm[0].md[0].atype == _DATATYPE_UINT64)
+     {
+         for (k = 0; k < calSize; k++)
+         {
+             calShm[0].array.D[k] = ((double)inShm[0].array.UI64[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
+         }
+     }
+     else if (inShm[0].md[0].atype == _DATATYPE_INT64)
+     {
+         for (k = 0; k < calSize; k++)
+         {
+             calShm[0].array.D[k] = ((double)inShm[0].array.SI64[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
+         }
+     }
+     else if (inShm[0].md[0].atype == _DATATYPE_FLOAT)
+     {
+         for (k = 0; k < calSize; k++)
+         {
+             calShm[0].array.D[k] = ((double)inShm[0].array.D[k] * ffShm[0].array.F[k]) - bgShm[0].array.D[k];
+         }
+     }
+     else if (inShm[0].md[0].atype == _DATATYPE_DOUBLE)
+     {
+         for (k = 0; k < calSize; k++)
+         {
+             calShm[0].array.D[k] = ((double)inShm[0].array.D[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
+         }
+     }
+     daoShmImagePart2ShmFinalize(&calShm[0]);
+ 
+     return DAO_SUCCESS;
+ }
 
 /**
  * @brief Calibrate an image by applying flatfield and background
@@ -236,17 +326,6 @@ int_fast8_t daoToolsShmCalibratePws(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IM
             }
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_INT32)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-            if (maskShm[0].array.SI32[k] != -1)
-            {
-                calShm[0].array.F[maskShm[0].array.SI32[k]] = ((float)inShm[0].array.UI32[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
-                fluxShm[0].array.F[0] += calShm[0].array.F[maskShm[0].array.SI32[k]];
-            }
-        }
-    }
     else if (inShm[0].md[0].atype == _DATATYPE_UINT32)
     {
         for (k = 0; k < inSize; k++)
@@ -254,6 +333,17 @@ int_fast8_t daoToolsShmCalibratePws(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IM
             if (maskShm[0].array.SI32[k] != -1)
             {
                 calShm[0].array.F[maskShm[0].array.SI32[k]] = ((float)inShm[0].array.SI32[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
+                fluxShm[0].array.F[0] += calShm[0].array.F[maskShm[0].array.SI32[k]];
+            }
+        }
+    }
+    else if (inShm[0].md[0].atype == _DATATYPE_INT32)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+            if (maskShm[0].array.SI32[k] != -1)
+            {
+                calShm[0].array.F[maskShm[0].array.SI32[k]] = ((float)inShm[0].array.UI32[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
                 fluxShm[0].array.F[0] += calShm[0].array.F[maskShm[0].array.SI32[k]];
             }
         }
@@ -689,6 +779,267 @@ void daoDescrambleOcam2Image(uint8_t img[], int imgRows, int imgCols, uint16_t *
     }
 }
 
+/**
+ * @brief Extract an image by applying mask
+ * 
+ * @param inShm raw image 
+ * @param maskShm flat field assumes uint32
+ * @param outShm output extracted image as vector
+ * @return int_fast8_t 
+ */
+int_fast8_t daoToolsShmExtract(IMAGE *inShm, IMAGE *maskShm, IMAGE *outShm)
+{
+    daoTrace("\n");
+    int k;
+    int inSize = inShm[0].md[0].size[0] * inShm[0].md[0].size[1];
+    outShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
+    int cnt = 0;
+    if (inShm[0].md[0].atype == _DATATYPE_UINT8)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+           if (maskShm[0].array.UI32[k] == 1)
+           {
+               outShm[0].array.UI8[cnt] = inShm[0].array.UI8[k];
+               cnt++; 
+           }
+        }
+    }
+    else if (inShm[0].md[0].atype == _DATATYPE_INT8)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+           if (maskShm[0].array.UI32[k] == 1)
+           {
+               outShm[0].array.SI8[cnt] = inShm[0].array.SI8[k];
+               cnt++; 
+           }
+        }
+    }
+    else if (inShm[0].md[0].atype == _DATATYPE_UINT16)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+           if (maskShm[0].array.UI32[k] == 1)
+           {
+               outShm[0].array.UI16[cnt] = inShm[0].array.UI16[k];
+               cnt++; 
+           }
+        }
+    }
+    else if (inShm[0].md[0].atype == _DATATYPE_INT16)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+           if (maskShm[0].array.UI32[k] == 1)
+           {
+               outShm[0].array.SI16[cnt] = inShm[0].array.SI16[k];
+               cnt++; 
+           }
+        }
+    }
+    else if (inShm[0].md[0].atype == _DATATYPE_INT32)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+           if (maskShm[0].array.UI32[k] == 1)
+           {
+               outShm[0].array.SI32[cnt] = inShm[0].array.SI32[k];
+               cnt++; 
+           }
+        }
+    }
+    else if (inShm[0].md[0].atype == _DATATYPE_UINT32)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+           if (maskShm[0].array.UI32[k] == 1)
+           {
+               outShm[0].array.UI32[cnt] = inShm[0].array.UI32[k];
+               cnt++; 
+           }
+        }
+    }
+    else if (inShm[0].md[0].atype == _DATATYPE_UINT64)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+           if (maskShm[0].array.UI32[k] == 1)
+           {
+               outShm[0].array.UI64[cnt] = inShm[0].array.UI64[k];
+               cnt++; 
+           }
+        }
+    }
+    else if (inShm[0].md[0].atype == _DATATYPE_INT64)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+           if (maskShm[0].array.UI32[k] == 1)
+           {
+               outShm[0].array.SI64[cnt] = inShm[0].array.SI64[k];
+               cnt++; 
+           }
+        }
+    }
+    else if (inShm[0].md[0].atype == _DATATYPE_FLOAT)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+           if (maskShm[0].array.UI32[k] == 1)
+           {
+               outShm[0].array.F[cnt] = inShm[0].array.F[k];
+               cnt++; 
+           }
+        }
+    }
+    else if (inShm[0].md[0].atype == _DATATYPE_DOUBLE)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+           if (maskShm[0].array.UI32[k] == 1)
+           {
+               outShm[0].array.D[cnt] = inShm[0].array.D[k];
+               cnt++; 
+           }
+        }
+    }
+    daoShmImagePart2ShmFinalize(&outShm[0]);
+
+    return DAO_SUCCESS;
+}
+
+/**
+ * @brief Subastract and Extract an image by applying mask, assume same type for A and B
+ * 
+ * @param inAShm image 
+ * @param inBShm image  - to substract
+ * @param maskShm flat field assumes uint32
+ * @param outShm output extracted image as vector
+ * @return int_fast8_t 
+ */
+int_fast8_t daoToolsShmSubstractExtract(IMAGE *inAShm, IMAGE *inBShm, IMAGE *maskShm, IMAGE *outShm)
+{
+    daoTrace("\n");
+    int k;
+    int inSize = inAShm[0].md[0].size[0] * inAShm[0].md[0].size[1];
+    outShm[0].md[0].cnt2 = inAShm[0].md[0].cnt2;
+    int cnt = 0;
+    if (inAShm[0].md[0].atype == _DATATYPE_UINT8)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+           if (maskShm[0].array.UI32[k] == 1)
+           {
+               outShm[0].array.UI8[cnt] = inAShm[0].array.UI8[k] - inBShm[0].array.UI8[k];
+               cnt++; 
+           }
+        }
+    }
+    else if (inAShm[0].md[0].atype == _DATATYPE_INT8)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+           if (maskShm[0].array.UI32[k] == 1)
+           {
+               outShm[0].array.SI8[cnt] = inAShm[0].array.SI8[k] - inBShm[0].array.SI8[k];
+               cnt++; 
+           }
+        }
+    }
+    else if (inAShm[0].md[0].atype == _DATATYPE_UINT16)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+           if (maskShm[0].array.UI32[k] == 1)
+           {
+               outShm[0].array.UI16[cnt] = inAShm[0].array.UI16[k] - inBShm[0].array.UI16[k];
+               cnt++; 
+           }
+        }
+    }
+    else if (inAShm[0].md[0].atype == _DATATYPE_INT16)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+           if (maskShm[0].array.UI32[k] == 1)
+           {
+               outShm[0].array.SI16[cnt] = inAShm[0].array.SI16[k] - inBShm[0].array.SI16[k];
+               cnt++; 
+           }
+        }
+    }
+    else if (inAShm[0].md[0].atype == _DATATYPE_INT32)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+           if (maskShm[0].array.UI32[k] == 1)
+           {
+               outShm[0].array.SI32[cnt] = inAShm[0].array.SI32[k] - inBShm[0].array.SI32[k];
+               cnt++; 
+           }
+        }
+    }
+    else if (inAShm[0].md[0].atype == _DATATYPE_UINT32)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+           if (maskShm[0].array.UI32[k] == 1)
+           {
+               outShm[0].array.UI32[cnt] = inAShm[0].array.UI32[k] - inBShm[0].array.UI32[k];
+               cnt++; 
+           }
+        }
+    }
+    else if (inAShm[0].md[0].atype == _DATATYPE_UINT64)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+           if (maskShm[0].array.UI32[k] == 1)
+           {
+               outShm[0].array.UI64[cnt] = inAShm[0].array.UI64[k] - inBShm[0].array.UI64[k];
+               cnt++; 
+           }
+        }
+    }
+    else if (inAShm[0].md[0].atype == _DATATYPE_INT64)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+           if (maskShm[0].array.UI32[k] == 1)
+           {
+               outShm[0].array.SI64[cnt] = inAShm[0].array.SI64[k] - inBShm[0].array.SI64[k];
+               cnt++; 
+           }
+        }
+    }
+    else if (inAShm[0].md[0].atype == _DATATYPE_FLOAT)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+           if (maskShm[0].array.UI32[k] == 1)
+           {
+               outShm[0].array.F[cnt] = inAShm[0].array.F[k] - inBShm[0].array.F[k];
+               cnt++; 
+           }
+        }
+    }
+    else if (inAShm[0].md[0].atype == _DATATYPE_DOUBLE)
+    {
+        for (k = 0; k < inSize; k++)
+        {
+           if (maskShm[0].array.UI32[k] == 1)
+           {
+               outShm[0].array.D[cnt] = inAShm[0].array.D[k] - inBShm[0].array.D[k];
+               cnt++; 
+           }
+        }
+    }
+    daoShmImagePart2ShmFinalize(&outShm[0]);
+
+    return DAO_SUCCESS;
+}
+ 
 #ifdef __APPLE__
 
 #include <errno.h>

@@ -38,6 +38,11 @@ int_fast8_t daoToolsShmCalibrate(IMAGE *inShm,
                                  IMAGE *bgShm,
                                  IMAGE *calShm);
 
+int_fast8_t daoToolsShmCalibrate64(IMAGE *inShm,
+                                    IMAGE *ffShm,
+                                    IMAGE *bgShm,
+                                    IMAGE *calShm);
+
 int_fast8_t daoToolsShmCalibratePws(IMAGE *inShm, 
                                     IMAGE *ffShm,
                                     IMAGE *bgShm, 
@@ -85,7 +90,14 @@ int_fast8_t daoCentroidPws(float *im, float *slopes,
 void daoDescrambleOcam2Image(uint8_t img[], int imgRows, int imgCols, uint16_t *img16[],
                              int descrambler[], int descramblerSize, uint16_t output[]);
 
+int_fast8_t daoToolsShmExtract(IMAGE *inShm,
+                               IMAGE *maskShm,
+                               IMAGE *outShm);
 
+int_fast8_t daoToolsShmSubstractExtract(IMAGE *inAShm,
+                                        IMAGE *inBShm,
+                                        IMAGE *maskShm,
+                                        IMAGE *outShm);
 #ifdef __APPLE__
 
 #include <semaphore.h>
