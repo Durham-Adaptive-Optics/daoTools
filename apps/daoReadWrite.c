@@ -50,6 +50,7 @@ IMAGE *outShm;
 char inShmName[32];
 char outShmName[32];
 float offset;
+int semNb = 0;
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -101,7 +102,7 @@ static int realTimeLoop()
         // Wait for new image
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
-        if (daoShmWaitForSemaphoreTimeout(inShm, 2, &timeout) != -1)
+        if (daoShmWaitForSemaphoreTimeout(inShm, semNb, &timeout) != -1)
         {
 
         // New image, insert something here

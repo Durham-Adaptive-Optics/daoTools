@@ -32,7 +32,6 @@
 #include "daoTools.h"
 
 /*==========================================================================*/
-static int	sNdx=0;							/* board index */
 static int	sExit=0;						/* program exit code */
 
 //Need to install process with setuid.  Then, so you aren't running privileged all the time do this:
@@ -49,6 +48,7 @@ IMAGE *clockShm;
 
 char outShmName[32];
 char clockShmName[32];
+int semNb = 0;
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -98,7 +98,7 @@ static int realTimeLoop()
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
         // Wait for the clock frame using semaphore
-        if (daoShmWaitForSemaphoreTimeout(clockShm, 0, &timeout) != DAO_TIMEOUT)
+        if (daoShmWaitForSemaphoreTimeout(clockShm, semNb, &timeout) != DAO_TIMEOUT)
         {
             t[0] = t[1];
             outShm[0].md[0].cnt2 = clockShm[0].md[0].cnt2;
@@ -157,17 +157,17 @@ static void DecodeArgs(int argc, char **argv)
                         argv += 1; argc -= 1;
                         break;
 
-            case 'b':	(void)sscanf(*argv++,"%d",&sNdx); argc -= 1;	break;
             case 'u':
                         (void)sscanf(*argv++,"%d",&a1); argc -= 1;
                         daoDebug("will sleep for %d usec\n",a1);
                         (void)usleep(a1);
                         break;
-                        break;
-            case 'L':
+            case 'S':
                         daoInfo("Simple writer from SHM real time control, listening to a SHM clock\n");
                     	(void)sscanf(*argv++,"%s",outShmName); argc -= 1;
                         (void)sscanf(*argv++,"%s",clockShmName); argc -= 1;
+                        break;
+            case 'L':
                         realTimeLoop();
                         break;
             default:

@@ -32,7 +32,6 @@
 #include "daoTools.h"
 
 /*==========================================================================*/
-static int	sNdx=0;							/* board index */
 static int	sExit=0;						/* program exit code */
 
 //Need to install process with setuid.  Then, so you aren't running privileged all the time do this:
@@ -50,6 +49,7 @@ char centroidShmName[32];
 char thresholdShmName[32];
 int subaSize;
 int nbSuba;
+int semNb = 0;
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -67,10 +67,11 @@ static void ShowHelp(void)
     daoInfo("   arguments:\n");
     daoInfo("   -h               display this message and exit\n");
     daoInfo("   -d               display program debug output\n");
-    /*
-     **	Post init tests
-     */
-    daoInfo("   -L inShm refShm centroidShm thresholdShm subaSize nbSuba              real time control loop\n");
+    daoInfo("   -S               list of SHM (full path separated by space)\n");
+    daoInfo("   -s               semaphore number\n");
+    daoInfo("   -L               start real-time loop\n");
+    daoInfo("   usage:\n");
+    daoInfo("   -S <in SHM> <ref SHM> <centroid SHM> <subaSize> <nbSuba> -s <semNb> -L\n");
     daoInfo("\n");
 }
 
@@ -107,7 +108,7 @@ static int realTimeLoop()
         // Wait for new image
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
-        if (daoShmWaitForSemaphoreTimeout(inShm, 2, &timeout) != -1)
+        if (daoShmWaitForSemaphoreTimeout(inShm, semNb, &timeout) != -1)
         {
             clock_gettime(CLOCK_REALTIME, &t[2]);
             // New image, insert something here
@@ -135,14 +136,13 @@ static int realTimeLoop()
                                                                                   centroidShm[0].array.F[0],
                                                                                   centroidShm[0].array.F[1],
                                                                                   centroidShm[0].array.F[2]);
-            fflush(stdout);
         }
         else
         {
             printf("\r WAIT %d", cnt);
-            fflush(stdout);
             cnt++;
         }
+        fflush(stdout);
     }
 
 
@@ -164,17 +164,22 @@ static void DecodeArgs(int argc, char **argv)
 
     argv += 1;	argc -= 1;					/* skip program name */
 
-    while (argc-- > 0) {
+    while (argc-- > 0) 
+    {
         daoDebug("DecodeArgs: working on '%s'/%d\n",*argv,argc);
         str = *argv++;
-        if (str[0] != '-') {
+        if (str[0] != '-') 
+        {
             daoError("Do not know arg '%s'\n",str);
             ShowHelp();
             exit(1);
         }
 
-        switch (str[1]) {
-            case 'h':	ShowHelp(); exit(0);
+        switch (str[1]) 
+        {
+            case 'h':	
+                        ShowHelp(); 
+                        exit(0);
             case 'd':	
                         (void)sscanf(*argv++,"%d",&daoLogLevel); argc -= 1;
                         break;
@@ -182,15 +187,13 @@ static void DecodeArgs(int argc, char **argv)
                         daoInfo("%s\n",*argv);
                         argv += 1; argc -= 1;
                         break;
-
-            case 'b':	(void)sscanf(*argv++,"%d",&sNdx); argc -= 1;	break;
             case 'u':
                         (void)sscanf(*argv++,"%d",&a1); argc -= 1;
                         daoDebug("will sleep for %d usec\n",a1);
                         (void)usleep(a1);
                         break;
                         break;
-            case 'L':
+            case 'S':
                         daoInfo("Simple filter from SHM real time control\n");
                     	(void)sscanf(*argv++,"%s", inShmName); argc -= 1;
                     	(void)sscanf(*argv++,"%s", centroidShmName); argc -= 1;
@@ -204,6 +207,12 @@ static void DecodeArgs(int argc, char **argv)
                         daoInfo("thresholdShmName = %s\n", thresholdShmName);
                         daoInfo("subaSize = %d\n", subaSize);
                         daoInfo("nbSUba = %d\n", nbSuba);
+                        break;
+            case 's':	
+                        (void)sscanf(*argv++,"%d", &semNb); argc -= 1;
+                        daoInfo("inputShm sem       = %d \n", semNb);
+                        break;
+            case 'L':
                         realTimeLoop();
                         break;
             default:

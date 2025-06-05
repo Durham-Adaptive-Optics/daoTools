@@ -46,12 +46,10 @@ double tlastupdatedouble;
 double dt_update; // time since last update
 double dt_update_lim = 3600.0; // if no command is received during this time, set DM to zero V [sec]
 
-IMAGE *shm;
-IMAGE *shmAvg;
-
-char shmName[32];
-char shmNameAvg[32];
-int nbAvg=100;
+char inShmName[32];
+char outShmName[32];
+char fcShmName[32];
+char fpsShmName[32];
 int semNb=0;
 
 static int   		end     = 0;		           // termination flag
@@ -72,10 +70,9 @@ static void ShowHelp(void)
     daoInfo("   -d               display program debug output\n");
     daoInfo("   -S               list of SHM (full path separated by space)\n");
     daoInfo("   -s               semaphore number\n");
-    daoInfo("   -n               number of frame to average\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage:\n");
-    daoInfo("   -S <SHM> -n <nb Average> -s <semNb> -L\n");
+    daoInfo("   daoHighPassFilter -S <SHM> -n <nb Average> -s <semNb> -L\n");
     printf("\n");
 }
 
@@ -85,83 +82,90 @@ static int realTimeLoop()
     // register interrupt signal to terminate the main loop
     signal(SIGINT, endme);
 
-    shm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(shmName, &shm[0]);
-    // Create receiving Avg SHM
-    shmAvg = (IMAGE*) malloc(sizeof(IMAGE));
-    daoToolsInsertShmNamePrefix(shmName, "Avg", shmNameAvg);
     uint32_t size[2];
-    size[0] = shm[0].md[0].size[0];
-    size[1] = shm[0].md[0].size[1];
-    daoShmImageCreate(shmAvg, shmNameAvg, 2, size, shm[0].md[0].atype, 1, 0);
-    //daoShmShm2Img(shmNameAvg, &shmAvg[0]);
-    printf("Starting loop, %s -> %s, nAvg=%d\n",shmName, shmNameAvg, nbAvg );
+    IMAGE *inShm;
+    IMAGE *inShmPrev;
+    IMAGE *outShm;
+    IMAGE *outShmPrev;
+
+    IMAGE *fcShm;
+    IMAGE *fpsShm;
+
+    fcShm = (IMAGE*) malloc(sizeof(IMAGE));
+    daoShmShm2Img(fcShmName, &fcShm[0]);
+    fpsShm = (IMAGE*) malloc(sizeof(IMAGE));
+    daoShmShm2Img(fpsShmName, &fpsShm[0]);
+
+    char inShmNamePrev[32];
+    char outShmNamePrev[32];
+
+    inShm = (IMAGE*) malloc(sizeof(IMAGE));
+    daoShmShm2Img(inShmName, &inShm[0]);
+    // Create Prev SHM
+    inShmPrev = (IMAGE*) malloc(sizeof(IMAGE));
+    daoToolsInsertShmNamePrefix(inShmName, "Prev", inShmNamePrev);
+    size[0] = inShm[0].md[0].size[0];
+    size[1] = inShm[0].md[0].size[1];
+    daoShmImageCreate(inShmPrev, inShmNamePrev, 2, size, inShm[0].md[0].atype, 1, 0);
+
+    outShm = (IMAGE*) malloc(sizeof(IMAGE));
+    daoShmShm2Img(outShmName, &outShm[0]);
+    // Create Prev SHM
+    outShmPrev = (IMAGE*) malloc(sizeof(IMAGE));
+    daoToolsInsertShmNamePrefix(outShmName, "Prev", outShmNamePrev);
+    size[0] = inShm[0].md[0].size[0];
+    size[1] = inShm[0].md[0].size[1];
+    daoShmImageCreate(outShmPrev, inShmNamePrev, 2, size, inShm[0].md[0].atype, 1, 0);
+
+    printf("Starting loop, (%s,%s) -> (%s,%s)\n",
+           inShmName, inShmNamePrev, outShmName, outShmNamePrev);
+
     fflush(stdout);
 
-    int nbValue = shm[0].md[0].size[0]*shm[0].md[0].size[1];
-    float *avgValue = shmAvg[0].array.F;//malloc(nbValue*sizeof(float));
-    float valueCircBuf[nbValue][nbAvg+1];
-    int k, l;
-    // reset buffer
-    for (k=0; k<nbValue; k++)
-    {
-        for (l=0; l<(nbAvg + 1); l++)
-        {
-            valueCircBuf[k][l] = 0.0;
-        }
-        avgValue[k] = 0.0;
-    }
-    int tail=0;
-    int head=0;
-    printf("Average telemetry running for %s -> %s, nAvg=%d\n",shmName, shmNameAvg, nbAvg );
-    struct timeval t[3];
-    gettimeofday(&t[1],NULL);
+    int inSize = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
+
+    struct timespec t[3];
     struct timespec timeout;
+    double elapsedTime;
+    double compTime;
     int cnt=0;
+    clock_gettime(CLOCK_REALTIME, &t[1]);
     while (end ==0)
     {
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
         // Wait for new image
-        if (daoShmWaitForSemaphoreTimeout(shm, semNb, &timeout) != DAO_TIMEOUT)
+        if (daoShmWaitForSemaphoreTimeout(inShm, semNb, &timeout) != DAO_TIMEOUT)
         {
-            // if new image, add it in the cir buf.
-            for (k=0; k<nbValue; k++)
-            {
-                valueCircBuf[k][tail] = shm[0].array.F[k]/nbAvg;
-                if (isnan(valueCircBuf[k][tail]))
-                {
-                    valueCircBuf[k][tail] = 0.0;
-                }
-            }
-            tail = (tail + 1) % (nbAvg + 1);
-            for (k=0; k<nbValue; k++)
-            {
-                if (!isnan(valueCircBuf[k][head]))
-                {
-                    // add value in the head
-                    avgValue[k] += valueCircBuf[k][head];
-                }
-                else
-                {
-                    // add value in the head
-                    avgValue[k] += 0.0;
-                }
-                // remove the tail value
-                avgValue[k] -= valueCircBuf[k][tail];
-            }
-            head = (head + 1) % (nbAvg + 1);
+            clock_gettime(CLOCK_REALTIME, &t[2]);
 
-    //        daoShmImage2Shm(avgValue, nbValue, &shmAvg[0]);
-            daoShmImagePart2ShmFinalize(&shmAvg[0]);
-            printf("\r(%f,%f) -> (%.3f,%.3f)",
-                    shm[0].array.F[0], shm[0].array.F[1],
-                    shmAvg[0].array.F[0], shmAvg[0].array.F[1]);
+            daoToolsHighPassFilterDouble(outShm[0].array.D,
+                                         inShm[0].array.D,  
+                                         outShmPrev[0].array.D,  
+                                         inShmPrev[0].array.D,  
+                                         fcShm[0].array.D[0],
+                                         fpsShm[0].array.D[0],
+                                         inSize);
+
+            daoShmImagePart2ShmFinalize(&outShm[0]);
+            
+            // After the call, update previous frame buffers
+            for (int i = 0; i < inSize; ++i) 
+            {
+                outShmPrev[0].array.D[i] = outShm[0].array.D[i];
+                inShmPrev[0].array.D[i] = inShm[0].array.D[i];
+            }
+            t[0]=t[1];        
+            clock_gettime(CLOCK_REALTIME, &t[1]);
+            elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
+            elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
+            compTime = (t[1].tv_sec - t[2].tv_sec) * 1e3;
+            compTime += (t[1].tv_nsec - t[2].tv_nsec) / 1e6;
+            printf("\rcompTime = %.3f us, fps = %8.3f Hz", compTime, 1e6/(1000*elapsedTime));
         }
         else
         {
             printf("\r WAIT %d", cnt);
-            fflush(stdout);
             cnt++;
         }
         fflush(stdout);
@@ -211,19 +215,21 @@ static void DecodeArgs(int argc, char **argv)
                         (void)usleep(a1);
                         break;
             case 'S':
-                        printf("Average Telemetry real time control\n");
-                        (void)sscanf(*argv++,"%s", shmName);
-                        daoInfo("shmName          = %s\n", shmName);
-                        break;
-            case 'n':	(void)sscanf(*argv++,"%d",&nbAvg); 
-                        daoInfo("nb Average       = %d \n", nbAvg);
-                        argc -= 1;	
+                        (void)sscanf(*argv++,"%s", inShmName);
+                        (void)sscanf(*argv++,"%s", outShmName);
+                        (void)sscanf(*argv++,"%s", fcShmName);
+                        (void)sscanf(*argv++,"%s", fpsShmName);
+                        daoInfo("inShmName          = %s\n", inShmName);
+                        daoInfo("outShmName         = %s\n", outShmName);
+                        daoInfo("fcShmName          = %s\n", fcShmName);
+                        daoInfo("fpsShmName         = %s\n", fpsShmName);
                         break;
             case 's':	
                         (void)sscanf(*argv++,"%d", &semNb); argc -= 1;
                         daoInfo("inputShm sem       = %d \n", semNb);
                         break;
             case 'L':
+                        printf("HPF real time control\n");
                         realTimeLoop();
                         break;
             default:

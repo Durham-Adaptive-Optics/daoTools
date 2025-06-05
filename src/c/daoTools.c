@@ -1040,6 +1040,97 @@ int_fast8_t daoToolsShmSubstractExtract(IMAGE *inAShm, IMAGE *inBShm, IMAGE *mas
     return DAO_SUCCESS;
 }
  
+/**
+ * @brief Applies a high-pass filter (HPF) to modal coefficients, Single precision.
+ *
+ * This function applies a first-order high-pass filter (HPF) to a vector of modal coefficients.
+ * It uses the recursive formula:
+ *
+ * \f[
+ *    H_n = \alpha H_{n-1} + \alpha (C_n - C_{n-1})
+ * \f]
+ * where
+ * \f[
+ *    \alpha = \exp\left(-2\pi \frac{f_{\text{cutoff}}}{f_{\text{loop}}}\right)
+ * \f]
+ *
+ * @param[out] H        Pointer to the output array of filtered coefficients (size `size`).
+ * @param[in]  C        Pointer to the current frame unfiltered coefficients (size `size`).
+ * @param[in]  CPrev    Pointer to the previous frame unfiltered coefficients (size `size`).
+ * @param[in]  HPrev    Pointer to the previous frame filtered coefficients (size `size`).
+ * @param[in]  fCutoff  Cutoff frequency of the high-pass filter (Hz).
+ * @param[in]  fLoop    Frame rate (sampling frequency) (Hz).
+ * @param[in]  size     Number of coefficients in the vectors.
+ *
+ * @return DAO_SUCCESS (typically 0) on success.
+ *
+ * @note It is assumed that all input arrays (`H`, `C`, `CPrev`, `HPrev`) have at least `size` elements.
+ * @note Typically `HPrev` and `CPrev` are from the previous frame and need to be updated externally.
+ */
+int_fast8_t daoToolsHighPassFilter(float *H,           
+                                   const float *C,  
+                                   const float *CPrev,
+                                   const float *HPrev,
+                                   float fCutoff, 
+                                   float fLoop,
+                                   int size)
+{
+    daoTrace("\n");
+    float alpha = exp(-2.0 * M_PI * fCutoff / fLoop);
+    for (int i = 0; i < size; ++i) 
+    {
+        H[i] = alpha * HPrev[i] + alpha * (C[i] - CPrev[i]);
+    }
+    
+    return DAO_SUCCESS;
+}
+
+/**
+ * @brief Applies a high-pass filter (HPF) to modal coefficients. Double precision
+ *
+ * This function applies a first-order high-pass filter (HPF) to a vector of modal coefficients.
+ * It uses the recursive formula:
+ *
+ * \f[
+ *    H_n = \alpha H_{n-1} + \alpha (C_n - C_{n-1})
+ * \f]
+ * where
+ * \f[
+ *    \alpha = \exp\left(-2\pi \frac{f_{\text{cutoff}}}{f_{\text{loop}}}\right)
+ * \f]
+ *
+ * @param[out] H        Pointer to the output array of filtered coefficients (size `size`).
+ * @param[in]  C        Pointer to the current frame unfiltered coefficients (size `size`).
+ * @param[in]  CPrev    Pointer to the previous frame unfiltered coefficients (size `size`).
+ * @param[in]  HPrev    Pointer to the previous frame filtered coefficients (size `size`).
+ * @param[in]  fCutoff  Cutoff frequency of the high-pass filter (Hz).
+ * @param[in]  fLoop    Frame rate (sampling frequency) (Hz).
+ * @param[in]  size     Number of coefficients in the vectors.
+ *
+ * @return DAO_SUCCESS (typically 0) on success.
+ *
+ * @note It is assumed that all input arrays (`H`, `C`, `CPrev`, `HPrev`) have at least `size` elements.
+ * @note Typically `HPrev` and `CPrev` are from the previous frame and need to be updated externally.
+ */
+int_fast8_t daoToolsHighPassFilterDouble(double *H,           
+                                         const double *C,  
+                                         const double *CPrev,
+                                         const double *HPrev,
+                                         double fCutoff, 
+                                         double fLoop,
+                                         int size)
+{
+    daoTrace("\n");
+    double alpha = exp(-2.0 * M_PI * fCutoff / fLoop);
+
+    for (int i = 0; i < size; ++i) 
+    {
+        H[i] = alpha * HPrev[i] + alpha * (C[i] - CPrev[i]);
+    }
+
+    return DAO_SUCCESS;
+}
+
 #ifdef __APPLE__
 
 #include <errno.h>

@@ -38,7 +38,6 @@
 #include "dao.h" 
 
 /*==========================================================================*/
-static int	sNdx=0;							/* board index */
 static int	sExit=0;						/* program exit code */
 
 //Need to install process with setuid.  Then, so you aren't running privileged all the time do this:
@@ -51,6 +50,7 @@ double tlastupdatedouble;
 
 IMAGE *inputShm;
 char inputShmName[32];
+int semNb = 0;
 IMAGE *matrixShm;
 char matrixShmName[32];
 IMAGE *outputShm;
@@ -78,10 +78,11 @@ static void ShowHelp(void)
     daoInfo("   arguments:\n");
     daoInfo("   -h               display this message and exit\n");
     daoInfo("   -d               display program debug output\n");
-    /*
-     **	Post init tests
-     */
-    daoInfo("   -L i.im.shm M.im.shm o.im.shm     real time control loop: example daoMvm -L <input SHM> <matrix SHM> <output SHM>\n");
+    daoInfo("   -S               list of SHM (full path separated by space)\n");
+    daoInfo("   -s               semaphore number\n");
+    daoInfo("   -L               start real-time loop\n");
+    daoInfo("   usage:\n");
+    daoInfo("    daoMvMGPU -S <input SHM> <input SHM semNb> <matrix SHM> <output SHM> -s <semNb> -L\n");
     daoInfo("\n");
 }
 /*--------------------------------------------------------------------------*/
@@ -97,44 +98,69 @@ void * realTimeLoop(void *thread_data)
     timeout.tv_sec = 1; // 1 second timeout
     int nInputs = inputShm[0].md[0].size[0] * inputShm[0].md[0].size[1];
     int nOutput = outputShm[0].md[0].size[0] * outputShm[0].md[0].size[1];
-    float *input = inputShm[0].array.F;
-    float *matrix = matrixShm[0].array.F;
-    float *output = outputShm[0].array.F;
     gettimeofday(&t[1],NULL);  
-    float alpha=1.0;
-    float beta=0.0;
+    float alpha_f=1.0;
+    float beta_f=0.0;
+    double alpha_d=1.0;
+    double beta_d=0.0;
 
-    // CUDA memory allocation
-    float *d_matrix, *d_input, *d_output;
-    cudaMalloc((void**)&d_matrix, nInputs * nOutput * sizeof(float));
-    cudaMalloc((void**)&d_input, nInputs * sizeof(float));
-    cudaMalloc((void**)&d_output, nOutput * sizeof(float));
+    // CUDA memory allocation both float and double matrix
+    float *df_matrix, *df_input, *df_output;
+    cudaMalloc((void**)&df_matrix, nInputs * nOutput * sizeof(float));
+    cudaMalloc((void**)&df_input, nInputs * sizeof(float));
+    cudaMalloc((void**)&df_output, nOutput * sizeof(float));
+    double *dd_matrix, *dd_input, *dd_output;
+    cudaMalloc((void**)&dd_matrix, nInputs * nOutput * sizeof(double));
+    cudaMalloc((void**)&dd_input, nInputs * sizeof(double));
+    cudaMalloc((void**)&dd_output, nOutput * sizeof(double));
 
     // Create cuBLAS handle
     cublasHandle_t handle;
     cublasCreate(&handle);
 
     // Copy matrix to GPU memory
-    cudaMemcpy(d_matrix, matrix, nInputs * nOutput * sizeof(float), cudaMemcpyHostToDevice);
+    if (inputShm[0].md[0].atype == _DATATYPE_FLOAT)
+    {
+        cudaMemcpy(df_matrix, matrixShm[0].array.F, nInputs * nOutput * sizeof(float), cudaMemcpyHostToDevice);
+    }
+    else
+    {
+        cudaMemcpy(dd_matrix, matrixShm[0].array.D, nInputs * nOutput * sizeof(double), cudaMemcpyHostToDevice);
+    }
 
     while (end==0) 
     {
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec +=1;
-        if (daoShmWaitForSemaphoreTimeout(inputShm, 1, &timeout) != -1)
+        if (daoShmWaitForSemaphoreTimeout(inputShm, semNb, &timeout) != -1)
         {
             printf("\rcomputing output, ");  
             
             gettimeofday(&t[2],NULL);
-            // Copy input vector to GPU (Updated in every iteration)
-            cudaMemcpy(d_input, input, nInputs * sizeof(float), cudaMemcpyHostToDevice);
+            if (inputShm[0].md[0].atype == _DATATYPE_FLOAT)
+            {
+                // Copy input vector to GPU (Updated in every iteration)
+                cudaMemcpy(df_input, inputShm[0].array.F, nInputs * sizeof(float), cudaMemcpyHostToDevice);
 
-            // Perform matrix-vector multiplication (GPU)
-            cublasSgemv(handle, CUBLAS_OP_T, nInputs, nOutput, &alpha,
-                        d_matrix, nInputs, d_input, 1, &beta, d_output, 1);
-            
-            // 🔹 Copy result back to CPU
-            cudaMemcpy(output, d_output, nOutput * sizeof(float), cudaMemcpyDeviceToHost);
+                // Perform matrix-vector multiplication (GPU)
+                cublasSgemv(handle, CUBLAS_OP_T, nInputs, nOutput, &alpha_f,
+                            df_matrix, nInputs, df_input, 1, &beta_f, df_output, 1);
+                
+                // 🔹 Copy result back to CPU
+                cudaMemcpy(outputShm[0].array.F, df_output, nOutput * sizeof(float), cudaMemcpyDeviceToHost);
+            }
+            else // Not FLOAT, assume DOUBLE
+            {
+                // Copy input vector to GPU (Updated in every iteration)
+                cudaMemcpy(dd_input, inputShm[0].array.D, nInputs * sizeof(double), cudaMemcpyHostToDevice);
+
+                // Perform matrix-vector multiplication (GPU)
+                cublasDgemv(handle, CUBLAS_OP_T, nInputs, nOutput, &alpha_d,
+                            dd_matrix, nInputs, dd_input, 1, &beta_d, dd_output, 1);
+                
+                // 🔹 Copy result back to CPU
+                cudaMemcpy(outputShm[0].array.D, dd_output, nOutput * sizeof(double), cudaMemcpyDeviceToHost);
+            }
             
             // Writes output output
             daoShmImagePart2ShmFinalize(&outputShm[0]);
@@ -151,9 +177,12 @@ void * realTimeLoop(void *thread_data)
     }
 
         // Free CUDA memory (Done only at the end)
-    cudaFree(d_matrix);
-    cudaFree(d_input);
-    cudaFree(d_output);
+    cudaFree(df_matrix);
+    cudaFree(df_input);
+    cudaFree(df_output);
+    cudaFree(dd_matrix);
+    cudaFree(dd_input);
+    cudaFree(dd_output);
     cublasDestroy(handle);
 
     daoInfo("EXITING MAIN LOOP\n");
@@ -219,29 +248,35 @@ static void DecodeArgs(int argc, char **argv)
         }
 
         switch (str[1]) {
-            case 'h':	ShowHelp(); exit(0);
-	    case 'd':	
-			(void)sscanf(*argv++,"%d",&daoLogLevel); argc -= 1;
-			break;
+            case 'h':	
+                        ShowHelp();
+                        exit(0);
+	        case 'd':	
+            			(void)sscanf(*argv++,"%d",&daoLogLevel); argc -= 1;
+			            break;
             case 'l':
                         daoInfo("%s\n",*argv);
                         argv += 1; argc -= 1;
                         break;
-
-            case 'b':	(void)sscanf(*argv++,"%d",&sNdx); argc -= 1;	break;
             case 'u':
                         (void)sscanf(*argv++,"%d",&a1); argc -= 1;
                         daoDebug("will sleep for %d usec\n",a1);
                         (void)usleep(a1);
                         break;
+            case 'S':
+                        (void)sscanf(*argv++,"%s", inputShmName); argc -= 1;
+                        (void)sscanf(*argv++,"%s", matrixShmName); argc -= 1;
+                        (void)sscanf(*argv++,"%s", outputShmName); argc -= 1;
+                        daoInfo("inputShm       = %s \n", inputShmName);
+                        daoInfo("matrixShm      = %s \n", matrixShmName);
+                        daoInfo("outputShm      = %s \n", outputShmName);
+                        break;
+            case 's':
+                        (void)sscanf(*argv++,"%d", &semNb); argc -= 1;
+                        daoInfo("inputShm sem   = %d \n", semNb);
+                        break;
             case 'L':
-                        daoInfo("FAST SH real time control\n");
-                        (void)sscanf(*argv++,"%s", inputShmName);
-                        (void)sscanf(*argv++,"%s", matrixShmName);
-                        (void)sscanf(*argv++,"%s", outputShmName);
-                        daoInfo("inputShm = %s \n", inputShmName);
-                        daoInfo("matrixShm = %s \n", matrixShmName);
-                        daoInfo("outputShm%s \n", outputShmName);
+                        daoInfo("MVM real time control\n");
                         realTimeLoopPrep();
                         break;
             default:

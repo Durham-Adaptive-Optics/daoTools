@@ -98,6 +98,23 @@ int_fast8_t daoToolsShmSubstractExtract(IMAGE *inAShm,
                                         IMAGE *inBShm,
                                         IMAGE *maskShm,
                                         IMAGE *outShm);
+
+int_fast8_t daoToolsHighPassFilter(float *H,           
+                                   const float *C,  
+                                   const float *CPrev,
+                                   const float *HPrev,
+                                   float fCutoff, 
+                                   float fLoop,
+                                   int size);
+
+int_fast8_t daoToolsHighPassFilterDouble(double *H,           
+                                         const double *C,  
+                                         const double *CPrev,
+                                         const double *HPrev,
+                                         double fCutoff, 
+                                         double fLoop,
+                                         int size);
+
 #ifdef __APPLE__
 
 #include <semaphore.h>

@@ -31,7 +31,6 @@
 #include "daoTools.h"
 
 /*==========================================================================*/
-static int	sNdx=0;							/* board index */
 static int	sExit=0;						/* program exit code */
 
 //Need to install process with setuid.  Then, so you aren't running privileged all the time do this:
@@ -44,6 +43,7 @@ double tnowdouble;
 double tlastupdatedouble;
 
 char inShmName[32];
+int semNb = 0;
 char offsetShmName[32];
 char outShmName[32];
 char lpCmdShmName[32];
@@ -66,10 +66,11 @@ static void ShowHelp(void)
     daoInfo("   arguments:\n");
     daoInfo("   -h               display this message and exit\n");
     daoInfo("   -d               display program debug output\n");
-    /*
-     **	Post init tests
-     */
-    daoInfo("   -L inShm offsetShm outShm lpCmdShm leakyShm gainShm    real time control loop\n");
+    daoInfo("   -S               list of SHM (full path separated by space)\n");
+    daoInfo("   -s               semaphore number\n");
+    daoInfo("   -L               start real-time loop\n");
+    daoInfo("   usage:\n");
+    daoInfo("   -S <in SHM> <offset SHM> <out SHM> <loopCmd SHM> <leak SHM> <gain SHM> -s <semNb> -L\n");
     daoInfo("\n");
 }
 
@@ -109,7 +110,7 @@ static int realTimeLoop()
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
         // Wait for new image
-        if (daoShmWaitForSemaphoreTimeout(inShm, 1, &timeout) != -1)
+        if (daoShmWaitForSemaphoreTimeout(inShm, semNb, &timeout) != -1)
         {
             // New image, insert something here
             outShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
@@ -181,17 +182,21 @@ static void DecodeArgs(int argc, char **argv)
 
     argv += 1;	argc -= 1;					/* skip program name */
 
-    while (argc-- > 0) {
+    while (argc-- > 0) 
+    {
         daoDebug("DecodeArgs: working on '%s'/%d\n",*argv,argc);
         str = *argv++;
-        if (str[0] != '-') {
+        if (str[0] != '-') 
+        {
             daoError("Do not know arg '%s'\n",str);
             ShowHelp();
             exit(1);
         }
 
         switch (str[1]) {
-            case 'h':	ShowHelp(); exit(0);
+            case 'h':	
+                        ShowHelp(); 
+                        exit(0);
             case 'd':	
                         (void)sscanf(*argv++,"%d",&daoLogLevel); argc -= 1;
                         break;
@@ -199,15 +204,13 @@ static void DecodeArgs(int argc, char **argv)
                         daoInfo("%s\n",*argv);
                         argv += 1; argc -= 1;
                         break;
-
-            case 'b':	(void)sscanf(*argv++,"%d",&sNdx); argc -= 1;	break;
             case 'u':
                         (void)sscanf(*argv++,"%d",&a1); argc -= 1;
                         daoDebug("will sleep for %d usec\n",a1);
                         (void)usleep(a1);
                         break;
                         break;
-            case 'L':
+            case 'S':
                         daoInfo("Simple filter from SHM real time control\n");
                     	(void)sscanf(*argv++,"%s", inShmName); argc -= 1;
                     	(void)sscanf(*argv++,"%s", offsetShmName); argc -= 1;
@@ -215,12 +218,18 @@ static void DecodeArgs(int argc, char **argv)
                     	(void)sscanf(*argv++,"%s", lpCmdShmName); argc -= 1;
                     	(void)sscanf(*argv++,"%s", gainShmName); argc -= 1;
                     	(void)sscanf(*argv++,"%s", leakyShmName); argc -= 1;
-                        daoInfo("inShmName = %s\n", inShmName);
-                        daoInfo("offsetShmName = %s\n", offsetShmName);
-                        daoInfo("outShmName = %s\n", outShmName);
-                        daoInfo("lpCmdShmName = %s\n", lpCmdShmName);
-                        daoInfo("gainShmName = %s\n", gainShmName);
-                        daoInfo("leakyShmName = %s\n", leakyShmName);
+                        daoInfo("inShmName      = %s\n", inShmName);
+                        daoInfo("offsetShmName  = %s\n", offsetShmName);
+                        daoInfo("outShmName     = %s\n", outShmName);
+                        daoInfo("lpCmdShmName   = %s\n", lpCmdShmName);
+                        daoInfo("gainShmName    = %s\n", gainShmName);
+                        daoInfo("leakyShmName   = %s\n", leakyShmName);
+                        break;
+            case 's':	
+                        (void)sscanf(*argv++,"%d", &semNb);
+                        daoInfo("inputShm sem     : %d \n", semNb);
+                        break;
+            case 'L':
                         realTimeLoop();
                         break;
             default:

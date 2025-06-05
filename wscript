@@ -39,11 +39,25 @@ def configure(conf):
 	# Check for CUDA
 	conf.env.CUDA_AVAILABLE = False  # Default to False
 	try:
-		conf.check_cfg(package='cuda', args='--cflags --libs', uselib_store='CUDA')
+		nvcc_path = conf.find_program('nvcc', var='NVCC')
+		if isinstance(nvcc_path, list):
+			nvcc = nvcc_path[0]
+		else:
+			nvcc = nvcc_path
+		conf.env.CUDA_PATH = os.path.dirname(os.path.dirname(nvcc))
+		conf.env.INCLUDES_CUDA = [os.path.join(conf.env.CUDA_PATH, 'include')]
+		conf.env.LIBPATH_CUDA = [os.path.join(conf.env.CUDA_PATH, 'lib64')]
+		conf.env.LIB_CUDA = ['cudart']
+
+		# Check that cuda_runtime.h exists
+		conf.check(header_name='cuda_runtime.h', includes=conf.env.INCLUDES_CUDA)
+		# Check that cudart lib is there
+		conf.check_cxx(lib='cudart', libpath=conf.env.LIBPATH_CUDA)
+
 		conf.env.CUDA_AVAILABLE = True
-		print("CUDA detected: enabling GPU build.")
-	except:
-		print("CUDA not found: skipping GPU.")
+		print('CUDA detected: enabling GPU build.')
+	except Exception as e:
+		print('CUDA not found or incomplete: skipping GPU.', e)
 
 	# Check for BLAS
 	conf.env.BLAS_AVAILABLE = False  # Default to False
@@ -90,18 +104,3 @@ def build(bld):
 	for file in files:
 		bld.install_files(bld.env.PREFIX+'/bin', file, chmod=0o0755, relative_trick=False)
 
-#	bld.install_files(bld.env.PREFIX+'/include', 'include/daoTools.h', relative_trick=False)
-#
-#	bld.install_files(bld.env.PREFIX+'/python', 'src/daoTools.py', relative_trick=False)
-#
-#	bld.install_files(bld.env.PREFIX+'/bin', 'scripts/daoEnableHT', chmod=0o755, relative_trick=False)
-#	bld.install_files(bld.env.PREFIX+'/bin', 'scripts/daoDisableHT', chmod=0o755, relative_trick=False)
-#
-#	bld.install_files(bld.env.PREFIX+'/bin', 'apps/daoImageRTD.py', chmod=0o755, relative_trick=False)
-#	bld.install_files(bld.env.PREFIX+'/bin', 'apps/daoReceiveLogs.py', relative_trick=False)
-#	bld.install_files(bld.env.PREFIX+'/bin', 'apps/daoSendLogs.py', relative_trick=False)
-#
-#	bld.install_files(bld.env.PREFIX+'/bin', 'gui/daoImDisp.py', chmod=0o755, relative_trick=False)
-#	bld.install_files(bld.env.PREFIX+'/bin', 'gui/daoImDisp.ui', relative_trick=False)
-#	bld.install_files(bld.env.PREFIX+'/bin', 'gui/daoRTDMagic.py', chmod=0o755, relative_trick=False)
-#	bld.install_files(bld.env.PREFIX+'/bin', 'gui/daoRTDMagic.py', chmod=0o755, relative_trick=False)

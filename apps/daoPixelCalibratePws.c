@@ -32,7 +32,6 @@
 #include "daoTools.h"
 
 /*==========================================================================*/
-static int	sNdx=0;							/* board index */
 static int	sExit=0;						/* program exit code */
 
 //Need to install process with setuid.  Then, so you aren't running privileged all the time do this:
@@ -46,6 +45,7 @@ double tlastupdatedouble;
 
 
 char inShmName[32];
+int semNb = 0;
 char ffShmName[32];
 char bgShmName[32];
 char maskShmName[32];
@@ -68,10 +68,11 @@ static void ShowHelp(void)
     daoInfo("   arguments:\n");
     daoInfo("   -h               display this message and exit\n");
     daoInfo("   -d               display program debug output\n");
-    /*
-     **	Post init tests
-     */
-    daoInfo("   -L sham              real time control loop\n");
+    daoInfo("   -S               list of SHM (full path separated by space)\n");
+    daoInfo("   -s               semaphore number\n");
+    daoInfo("   -L               start real-time loop\n");
+    daoInfo("   usage:\n");
+    daoInfo("   -S <input SHM> <background SHM> <flatfield SHM> <mask SHM> <cal SHM> <flux SHM> -s <semNb> -L\n");
     daoInfo("\n");
 }
 
@@ -110,7 +111,7 @@ static int realTimeLoop()
         t[0] = t[1];
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
-        if (daoShmWaitForSemaphoreTimeout(inShm, 2, &timeout) != DAO_TIMEOUT)
+        if (daoShmWaitForSemaphoreTimeout(inShm, semNb, &timeout) != DAO_TIMEOUT)
         {
             clock_gettime(CLOCK_REALTIME, &t[2]);
             daoToolsShmCalibratePws(inShm, ffShm, bgShm, maskShm, calShm, fluxShm);
@@ -165,7 +166,9 @@ static void DecodeArgs(int argc, char **argv)
         }
 
         switch (str[1]) {
-            case 'h':	ShowHelp(); exit(0);
+            case 'h':	
+                        ShowHelp(); 
+                        exit(0);
             case 'd':	
                         (void)sscanf(*argv++,"%d",&daoLogLevel); argc -= 1;
                         break;
@@ -174,15 +177,12 @@ static void DecodeArgs(int argc, char **argv)
                         argv += 1; argc -= 1;
                         break;
 
-            case 'b':	(void)sscanf(*argv++,"%d",&sNdx); argc -= 1;	break;
             case 'u':
                         (void)sscanf(*argv++,"%d",&a1); argc -= 1;
                         daoDebug("will sleep for %d usec\n",a1);
                         (void)usleep(a1);
                         break;
-                        break;
-            case 'L':
-                        daoInfo("Apply Falt and Background from SHM real time control\n");
+            case 'S':
                     	(void)sscanf(*argv++,"%s",inShmName); argc -= 1;
                     	(void)sscanf(*argv++,"%s",ffShmName); argc -= 1;
                     	(void)sscanf(*argv++,"%s",bgShmName); argc -= 1;
@@ -195,6 +195,13 @@ static void DecodeArgs(int argc, char **argv)
                         daoInfo("mask             : %s\n", maskShmName);
                         daoInfo("calibrated image : %s\n", calShmName);
                         daoInfo("flux             : %s\n", fluxShmName);
+                        break;
+            case 's':	
+                        (void)sscanf(*argv++,"%d", &semNb);
+                        daoInfo("inputShm sem     : %d \n", semNb);
+                        break;
+            case 'L':
+                        daoInfo("Apply Falt and Background from SHM of PWFS real time control\n");
                         realTimeLoop();
                         break;
             default:

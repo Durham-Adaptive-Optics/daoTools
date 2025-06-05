@@ -99,8 +99,8 @@ static int realTimeLoop()
     fflush(stdout);
 
     int nbValue = shm[0].md[0].size[0]*shm[0].md[0].size[1];
-    float *avgValue = shmAvg[0].array.F;//malloc(nbValue*sizeof(float));
-    float valueCircBuf[nbValue][nbAvg+1];
+    double *avgValue = shmAvg[0].array.D;//malloc(nbValue*sizeof(double));
+    double valueCircBuf[nbValue][nbAvg+1];
     int k, l;
     // reset buffer
     for (k=0; k<nbValue; k++)
@@ -128,7 +128,7 @@ static int realTimeLoop()
             // if new image, add it in the cir buf.
             for (k=0; k<nbValue; k++)
             {
-                valueCircBuf[k][tail] = shm[0].array.F[k]/nbAvg;
+                valueCircBuf[k][tail] = shm[0].array.D[k]/nbAvg;
                 if (isnan(valueCircBuf[k][tail]))
                 {
                     valueCircBuf[k][tail] = 0.0;
@@ -155,8 +155,8 @@ static int realTimeLoop()
     //        daoShmImage2Shm(avgValue, nbValue, &shmAvg[0]);
             daoShmImagePart2ShmFinalize(&shmAvg[0]);
             printf("\r(%f,%f) -> (%.3f,%.3f)",
-                    shm[0].array.F[0], shm[0].array.F[1],
-                    shmAvg[0].array.F[0], shmAvg[0].array.F[1]);
+                    shm[0].array.D[0], shm[0].array.D[1],
+                    shmAvg[0].array.D[0], shmAvg[0].array.D[1]);
         }
         else
         {

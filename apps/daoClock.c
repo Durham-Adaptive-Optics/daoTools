@@ -43,7 +43,6 @@ typedef int bool_t;
 #endif
 
 /*==========================================================================*/
-static int	sNdx=0;							/* board index */
 static int	sExit=0;						/* program exit code */
 
 //Need to install process with setuid.  Then, so you aren't running privileged all the time do this:
@@ -76,15 +75,10 @@ static void ShowHelp(void)
     daoInfo("   arguments:\n");
     daoInfo("   -h               display this message and exit\n");
     daoInfo("   -d               display program debug output\n");
-    daoInfo("   -l str           display str in output\n");
-    /*
-     **	Post init tests
-     */
-    daoInfo("   -L Nb            real time control loop: example camsimClock -L harmoniClock 500\n");
-    /*
-     **	Timing tests
-     */
-    daoInfo("   -t nloops        test timing for i/o\n");
+    daoInfo("   -S               list of SHM (full path separated by space)\n");
+    daoInfo("   -L               start real-time loop\n");
+    daoInfo("   usage:\n");
+    daoInfo("   -S <clock SHM> <freq SHM> <frequency> -L\n");
     daoInfo("\n");
 }
 /*--------------------------------------------------------------------------*/
@@ -209,13 +203,12 @@ static void DecodeArgs(int argc, char **argv)
                         argv += 1; argc -= 1;
                         break;
 
-            case 'b':	(void)sscanf(*argv++,"%d",&sNdx); argc -= 1;	break;
             case 'u':
                         (void)sscanf(*argv++,"%d",&a1); argc -= 1;
                         daoDebug("will sleep for %d usec\n",a1);
                         (void)usleep(a1);
                         break;
-            case 'L':
+            case 'S':
                         daoInfo("Clock real time control\n");
                         (void)sscanf(*argv++,"%s", clockName);
                         (void)sscanf(*argv++,"%s", freqName);
@@ -223,6 +216,8 @@ static void DecodeArgs(int argc, char **argv)
                         daoInfo("%s \n", clockName);
                         daoInfo("%s \n", freqName);
                         daoInfo("%f \n", frequency);
+                        break;
+            case 'L':
                         realTimeLoop();
                         break;
             default:

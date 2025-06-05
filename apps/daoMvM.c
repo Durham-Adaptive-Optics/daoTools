@@ -35,7 +35,6 @@
 #include "dao.h" 
 
 /*==========================================================================*/
-static int	sNdx=0;							/* board index */
 static int	sExit=0;						/* program exit code */
 
 //Need to install process with setuid.  Then, so you aren't running privileged all the time do this:
@@ -48,6 +47,7 @@ double tlastupdatedouble;
 
 IMAGE *inputShm;
 char inputShmName[32];
+int semNb = 0;
 IMAGE *matrixShm;
 char matrixShmName[32];
 IMAGE *outputShm;
@@ -75,10 +75,11 @@ static void ShowHelp(void)
     daoInfo("   arguments:\n");
     daoInfo("   -h               display this message and exit\n");
     daoInfo("   -d               display program debug output\n");
-    /*
-     **	Post init tests
-     */
-    daoInfo("   -L i.im.shm M.im.shm o.im.shm     real time control loop: example daoMvm -L <input SHM> <matrix SHM> <output SHM>\n");
+    daoInfo("   -S               list of SHM (full path separated by space)\n");
+    daoInfo("   -s               semaphore number\n");
+    daoInfo("   -L               start real-time loop\n");
+    daoInfo("   usage:\n");
+    daoInfo("    daoMvM -S <input SHM> <input SHM semNb> <matrix SHM> <output SHM> -s <semNb> -L\n");
     daoInfo("\n");
 }
 /*--------------------------------------------------------------------------*/
@@ -94,9 +95,6 @@ void * realTimeLoop(void *thread_data)
     timeout.tv_sec = 1; // 1 second timeout
     int nInputs = inputShm[0].md[0].size[0] * inputShm[0].md[0].size[1];
     int nOutput = outputShm[0].md[0].size[0] * outputShm[0].md[0].size[1];
-    float *input = inputShm[0].array.F;
-    float *matrix = matrixShm[0].array.F;
-    float *output = outputShm[0].array.F;
     gettimeofday(&t[1],NULL);  
     float alpha=1.0;
     float beta=0.0;
@@ -104,13 +102,22 @@ void * realTimeLoop(void *thread_data)
     {
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec +=1;
-        if (daoShmWaitForSemaphoreTimeout(inputShm, 1, &timeout) != -1)
+        if (daoShmWaitForSemaphoreTimeout(inputShm, semNb, &timeout) != -1)
         {
             printf("\rcomputing output, ");        
             gettimeofday(&t[2],NULL);
             // MATRIX 
-            cblas_sgemv(CblasColMajor, CblasTrans, nInputs, nOutput, alpha,
-                        matrix, nInputs, input, 1, beta, output, 1);
+            if (inputShm[0].md[0].atype == _DATATYPE_FLOAT)
+            {
+                cblas_sgemv(CblasColMajor, CblasTrans, nInputs, nOutput, alpha,
+                    matrixShm[0].array.F, nInputs, inputShm[0].array.F, 1, beta, outputShm[0].array.F, 1);
+            }
+            else
+            {
+                cblas_dgemv(CblasColMajor, CblasTrans, nInputs, nOutput, (double)alpha,
+                    matrixShm[0].array.D, nInputs, inputShm[0].array.D, 1, (double)beta, outputShm[0].array.D, 1);
+
+            }
             // Writes output output
             daoShmImagePart2ShmFinalize(&outputShm[0]);
 
@@ -188,29 +195,35 @@ static void DecodeArgs(int argc, char **argv)
         }
 
         switch (str[1]) {
-            case 'h':	ShowHelp(); exit(0);
-	    case 'd':	
-			(void)sscanf(*argv++,"%d",&daoLogLevel); argc -= 1;
-			break;
+            case 'h':	
+                        ShowHelp();
+                        exit(0);
+	        case 'd':	
+            			(void)sscanf(*argv++,"%d",&daoLogLevel); argc -= 1;
+			            break;
             case 'l':
                         daoInfo("%s\n",*argv);
                         argv += 1; argc -= 1;
                         break;
-
-            case 'b':	(void)sscanf(*argv++,"%d",&sNdx); argc -= 1;	break;
             case 'u':
                         (void)sscanf(*argv++,"%d",&a1); argc -= 1;
                         daoDebug("will sleep for %d usec\n",a1);
                         (void)usleep(a1);
                         break;
+            case 'S':
+                        (void)sscanf(*argv++,"%s", inputShmName); argc -= 1;
+                        (void)sscanf(*argv++,"%s", matrixShmName); argc -= 1;
+                        (void)sscanf(*argv++,"%s", outputShmName); argc -= 1;
+                        daoInfo("inputShm       = %s \n", inputShmName);
+                        daoInfo("matrixShm      = %s \n", matrixShmName);
+                        daoInfo("outputShm      = %s \n", outputShmName);
+                        break;
+            case 's':
+                        (void)sscanf(*argv++,"%d", &semNb); argc -= 1;
+                        daoInfo("inputShm sem   = %d \n", semNb);
+                        break;
             case 'L':
-                        daoInfo("FAST SH real time control\n");
-                        (void)sscanf(*argv++,"%s", inputShmName);
-                        (void)sscanf(*argv++,"%s", matrixShmName);
-                        (void)sscanf(*argv++,"%s", outputShmName);
-                        daoInfo("inputShm = %s \n", inputShmName);
-                        daoInfo("matrixShm = %s \n", matrixShmName);
-                        daoInfo("outputShm%s \n", outputShmName);
+                        daoInfo("MVM real time control\n");
                         realTimeLoopPrep();
                         break;
             default:

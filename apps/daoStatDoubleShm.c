@@ -48,10 +48,10 @@ double dt_update_lim = 3600.0; // if no command is received during this time, se
 
 
 char shmName[32];
-int semNb = 0;
 char shmNameAvg[64];
 char shmNameRms[64];
 int popSize=100;
+int semNb = 0;
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -71,10 +71,10 @@ static void ShowHelp(void)
     daoInfo("   -d               display program debug output\n");
     daoInfo("   -S               list of SHM (full path separated by space)\n");
     daoInfo("   -s               semaphore number\n");
-    daoInfo("   -s               number of frame to compute statistic\n");
+    daoInfo("   -n               number of frame to average\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage:\n");
-    daoInfo("   -S <time SHM> -s <semNb> -n <nbmease> -L\n");
+    daoInfo("   -S <SHM> -n <nb Frame> -s <semNb> -L\n");;
     daoInfo("\n");
 }
 
@@ -86,24 +86,25 @@ void * statRealTimeLoop(void *thread_data)
     IMAGE *shmAvg = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *shmRms = (IMAGE*) malloc(sizeof(IMAGE));
     daoShmShm2Img(shmName, &shm[0]);
-    //daoShmShm2Img(shmNameAvg, &shmAvg[0]);
-    //daoShmShm2Img(shmNameRms, &shmRms[0]);
 
+    daoToolsInsertShmNamePrefix(shmName, "Avg", shmNameAvg);
+    daoToolsInsertShmNamePrefix(shmName, "Rms", shmNameRms);
     // Create size array, using 2D of 1x1... can be change to 1D
     uint32_t size[2];
-    size[0] = 1;
-    size[1] = 1;
-    daoShmImageCreate(shmAvg, shmNameAvg, 2, size, _DATATYPE_FLOAT, 1, 0);
-    daoShmImageCreate(shmRms, shmNameRms, 2, size, _DATATYPE_FLOAT, 1, 0);
+    size[0] = shm[0].md[0].size[0];
+    size[1] = shm[0].md[0].size[1];
+    daoShmImageCreate(shmAvg, shmNameAvg, 2, size, shm[0].md[0].atype, 1, 0);
+    daoShmImageCreate(shmRms, shmNameRms, 2, size, shm[0].md[0].atype, 1, 0);
+
     daoInfo("Starting loop, %s -> %s, popSize=%d\n",shmName, shmNameAvg, popSize );
     daoInfo("               %s -> %s, popSize=%d\n",shmName, shmNameRms, popSize );
     fflush(stdout);
 
     int nbValue = shm[0].md[0].size[0]*shm[0].md[0].size[1];
-    float *avgValue = malloc(nbValue*sizeof(float));
-    float *rmsValue = malloc(nbValue*sizeof(float));
-    float valueCircBufAvg[nbValue][popSize+1];
-    float valueCircBuf[nbValue][popSize+1];
+    double *avgValue = malloc(nbValue*sizeof(double));
+    double *rmsValue = malloc(nbValue*sizeof(double));
+    double valueCircBufAvg[nbValue][popSize+1];
+    double valueCircBuf[nbValue][popSize+1];
     int k, l;
     // reset buffer
     for (k=0; k<nbValue; k++)
@@ -119,7 +120,6 @@ void * statRealTimeLoop(void *thread_data)
     int tail=0;
     int head=0;
     int c=0;
-    int cnt=0;
     daoInfo("Avg/Rms telemetry running for %s -> %s/%s, popSize=%d\n",shmName, shmNameAvg, shmNameRms, popSize );
 
     struct timespec timeout;
@@ -134,8 +134,8 @@ void * statRealTimeLoop(void *thread_data)
             // if new image, add it in the cir buf.
             for (k = 0; k < nbValue; k++)
             {
-                valueCircBufAvg[k][tail] = shm[0].array.F[k] / popSize;
-                valueCircBuf[k][tail] = shm[0].array.F[k];
+                valueCircBufAvg[k][tail] = shm[0].array.D[k] / popSize;
+                valueCircBuf[k][tail] = shm[0].array.D[k];
                 if (isnan(valueCircBufAvg[k][tail]))
                 {
                     valueCircBufAvg[k][tail] = 0.0;
@@ -180,14 +180,9 @@ void * statRealTimeLoop(void *thread_data)
             daoShmImage2Shm(avgValue, nbValue, &shmAvg[0]);
             daoShmImage2Shm(rmsValue, nbValue, &shmRms[0]);
             printf("\r(%8.3f,%8.3f) -> AVG(%8.3f,%8.3f), RMS(%8.3f,%8.3f)",
-                   shm[0].array.F[0], shm[0].array.F[1],
-                   shmAvg[0].array.F[0], shmAvg[0].array.F[1],
-                   shmRms[0].array.F[0], shmRms[0].array.F[1]);
-            fflush(stdout);
-        }
-        else
-        {
-            printf("\rtimeout waiting for semaphore, waiting %d", cnt++);
+                   shm[0].array.D[0], shm[0].array.D[1],
+                   shmAvg[0].array.D[0], shmAvg[0].array.D[1],
+                   shmRms[0].array.D[0], shmRms[0].array.D[1]);
             fflush(stdout);
         }
     }
@@ -223,7 +218,6 @@ static int realTimeLoop()
     pthread_t controllerThread;
     int threadIdCtrl = 0;
     int statThreadVal=0;
-    usleep(1e6);
     statThreadVal = pthread_create(&controllerThread, NULL, statRealTimeLoop, (void *)&threadIdCtrl);
     if (statThreadVal != 0)
     {
@@ -246,18 +240,21 @@ static void DecodeArgs(int argc, char **argv)
 
     argv += 1;	argc -= 1;					/* skip program name */
 
-    while (argc-- > 0) {
+    while (argc-- > 0) 
+    {
         daoDebug("DecodeArgs: working on '%s'/%d\n",*argv,argc);
         str = *argv++;
-        if (str[0] != '-') {
+        if (str[0] != '-') 
+        {
             daoError("Do not know arg '%s'\n",str);
             ShowHelp();
             exit(1);
         }
 
-        switch (str[1]) {
+        switch (str[1]) 
+        {
             case 'h':	
-                        ShowHelp(); 
+                        ShowHelp();
                         exit(0);
             case 'd':	
                         (void)sscanf(*argv++,"%d",&daoLogLevel); argc -= 1;
@@ -271,23 +268,18 @@ static void DecodeArgs(int argc, char **argv)
                         daoDebug("will sleep for %d usec\n",a1);
                         (void)usleep(a1);
                         break;
-            case 'S':	
-                        (void)sscanf(*argv++,"%s",shmName); argc -= 1;
-                        daoToolsInsertShmNamePrefix(shmName, "Avg", shmNameAvg);
-                        daoToolsInsertShmNamePrefix(shmName, "Rms", shmNameRms);
-                        daoInfo("SHM = %s\n", shmName);
-                        daoInfo("SHM Avg = %s\n", shmNameAvg);
-                        daoInfo("SHM Rms = %s\n", shmNameRms);
+            case 'S':
+                        daoInfo("Average & RMS Telemetry real time control\n");
+                        (void)sscanf(*argv++,"%s", shmName); argc -= 1;
                         break;
-            case 's':	
-                        (void)sscanf(*argv++,"%d", &semNb);
-                        daoInfo("inputShm sem     : %d \n", semNb);
-                        break;            
             case 'n':	
                         (void)sscanf(*argv++,"%d",&popSize); argc -= 1;	
                         break;
+            case 's':	
+                        (void)sscanf(*argv++,"%d", &semNb); argc -= 1;
+                        daoInfo("inputShm sem       = %d \n", semNb);
+                        break;
             case 'L':
-                        daoInfo("Average Telemetry real time control\n");
                         realTimeLoop();
                         break;
             default:
