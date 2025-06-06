@@ -12,6 +12,22 @@
 
 #include "daoTools.h"
 
+/** Compute 32-bit XOR checksum over buffer
+ */
+uint32_t daoComputeChecksum(const void *data, size_t length_bytes) 
+{
+    const uint32_t *words = (const uint32_t *)data;
+    size_t num_words = length_bytes / 4;
+    uint32_t checksum = 0;
+
+    // XOR each 32-bit word
+    for (size_t i = 0; i < num_words; ++i) {
+        checksum ^= words[i];
+    }
+
+    return checksum;
+}
+
 /**
  * @brief convert IP address (AAA.BBB.CCC.DDD) to integer
  * 
