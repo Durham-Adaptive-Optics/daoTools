@@ -117,28 +117,58 @@ static int realTimeLoop()
             avg=0;
             if (lpCmdShm[0].array.UI32[0] == 1)
             {
-                daoToolsLeakyIntegrator(inShm[0].array.F, 
-                                        inSize,
-                                        leakyShm[0].array.F[0], 
-                                        gainShm[0].array.F[0], 
-                                        offsetShm[0].array.F,
-                                        outShm[0].array.F);
-                for (j=0; j< inSize; j++)
+                if (inShm[0].md[0].atype == _DATATYPE_FLOAT)
                 {
-                    avg+=outShm[0].array.F[j];
+                    daoToolsLeakyIntegrator(inShm[0].array.F, 
+                                            inSize,
+                                            leakyShm[0].array.F[0], 
+                                            gainShm[0].array.F[0], 
+                                            offsetShm[0].array.F,
+                                            outShm[0].array.F);
+                    for (j=0; j< inSize; j++)
+                    {
+                        avg+=outShm[0].array.F[j];
+                    }
+                    avg=avg/inSize;
+                    for (j=0; j< inSize; j++)
+                    {
+                        outShm[0].array.F[j] = outShm[0].array.F[j] - avg;;
+                    }
                 }
-                avg=avg/inSize;
-                for (j=0; j< inSize; j++)
+                else
                 {
-                    outShm[0].array.F[j] = outShm[0].array.F[j] - avg;;
+                    daoToolsLeakyIntegratorDouble(inShm[0].array.D, 
+                                                  inSize,
+                                                  leakyShm[0].array.D[0], 
+                                                  gainShm[0].array.D[0], 
+                                                  offsetShm[0].array.D,
+                                                  outShm[0].array.D);
+                    for (j=0; j< inSize; j++)
+                    {
+                        avg+=outShm[0].array.D[j];
+                    }
+                    avg=avg/inSize;
+                    for (j=0; j< inSize; j++)
+                    {
+                        outShm[0].array.D[j] = outShm[0].array.D[j] - avg;;
+                    }                    
                 }
-
             }
             else
             {
-                for (j=0; j< inSize; j++)
+                if (inShm[0].md[0].atype == _DATATYPE_FLOAT)
                 {
-                    outShm[0].array.F[j] = 0.0;
+                    for (j=0; j< inSize; j++)
+                    {
+                        outShm[0].array.F[j] = 0.0;
+                    }
+                }
+                else
+                {
+                    for (j=0; j< inSize; j++)
+                    {
+                        outShm[0].array.D[j] = 0.0;
+                    }
                 }
 
             }
@@ -147,13 +177,27 @@ static int realTimeLoop()
             clock_gettime(CLOCK_REALTIME, &t[1]);
             elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
             elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
-            printf("\r fps = %8.3f Hz, %d in=[%6.3f,%6.3f,...,%6.3f], out[%6.3f, %6.3f,...,%6.3f]", 1e6/(1000*elapsedTime), 
+            if (inShm[0].md[0].atype == _DATATYPE_FLOAT)
+            {
+                printf("\r fps = %8.3f Hz, %d in=[%6.3f,%6.3f,...,%6.3f], out[%6.3f, %6.3f,...,%6.3f]", 1e6/(1000*elapsedTime), 
                                                                                   inSize, inShm[0].array.F[0],
                                                                                   inShm[0].array.F[1],
                                                                                   inShm[0].array.F[inSize],
                                                                                   outShm[0].array.F[0],
                                                                                   outShm[0].array.F[1],
                                                                                   outShm[0].array.F[outSize]);
+            } 
+            else
+            {
+                printf("\r fps = %8.3f Hz, %d in=[%6.3lf,%6.3lf,...,%6.3lf], out[%6.3lf, %6.3lf,...,%6.3lf]", 1e6/(1000*elapsedTime), 
+                                                                                  inSize, inShm[0].array.D[0],
+                                                                                  inShm[0].array.D[1],
+                                                                                  inShm[0].array.D[inSize],
+                                                                                  outShm[0].array.D[0],
+                                                                                  outShm[0].array.D[1],
+                                                                                  outShm[0].array.D[outSize]);
+
+            }
         }
         else
         {
