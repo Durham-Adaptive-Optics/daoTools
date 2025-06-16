@@ -128,6 +128,8 @@ void * realTimeLoop(void *thread_data)
         cudaMemcpy(dd_matrix, matrixShm[0].array.D, nInputs * nOutput * sizeof(double), cudaMemcpyHostToDevice);
     }
 
+    unsigned long cnt0Matrix = matrixShm[0].md[0].cnt0;
+
     while (end==0) 
     {
         clock_gettime(CLOCK_REALTIME, &timeout);
@@ -164,6 +166,22 @@ void * realTimeLoop(void *thread_data)
             
             // Writes output output
             daoShmImagePart2ShmFinalize(&outputShm[0]);
+
+            // Check if the matrix has changed and used the time after the finalize to update the matrix.
+            if (cnt0Matrix != matrixShm[0].md[0].cnt0)
+            {
+                daoInfo("New Matrix detected (cnt %ld vs %ld), copying to GPU.", cnt0Matrix, matrixShm[0].md[0].cnt0);
+                // Copy matrix to GPU memory
+                if (inputShm[0].md[0].atype == _DATATYPE_FLOAT)
+                {
+                    cudaMemcpy(df_matrix, matrixShm[0].array.F, nInputs * nOutput * sizeof(float), cudaMemcpyHostToDevice);
+                }
+                else
+                {
+                    cudaMemcpy(dd_matrix, matrixShm[0].array.D, nInputs * nOutput * sizeof(double), cudaMemcpyHostToDevice);
+                } 
+                cnt0Matrix = matrixShm[0].md[0].cnt0; 
+            }
 
             t[0]=t[1];        
             gettimeofday(&t[1],NULL);

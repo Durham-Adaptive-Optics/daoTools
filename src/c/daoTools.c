@@ -12,6 +12,22 @@
 
 #include "daoTools.h"
 
+/** Compute 32-bit XOR checksum over buffer
+ */
+uint32_t daoComputeChecksum(const void *data, size_t length_bytes) 
+{
+    const uint32_t *words = (const uint32_t *)data;
+    size_t num_words = length_bytes / 4;
+    uint32_t checksum = 0;
+
+    // XOR each 32-bit word
+    for (size_t i = 0; i < num_words; ++i) {
+        checksum ^= words[i];
+    }
+
+    return checksum;
+}
+
 /**
  * @brief convert IP address (AAA.BBB.CCC.DDD) to integer
  * 
@@ -522,7 +538,30 @@ int_fast8_t daoToolsLeakyIntegrator(float *command, int nbVal, float leaky, floa
     return DAO_SUCCESS;
 }
 
-
+/*
+ * Apply Integrator to command double precision
+ */
+ int_fast8_t daoToolsLeakyIntegratorDouble(double *command, int nbVal, double leaky, double gain, double *commandOffset, double *filteredCommand)
+ {
+     daoTrace("\n");
+     // 
+     double commandMoff[nbVal];
+     int pp;
+     for(pp = 0; pp < nbVal; pp++)
+     {
+         // Check that values to filter are
+         // number... safety check to stop propagating nan
+         if (isnan(command[pp]))
+         {
+             command[pp] = 0.0;
+         }
+         // Substract command offset
+         commandMoff[pp] = command[pp] - commandOffset[pp];
+         filteredCommand[pp] = leaky * filteredCommand[pp] - gain * commandMoff[pp]; // * mixingFactor;
+     }
+ 
+     return DAO_SUCCESS;
+ }
 
 
 

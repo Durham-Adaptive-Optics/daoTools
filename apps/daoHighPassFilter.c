@@ -50,6 +50,7 @@ char inShmName[32];
 char outShmName[32];
 char fcShmName[32];
 char fpsShmName[32];
+char enaShmName[32];
 int semNb=0;
 
 static int   		end     = 0;		           // termination flag
@@ -72,7 +73,7 @@ static void ShowHelp(void)
     daoInfo("   -s               semaphore number\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage:\n");
-    daoInfo("   daoHighPassFilter -S <SHM> -n <nb Average> -s <semNb> -L\n");
+    daoInfo("   daoHighPassFilter -S <in SHM> <out SHM> <fc SHM> <fps SHM> <ena SHM> -s <semNb> -L\n");
     printf("\n");
 }
 
@@ -90,11 +91,14 @@ static int realTimeLoop()
 
     IMAGE *fcShm;
     IMAGE *fpsShm;
+    IMAGE *enaShm;
 
     fcShm = (IMAGE*) malloc(sizeof(IMAGE));
     daoShmShm2Img(fcShmName, &fcShm[0]);
     fpsShm = (IMAGE*) malloc(sizeof(IMAGE));
     daoShmShm2Img(fpsShmName, &fpsShm[0]);
+    enaShm = (IMAGE*) malloc(sizeof(IMAGE));
+    daoShmShm2Img(enaShmName, &enaShm[0]);
 
     char inShmNamePrev[32];
     char outShmNamePrev[32];
@@ -138,14 +142,41 @@ static int realTimeLoop()
         if (daoShmWaitForSemaphoreTimeout(inShm, semNb, &timeout) != DAO_TIMEOUT)
         {
             clock_gettime(CLOCK_REALTIME, &t[2]);
-
-            daoToolsHighPassFilterDouble(outShm[0].array.D,
-                                         inShm[0].array.D,  
-                                         outShmPrev[0].array.D,  
-                                         inShmPrev[0].array.D,  
-                                         fcShm[0].array.D[0],
-                                         fpsShm[0].array.D[0],
-                                         inSize);
+            
+            if (enaShm[0].array.UI32[0] == 1)
+            {
+                if (inShm[0].md[0].atype == _DATATYPE_DOUBLE)
+                {
+                    daoToolsHighPassFilterDouble(outShm[0].array.D,
+                                                 inShm[0].array.D,  
+                                                 outShmPrev[0].array.D,  
+                                                 inShmPrev[0].array.D,  
+                                                 fcShm[0].array.D[0],
+                                                 fpsShm[0].array.D[0],
+                                                 inSize);
+                }
+                else
+                {
+                    daoToolsHighPassFilter(outShm[0].array.F,
+                                           inShm[0].array.F,  
+                                           outShmPrev[0].array.F,  
+                                           inShmPrev[0].array.F,  
+                                           fcShm[0].array.F[0],
+                                           fpsShm[0].array.F[0],
+                                           inSize);
+                }
+            }
+            else
+            {
+                if (inShm[0].md[0].atype == _DATATYPE_DOUBLE)
+                {
+                    daoShmImage2Shm(inShm[0].array.D, inSize, outShm);
+                }
+                else
+                {
+                    daoShmImage2Shm(inShm[0].array.F, inSize, outShm);
+                }
+            }
 
             daoShmImagePart2ShmFinalize(&outShm[0]);
             
@@ -161,7 +192,7 @@ static int realTimeLoop()
             elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
             compTime = (t[1].tv_sec - t[2].tv_sec) * 1e3;
             compTime += (t[1].tv_nsec - t[2].tv_nsec) / 1e6;
-            printf("\rcompTime = %.3f us, fps = %8.3f Hz", compTime, 1e6/(1000*elapsedTime));
+            printf("\r HPF enable = %d, compTime = %.3f us, fps = %8.3f Hz", enaShm[0].array.UI32[0], compTime, 1e6/(1000*elapsedTime));
         }
         else
         {
@@ -219,10 +250,12 @@ static void DecodeArgs(int argc, char **argv)
                         (void)sscanf(*argv++,"%s", outShmName);
                         (void)sscanf(*argv++,"%s", fcShmName);
                         (void)sscanf(*argv++,"%s", fpsShmName);
+                        (void)sscanf(*argv++,"%s", enaShmName);
                         daoInfo("inShmName          = %s\n", inShmName);
                         daoInfo("outShmName         = %s\n", outShmName);
                         daoInfo("fcShmName          = %s\n", fcShmName);
                         daoInfo("fpsShmName         = %s\n", fpsShmName);
+                        daoInfo("enaShmName         = %s\n", enaShmName);
                         break;
             case 's':	
                         (void)sscanf(*argv++,"%d", &semNb); argc -= 1;
