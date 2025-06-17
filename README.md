@@ -21,6 +21,12 @@ sudo yum install ncurses-devel
 ````
 pip3 install pyqtgraph
 ````
+We recommand to use magicPlot
+```
+git clone https://github.com/ojdf/magicplot.git
+cd magicPlot
+pip install -e .
+```
 
 # Build
 ```
