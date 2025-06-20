@@ -9,7 +9,6 @@
 #include <string.h>
 #include <math.h>
 
-
 #include "daoTools.h"
 
 /** Compute 32-bit XOR checksum over buffer
