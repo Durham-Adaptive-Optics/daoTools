@@ -46,6 +46,7 @@ char ocamRawShmName[32];
 char ocamShmName[32];
 char lutShmName[32];
 int semNb = 0;
+int binning = 1; // binning factor, default is 1 (no binning)
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -65,9 +66,10 @@ static void ShowHelp(void)
     daoInfo("   -d               display program debug output\n");
     daoInfo("   -S               list of SHM (full path separated by space)\n");
     daoInfo("   -s               semaphore number\n");
+    daoInfo("   -b               binning\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage:\n");
-    daoInfo("   -S <ocamRaw SHM> <ocamShm SHM> <lut SHM> -s <semNb> -L\n");
+    daoInfo("   -S <ocamRaw SHM> <ocamShm SHM> <lut SHM> -s <semNb> -b <binning> -L\n");
     daoInfo("\n");
 }
 
@@ -86,6 +88,7 @@ static int realTimeLoop()
     daoShmShm2Img(ocamShmName, &ocamShm[0]);
     daoShmShm2Img(lutShmName, &lutShm[0]);
 
+    int binningOffset = 57600 - 14400;
     int imgWidth = ocamRawShm[0].md[0].size[0];
     int unscrambledSize = ocamShm[0].md[0].size[0] * ocamShm[0].md[0].size[1];
     struct timespec timeout;
@@ -100,16 +103,70 @@ static int realTimeLoop()
         if (daoShmWaitForSemaphoreTimeout(ocamRawShm, semNb, &timeout) != -1)
         {
             clock_gettime(CLOCK_REALTIME, &t[0]);
-            // Process the scrambled image directly to unscrambled image
-            for (int i = 0; i < unscrambledSize; i++)
+            if (binning == 2)
             {
-                int scrambled_index = lutShm[0].array.SI32[i];
-                int y = scrambled_index / (imgWidth / 2);
-                int x = (scrambled_index % (imgWidth / 2)) * 2;
-                ocamShm[0].array.UI16[i] = (ocamRawShm[0].array.UI8[y * imgWidth + x + 1] << 8) + ocamRawShm[0].array.UI8[y * imgWidth + x];
+                const int imgHeight = 121;
+                const int imgWidth  = 1056;
+                const int img16Cols = imgWidth / 2;        // 528
+                const int inSize16  = imgHeight * img16Cols; // 63888
+                const int descramblerSize = 57600;
+                const int binningOffset = descramblerSize - 14400; // 43200
+                const int halfSize = 14400 / 2;            // 7200
+            
+                uint16_t img16_vector[inSize16];
+            
+                // Build full-resolution 16-bit image vector (like Python img16.flatten())
+                for (int y = 0; y < imgHeight; y++) {
+                    for (int x = 0; x < imgWidth; x += 2) {
+                        int col16 = x / 2;
+                        int i8  = y * imgWidth + x;
+                        int i16 = y * img16Cols + col16;
+            
+                        img16_vector[i16] = ((uint16_t)ocamRawShm[0].array.UI8[i8 + 1] << 8)
+                                          | ocamRawShm[0].array.UI8[i8];
+                    }
+                }
+            
+                // Apply descrambler LUT using i*2 and i*2 + binningOffset
+                for (int i = 0; i < halfSize; i++) {
+                    int lutIdx1 = i * 2;
+                    int lutIdx2 = i * 2 + binningOffset;
+            
+                    if (lutIdx1 >= descramblerSize || lutIdx2 >= descramblerSize) {
+                        fprintf(stderr, "LUT index overflow at i=%d: lutIdx1=%d lutIdx2=%d\n", i, lutIdx1, lutIdx2);
+                        continue;
+                    }
+            
+                    int idx1 = lutShm[0].array.SI32[lutIdx1];
+                    int idx2 = lutShm[0].array.SI32[lutIdx2];
+            
+                    if (idx1 >= 0 && idx1 < inSize16)
+                        ocamShm[0].array.UI16[i] = img16_vector[idx1];
+                    else
+                        ocamShm[0].array.UI16[i] = 0;
+            
+                    if (idx2 >= 0 && idx2 < inSize16)
+                        ocamShm[0].array.UI16[halfSize + i] = img16_vector[idx2];
+                    else
+                        ocamShm[0].array.UI16[halfSize + i] = 0;
+                }
+            
+                daoShmImagePart2ShmFinalize(&ocamShm[0]);
+                clock_gettime(CLOCK_REALTIME, &t[1]);
             }
-            daoShmImagePart2ShmFinalize(&ocamShm[0]);
-            clock_gettime(CLOCK_REALTIME, &t[1]);
+                        else
+            {
+                // Process the scrambled image directly to unscrambled image
+                for (int i = 0; i < unscrambledSize; i++)
+                {
+                    int scrambled_index = lutShm[0].array.SI32[i];
+                    int y = scrambled_index / (imgWidth / 2);
+                    int x = (scrambled_index % (imgWidth / 2)) * 2;
+                    ocamShm[0].array.UI16[i] = (ocamRawShm[0].array.UI8[y * imgWidth + x + 1] << 8) + ocamRawShm[0].array.UI8[y * imgWidth + x];
+                }
+                daoShmImagePart2ShmFinalize(&ocamShm[0]);
+                clock_gettime(CLOCK_REALTIME, &t[1]);
+            }
         }
         elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
         elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
@@ -176,6 +233,10 @@ static void DecodeArgs(int argc, char **argv)
             case 's':	
                         (void)sscanf(*argv++,"%d", &semNb); argc -= 1;
                         daoInfo("inputShm sem       = %d \n", semNb);
+                        break;
+            case 'b':	
+                        (void)sscanf(*argv++,"%d", &binning); argc -= 1;
+                        daoInfo("binning       = %d \n", binning);
                         break;
             case 'L':
                         realTimeLoop();

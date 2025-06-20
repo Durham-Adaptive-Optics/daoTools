@@ -4,10 +4,9 @@ from PyQt5.uic import loadUiType
 import sys, getopt
 from PyQt5 import QtGui
 from PyQt5 import QtCore
-from pyqtgraph.Qt import QtGui, QtCore, USE_PYSIDE
+from PyQt5.QtWidgets import QApplication
 import numpy as np
 import pyqtgraph as pg
-import pyqtgraph.ptime as ptime
 from scipy import ndimage
 import time
 import os

@@ -27,6 +27,7 @@
 #include <semaphore.h>
 #include <sys/time.h>
 #include <pthread.h>
+#include <ncurses.h>
 
 #include "dao.h"
 #include "daoTools.h"
@@ -95,6 +96,15 @@ static int realTimeLoop()
     size[1] = 1;
     daoShmImageCreate(latencyShm, latencyShmName, 2, size, _DATATYPE_FLOAT, 1, 0);
 
+    WINDOW * mainwin;
+    mainwin = initscr();
+    /*  Initialize ncurses  */
+    if ( mainwin  == NULL ) 
+    {
+	    daoError("Error initialising ncurses.\n");
+        return DAO_ERROR;
+    }
+    
     int64_t t[2];
     int64_t elapsedTimeNs;
     int64_t frameId0;
@@ -103,11 +113,16 @@ static int realTimeLoop()
     //int last = 0;
     float latency[1];
     struct timespec timeout;
+    int missedFrameShm0=0;
+    int missedFrameShm1=0;
     int nbNegTs=0;
     int validFrames=0;
-    int cnt=0;
     while (end ==0)
     {
+        mvprintw(0, 0, "Measure timing script between\n");
+        printw("SHM0 %s\n", shm0Name);
+        printw("SHM1 %s\n", shm1Name);
+        printw(" -> %s\n", latencyShmName);
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
         // wait for 2nd shm
@@ -121,6 +136,11 @@ static int realTimeLoop()
             elapsedTimeNs = t[1] - t[0];
             latency[0] = (float)elapsedTimeNs / 1e3;
             frameIdDiff = frameId1 - frameId0;
+            printw("Synchronized True\n");
+            printw("Missed Frames SHM0 = %d\n", missedFrameShm0);
+            printw("Missed Frames SHM1 = %d\n", missedFrameShm1);
+            printw("Negative TS = %d\n", nbNegTs);
+            printw("Valid Frames = %d\n", validFrames);
             if (elapsedTimeNs < 0)
             {
                 nbNegTs++;
@@ -130,16 +150,24 @@ static int realTimeLoop()
                 validFrames++;
                 daoShmImage2Shm((float *)latency, 1, &latencyShm[0]);
             }
-            printf("\r f1ID = %ld, f2ID = %ld, diff = %ld, elapsedTimeNs = %ld", frameId0, frameId1, frameIdDiff, elapsedTimeNs);
+            printw("frame ID SHM0 = %ld\n", frameId0);
+            printw("frame ID SHM1 = %ld\n", frameId1);
+            printw(" -> frame ID diff: %ld\n", frameIdDiff);
+            printw("timeStamp SHM0 = %12ld\n", t[0]);
+            printw("timeStamp SHM1 = %12ld\n", t[1]);
+            printw(" -> time difference ns = %8ld\n", elapsedTimeNs);
+            printw(" -> time difference us = %8.3f\n", (double)elapsedTimeNs / 1e3);
+            refresh();
         }
         else
         {
-            printf("\rTimeout: shm1");
-            cnt++;
+            printw("Timeout: shm1, error:%s\n", strerror(errno));
+            refresh();
         }
-    fflush(stdout);
     }
+    endwin();
     daoInfo("EXITING MAIN LOOP\n");
+    fflush(stdout);
 
     return 0;
 }
