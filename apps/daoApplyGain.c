@@ -44,11 +44,8 @@ double tlastupdatedouble;
 
 char inShmName[32];
 int semNb = 0;
-char offsetShmName[32];
 char outShmName[32];
-char lpCmdShmName[32];
 char gainShmName[32];
-char leakyShmName[32];
 int modal=0; // modal integrator flag
 
 static int   		end     = 0;		           // termination flag
@@ -72,7 +69,7 @@ static void ShowHelp(void)
     daoInfo("   -m               modal integrator, leaky and gain should be arrays\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage:\n");
-    daoInfo("   -S <in SHM> <offset SHM> <out SHM> <loopCmd SHM> <leak SHM> <gain SHM> -s <semNb> -m -L\n");
+    daoInfo("   -S <in SHM> <gain SHM> <out SHM> -s <semNb> -m -L\n");
     daoInfo("\n");
 }
 
@@ -86,27 +83,21 @@ static int realTimeLoop()
     daoInfo("Starting loop, %s -> %s \n", inShmName, outShmName);
     fflush(stdout);
     IMAGE *inShm = (IMAGE*) malloc(sizeof(IMAGE));
-    IMAGE *offsetShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *outShm = (IMAGE*) malloc(sizeof(IMAGE));
-    IMAGE *lpCmdShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *gainShm = (IMAGE*) malloc(sizeof(IMAGE));
-    IMAGE *leakyShm = (IMAGE*) malloc(sizeof(IMAGE));
     daoShmShm2Img(inShmName, &inShm[0]);
-    daoShmShm2Img(offsetShmName, &offsetShm[0]);
     daoShmShm2Img(outShmName, &outShm[0]);
-    daoShmShm2Img(lpCmdShmName, &lpCmdShm[0]);
     daoShmShm2Img(gainShmName, &gainShm[0]);
-    daoShmShm2Img(leakyShmName, &leakyShm[0]);
 
     int inSize = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
     int outSize = outShm[0].md[0].size[0]*outShm[0].md[0].size[1];
     struct timespec timeout;
     struct timespec t[3];
     double elapsedTime;
+    double compTime;
     clock_gettime(CLOCK_REALTIME, &t[1]);
-    int j;
     int cnt=0;
-    float avg=0;
+    int k=0;
     while (end ==0)
     {
         t[0] = t[1];
@@ -115,98 +106,55 @@ static int realTimeLoop()
         // Wait for new image
         if (daoShmWaitForSemaphoreTimeout(inShm, semNb, &timeout) != -1)
         {
+            clock_gettime(CLOCK_REALTIME, &t[2]);
             // New image, insert something here
             outShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
-            avg=0;
-            if (lpCmdShm[0].array.UI32[0] == 1)
+            if (inShm[0].md[0].atype == _DATATYPE_FLOAT)
             {
-                if (inShm[0].md[0].atype == _DATATYPE_FLOAT)
+                if (modal == 0)
                 {
-                    if (modal == 0)
+                    for (k=0; k< inSize; k++)
                     {
-                        daoToolsLeakyIntegrator(inShm[0].array.F, 
-                                                inSize,
-                                                leakyShm[0].array.F[0], 
-                                                gainShm[0].array.F[0], 
-                                                offsetShm[0].array.F,
-                                                outShm[0].array.F);
-                    }
-                    else
-                    {
-                        daoToolsLeakyModalIntegrator(inShm[0].array.F, 
-                                                inSize,
-                                                leakyShm[0].array.F, 
-                                                gainShm[0].array.F, 
-                                                offsetShm[0].array.F,
-                                                outShm[0].array.F);
-                    }
-                    for (j=0; j< inSize; j++)
-                    {
-                        avg+=outShm[0].array.F[j];
-                    }
-                    avg=avg/inSize;
-                    for (j=0; j< inSize; j++)
-                    {
-                        outShm[0].array.F[j] = outShm[0].array.F[j] - avg;;
+                        outShm[0].array.F[k] = inShm[0].array.F[k] * gainShm[0].array.F[0];
                     }
                 }
                 else
                 {
-                    if (modal == 0)
+                    for (k=0; k< inSize; k++)
                     {
-                        daoToolsLeakyIntegratorDouble(inShm[0].array.D, 
-                                                  inSize,
-                                                  leakyShm[0].array.D[0], 
-                                                  gainShm[0].array.D[0], 
-                                                  offsetShm[0].array.D,
-                                                  outShm[0].array.D);
+                        outShm[0].array.F[k] = inShm[0].array.F[k] * gainShm[0].array.F[k];
                     }
-                    else
-                    {
-                        daoToolsLeakyModalIntegratorDouble(inShm[0].array.D, 
-                                                  inSize,
-                                                  leakyShm[0].array.D, 
-                                                  gainShm[0].array.D, 
-                                                  offsetShm[0].array.D,
-                                                  outShm[0].array.D);
-                    }
-                    for (j=0; j< inSize; j++)
-                    {
-                        avg+=outShm[0].array.D[j];
-                    }
-                    avg=avg/inSize;
-                    for (j=0; j< inSize; j++)
-                    {
-                        outShm[0].array.D[j] = outShm[0].array.D[j] - avg;;
-                    }                    
                 }
             }
             else
             {
-                if (inShm[0].md[0].atype == _DATATYPE_FLOAT)
+                if (modal == 0)
                 {
-                    for (j=0; j< inSize; j++)
+                    for (k=0; k< inSize; k++)
                     {
-                        outShm[0].array.F[j] = 0.0;
+                        outShm[0].array.D[k] = inShm[0].array.D[k] * gainShm[0].array.D[0];
                     }
                 }
                 else
                 {
-                    for (j=0; j< inSize; j++)
+                    for (k=0; k< inSize; k++)
                     {
-                        outShm[0].array.D[j] = 0.0;
+                        outShm[0].array.D[k] = inShm[0].array.D[k] * gainShm[0].array.D[k];
                     }
                 }
-
             }
-            daoShmImagePart2ShmFinalize(&outShm[0]);
 
+            daoShmImagePart2ShmFinalize(&outShm[0]);
             clock_gettime(CLOCK_REALTIME, &t[1]);
+
             elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
             elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
+            compTime = (t[1].tv_sec - t[2].tv_sec) * 1e9;
+            compTime += (t[1].tv_nsec - t[2].tv_nsec);
+
             if (inShm[0].md[0].atype == _DATATYPE_FLOAT)
             {
-                printf("\r fps = %8.3f Hz, %d in=[%6.3f,%6.3f,...,%6.3f], out[%6.3f, %6.3f,...,%6.3f]", 1e6/(1000*elapsedTime), 
+                printf("\rcompTime = %.3f ns, fps = %8.3f Hz, %d in=[%6.3f,%6.3f,...,%6.3f], out[%6.3f, %6.3f,...,%6.3f]", compTime, 1e6/(1000*elapsedTime), 
                                                                                   inSize, inShm[0].array.F[0],
                                                                                   inShm[0].array.F[1],
                                                                                   inShm[0].array.F[inSize],
@@ -216,7 +164,7 @@ static int realTimeLoop()
             } 
             else
             {
-                printf("\r fps = %8.3f Hz, %d in=[%6.3lf,%6.3lf,...,%6.3lf], out[%6.3lf, %6.3lf,...,%6.3lf]", 1e6/(1000*elapsedTime), 
+                printf("\rcompTime = %.3f ns, fps = %8.3f Hz, %d in=[%6.3lf,%6.3lf,...,%6.3lf], out[%6.3lf, %6.3lf,...,%6.3lf]", compTime, 1e6/(1000*elapsedTime), 
                                                                                   inSize, inShm[0].array.D[0],
                                                                                   inShm[0].array.D[1],
                                                                                   inShm[0].array.D[inSize],
@@ -284,19 +232,13 @@ static void DecodeArgs(int argc, char **argv)
                         modal = 1;
                         break;
             case 'S':
-                        daoInfo("Simple filter from SHM real time control\n");
+                        daoInfo("Simple gain application from SHM real time control\n");
                     	(void)sscanf(*argv++,"%s", inShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", offsetShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", outShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", lpCmdShmName); argc -= 1;
                     	(void)sscanf(*argv++,"%s", gainShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", leakyShmName); argc -= 1;
+                    	(void)sscanf(*argv++,"%s", outShmName); argc -= 1;
                         daoInfo("inShmName      = %s\n", inShmName);
-                        daoInfo("offsetShmName  = %s\n", offsetShmName);
-                        daoInfo("outShmName     = %s\n", outShmName);
-                        daoInfo("lpCmdShmName   = %s\n", lpCmdShmName);
                         daoInfo("gainShmName    = %s\n", gainShmName);
-                        daoInfo("leakyShmName   = %s\n", leakyShmName);
+                        daoInfo("outShmName     = %s\n", outShmName);
                         break;
             case 's':	
                         (void)sscanf(*argv++,"%d", &semNb);

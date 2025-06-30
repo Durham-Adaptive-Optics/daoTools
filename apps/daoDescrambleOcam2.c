@@ -72,7 +72,11 @@ static void ShowHelp(void)
     daoInfo("   -S <ocamRaw SHM> <ocamShm SHM> <lut SHM> -s <semNb> -b <binning> -L\n");
     daoInfo("\n");
 }
-
+#define IMG_WIDTH 1056
+#define IMG_HEIGHT_BINNED 62
+#define HALF_WIDTH (IMG_WIDTH / 2)  // 528
+#define BATCH_SIZE (14400 / 2)      // 7200
+#define BINNING_OFFSET (57600 - 14400) // 43200
 /*--------------------------------------------------------------------------*/
 static int realTimeLoop()
 {
@@ -88,7 +92,6 @@ static int realTimeLoop()
     daoShmShm2Img(ocamShmName, &ocamShm[0]);
     daoShmShm2Img(lutShmName, &lutShm[0]);
 
-    int binningOffset = 57600 - 14400;
     int imgWidth = ocamRawShm[0].md[0].size[0];
     int unscrambledSize = ocamShm[0].md[0].size[0] * ocamShm[0].md[0].size[1];
     struct timespec timeout;
@@ -105,56 +108,48 @@ static int realTimeLoop()
             clock_gettime(CLOCK_REALTIME, &t[0]);
             if (binning == 2)
             {
-                const int imgHeight = 121;
-                const int imgWidth  = 1056;
-                const int img16Cols = imgWidth / 2;        // 528
-                const int inSize16  = imgHeight * img16Cols; // 63888
-                const int descramblerSize = 57600;
-                const int binningOffset = descramblerSize - 14400; // 43200
-                const int halfSize = 14400 / 2;            // 7200
-            
-                uint16_t img16_vector[inSize16];
-            
-                // Build full-resolution 16-bit image vector (like Python img16.flatten())
-                for (int y = 0; y < imgHeight; y++) {
-                    for (int x = 0; x < imgWidth; x += 2) {
-                        int col16 = x / 2;
-                        int i8  = y * imgWidth + x;
-                        int i16 = y * img16Cols + col16;
-            
-                        img16_vector[i16] = ((uint16_t)ocamRawShm[0].array.UI8[i8 + 1] << 8)
-                                          | ocamRawShm[0].array.UI8[i8];
+                uint8_t  *src = ocamRawShm[0].array.UI8;
+                uint16_t *dst = ocamShm[0].array.UI16;
+                int32_t *lut = lutShm[0].array.SI32;
+
+                // Step 1: Convert interleaved 8-bit input into 16-bit buffer
+                uint16_t img16[IMG_HEIGHT_BINNED][HALF_WIDTH];
+                for (int y = 0; y < IMG_HEIGHT_BINNED; y++)
+                {
+                    for (int x = 0; x < HALF_WIDTH; x++)
+                    {
+                        int index = y * IMG_WIDTH + 2 * x;
+                        img16[y][x] = (src[index + 1] << 8) | src[index];
                     }
                 }
-            
-                // Apply descrambler LUT using i*2 and i*2 + binningOffset
-                for (int i = 0; i < halfSize; i++) {
-                    int lutIdx1 = i * 2;
-                    int lutIdx2 = i * 2 + binningOffset;
-            
-                    if (lutIdx1 >= descramblerSize || lutIdx2 >= descramblerSize) {
-                        fprintf(stderr, "LUT index overflow at i=%d: lutIdx1=%d lutIdx2=%d\n", i, lutIdx1, lutIdx2);
-                        continue;
+
+                // Step 2: Flatten the 2D image into 1D buffer
+                uint16_t img16_vector[IMG_HEIGHT_BINNED * HALF_WIDTH];
+                for (int y = 0; y < IMG_HEIGHT_BINNED; y++)
+                {
+                    for (int x = 0; x < HALF_WIDTH; x++)
+                    {
+                        img16_vector[y * HALF_WIDTH + x] = img16[y][x];
                     }
-            
-                    int idx1 = lutShm[0].array.SI32[lutIdx1];
-                    int idx2 = lutShm[0].array.SI32[lutIdx2];
-            
-                    if (idx1 >= 0 && idx1 < inSize16)
-                        ocamShm[0].array.UI16[i] = img16_vector[idx1];
-                    else
-                        ocamShm[0].array.UI16[i] = 0;
-            
-                    if (idx2 >= 0 && idx2 < inSize16)
-                        ocamShm[0].array.UI16[halfSize + i] = img16_vector[idx2];
-                    else
-                        ocamShm[0].array.UI16[halfSize + i] = 0;
                 }
-            
+
+                // Step 3: Descramble with binning logic using LUT
+                for (int i = 0; i < BATCH_SIZE; i++)
+                {
+                    dst[i] = img16_vector[lut[i * 2]];
+                    dst[BATCH_SIZE + i] = img16_vector[lut[i * 2 + BINNING_OFFSET]];
+                }
+
+                // Step 4: Zero the rest of the 240x240 image
+                for (int i = 14400; i < 240 * 240; i++)
+                {
+                    dst[i] = 0;
+                }
+
                 daoShmImagePart2ShmFinalize(&ocamShm[0]);
                 clock_gettime(CLOCK_REALTIME, &t[1]);
             }
-                        else
+            else
             {
                 // Process the scrambled image directly to unscrambled image
                 for (int i = 0; i < unscrambledSize; i++)

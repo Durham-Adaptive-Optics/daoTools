@@ -75,6 +75,18 @@ int_fast8_t daoToolsLeakyIntegratorDouble(double *command,
                                            double gain,
                                            double *commandOffset,
                                            double *filteredCommand);
+int_fast8_t daoToolsLeakyModalIntegrator(float *command,
+                                         int nbVal,
+                                         float *leaky,
+                                         float *gain,
+                                         float *commandOffset,
+                                         float *filteredCommand);
+int_fast8_t daoToolsLeakyModalIntegratorDouble(double *command,
+                                              int nbVal,
+                                              double *leaky,
+                                              double *gain,
+                                              double *commandOffset,
+                                              double *filteredCommand);
 int_fast8_t daoCentroidSpots(float * image,
                              int imageSize,
                              float * ref,
