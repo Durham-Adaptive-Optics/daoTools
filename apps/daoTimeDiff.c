@@ -128,7 +128,7 @@ static int realTimeLoop()
             {
                 daoShmImage2Shm((float *)latency, 1, &latencyShm[0]);
             }
-            printf("\r f1ID = %lld, f2ID = %lld, diff = %lld, negTs = %d, elapsedTimeNs = %lld", frameId0, frameId1, frameIdDiff, nbNegTs, elapsedTimeNs);
+            printf("\r f1ID = %ld, f2ID = %ld, diff = %ld, negTs = %d, elapsedTimeNs = %ld", frameId0, frameId1, frameIdDiff, nbNegTs, elapsedTimeNs);
         }
         else
         {

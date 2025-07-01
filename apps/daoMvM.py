@@ -25,6 +25,7 @@ if __name__ == '__main__':
     mShmName = '/tmp/matrix.im.shm'
     vShmName = '/tmp/vector.im.shm'
     oShmName = '/tmp/output.im.shm'
+    semNb=9
     gpu = False
     try:
         opts, args = getopt.getopt(sys.argv[1:],"hm:v:o:g",["help", "mat=", "vec=", "out=", "gpu"])
@@ -61,7 +62,7 @@ if __name__ == '__main__':
     t0 = time.time()
     while 1:
         if gpu:
-            v = cp.array(vShm.get_data(check=True))
+            v = cp.array(vShm.get_data(check=True, semNb=semNb))
             t0 = time.time()
             oShm.set_data(cp.asnumpy(cp.matmul(m, v)))
         else:
