@@ -635,7 +635,8 @@ class daoShmViewer(QMainWindow):
             # Update visualization
             self.update_visualization()
             
-            # Start update timer
+            # Start update timer at 10 Hz
+            self.timer.stop()  # Stop any existing timer
             self.timer.start(100) 
             
             # Update status bar
@@ -723,7 +724,7 @@ class daoShmViewer(QMainWindow):
             diff = self.newCounter - self.lastCounter
             self.lastCounter = self.newCounter
             
-            frequency = 0 if diff == 0 else 10/diff
+            frequency = 0 if diff == 0 else diff*10
             self.updateMetadata(self.filenameEdit.text(), frequency)
             
             if diff != 0:
@@ -861,7 +862,7 @@ class daoShmViewer(QMainWindow):
         try:
             shape = self.shm.get_data().shape
             dtype = self.shm.get_data().dtype
-            counter = 1
+            counter = self.shm.get_counter()
             # self.shm.get_counter()
             
             metadata = (
