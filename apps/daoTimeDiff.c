@@ -104,7 +104,6 @@ static int realTimeLoop()
     float latency[1];
     struct timespec timeout;
     int nbNegTs=0;
-    int validFrames=0;
     int cnt=0;
     while (end ==0)
     {
@@ -127,14 +126,13 @@ static int realTimeLoop()
             }
             else
             {
-                validFrames++;
                 daoShmImage2Shm((float *)latency, 1, &latencyShm[0]);
             }
-            printf("\r f1ID = %ld, f2ID = %ld, diff = %ld, elapsedTimeNs = %ld", frameId0, frameId1, frameIdDiff, elapsedTimeNs);
+            printf("\r f1ID = %ld, f2ID = %ld, diff = %ld, negTs = %d, elapsedTimeNs = %ld", frameId0, frameId1, frameIdDiff, nbNegTs, elapsedTimeNs);
         }
         else
         {
-            printf("\rTimeout: shm1");
+            printf("\rTimeout %d: shm1", cnt);
             cnt++;
         }
     fflush(stdout);

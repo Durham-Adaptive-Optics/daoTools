@@ -561,6 +561,55 @@ int_fast8_t daoToolsLeakyIntegrator(float *command, int nbVal, float leaky, floa
  
      return DAO_SUCCESS;
  }
+/*
+ * Apply Integrator to modes
+ */
+int_fast8_t daoToolsLeakyModalIntegrator(float *command, int nbVal, float *leaky, float *gain, float *commandOffset, float *filteredCommand)
+{
+    daoTrace("\n");
+    // 
+    float commandMoff[nbVal];
+    int pp;
+    for(pp = 0; pp < nbVal; pp++)
+    {
+        // Check that values to filter are
+        // number... safety check to stop propagating nan
+        if (isnan(command[pp]))
+        {
+            command[pp] = 0.0;
+        }
+        // Substract command offset
+        commandMoff[pp] = command[pp] - commandOffset[pp];
+        filteredCommand[pp] = leaky [pp]* filteredCommand[pp] - gain[pp] * commandMoff[pp]; // * mixingFactor;
+    }
+
+    return DAO_SUCCESS;
+}
+
+/*
+ * Apply Integrator to modes double precision
+ */
+ int_fast8_t daoToolsLeakyModalIntegratorDouble(double *command, int nbVal, double *leaky, double *gain, double *commandOffset, double *filteredCommand)
+ {
+     daoTrace("\n");
+     // 
+     double commandMoff[nbVal];
+     int pp;
+     for(pp = 0; pp < nbVal; pp++)
+     {
+         // Check that values to filter are
+         // number... safety check to stop propagating nan
+         if (isnan(command[pp]))
+         {
+             command[pp] = 0.0;
+         }
+         // Substract command offset
+         commandMoff[pp] = command[pp] - commandOffset[pp];
+         filteredCommand[pp] = leaky[pp] * filteredCommand[pp] - gain[pp] * commandMoff[pp]; // * mixingFactor;
+     }
+ 
+     return DAO_SUCCESS;
+ }
 
 
 
