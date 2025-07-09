@@ -1218,6 +1218,78 @@ int_fast8_t daoToolsHighPassFilterDouble(double *H,
     return DAO_SUCCESS;
 }
 
+int_fast8_t daoDmCombine(IMAGE **imageCube, IMAGE *image, int nbChannel, int nbVal, int removePiston, double clipping)
+{
+    daoTrace("\n");
+    int pp;
+    int k;
+    image->md[0].write = 1;
+    
+    if (image->md[0].atype == _DATATYPE_FLOAT)
+    {
+        float sum = 0.0;
+        for (pp=0; pp<nbVal; pp++)
+        {   
+            image[0].array.F[pp] = 0;
+            for(k=0;k<nbChannel;k++) 
+            {
+                if (imageCube[k][0].array.F[pp] > clipping)
+                {
+                    image[0].array.F[pp] = (float)clipping;
+                }
+                else if (imageCube[k][0].array.F[pp] < -clipping)
+                {
+                    image[0].array.F[pp] = -(float)clipping;
+                }
+                else
+                {
+                    image[0].array.F[pp] = imageCube[k][0].array.F[pp];
+                }
+                sum += image[0].array.F[pp];
+            }
+            if (removePiston)
+            {
+                for(k=0;k<nbChannel;k++) 
+                {
+                    image[0].array.F[pp] -= sum / nbChannel;
+                }
+            }
+        }
+    }
+    else if (image->md[0].atype == _DATATYPE_DOUBLE)
+    {
+        double sum = 0.0;
+        for (pp=0; pp<nbVal; pp++)
+        {   
+            image[0].array.D[pp] = 0;
+            if (imageCube[k][0].array.D[pp] > clipping)
+            {
+                image[0].array.D[pp] = clipping;
+            }
+            else if (imageCube[k][0].array.D[pp] < -clipping)
+            {
+                image[0].array.D[pp] = -clipping;
+            }
+            else
+            {
+                image[0].array.D[pp] = imageCube[k][0].array.D[pp];
+            }
+            sum += image[0].array.D[pp];
+        }
+        if (removePiston)
+        {
+            for(k=0;k<nbChannel;k++) 
+            {
+                image[0].array.D[pp] -= sum / nbChannel;
+            }
+        }
+    }
+	
+    daoShmImagePart2ShmFinalize(image);
+
+    return DAO_SUCCESS;
+}
+
 #ifdef __APPLE__
 
 #include <errno.h>

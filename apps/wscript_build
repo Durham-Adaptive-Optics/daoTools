@@ -304,6 +304,15 @@ daoModesCutoff = bld.program(
 	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
+daoDmCombiner = bld.program(
+	source = 'daoDmCombiner.c',
+	target = 'daoDmCombiner',
+	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+	linkflags = my_link_flags,
+	ldflags = ['-ldao' , '-lpthread', '-lm'] + my_ld_flags,
+	use = 'daoTools',
+	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
+	)
 
 daoApplyGain = bld.program(
 	source = 'daoApplyGain.c',

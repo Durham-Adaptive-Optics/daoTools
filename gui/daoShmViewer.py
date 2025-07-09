@@ -255,7 +255,7 @@ class daoShmViewer(QMainWindow):
         
         # Left side: File table
         self.setup_file_table()
-        self.top_splitter.addWidget(self.tableWidget)
+        self.top_splitter.addWidget(self.file_browser_widget)
         
         # Right side: Graph/visualization
         self.graphWidget = magicplot.MagicPlot()
@@ -302,6 +302,17 @@ class daoShmViewer(QMainWindow):
 
     def setup_file_table(self):
         """Setup the file table widget."""
+        # Create a container widget for the file browser section
+        file_browser_widget = QWidget()
+        file_browser_layout = QVBoxLayout(file_browser_widget)
+        file_browser_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Add search filter
+        self.search_filter = QLineEdit()
+        self.search_filter.setPlaceholderText("Search files...")
+        self.search_filter.textChanged.connect(self.filter_files)
+        file_browser_layout.addWidget(self.search_filter)
+        
         self.tableWidget = QTableWidget(self)
         self.tableWidget.setColumnCount(2)
         self.tableWidget.setHorizontalHeaderLabels(["Select", "Filename"])
@@ -311,6 +322,12 @@ class daoShmViewer(QMainWindow):
         
         # Add keyboard navigation support
         self.tableWidget.keyPressEvent = self.tableKeyPressEvent
+        
+        # Add table to layout
+        file_browser_layout.addWidget(self.tableWidget)
+        
+        # Store reference to the container widget
+        self.file_browser_widget = file_browser_widget
         
         # Initial file listing
         self.updateFileList()
@@ -586,6 +603,9 @@ class daoShmViewer(QMainWindow):
         
         # Update multi-record list
         self.updateMultiRecordList()
+        
+        # Apply current search filter
+        self.filter_files()
 
     def onCellClicked(self, row, column):
         """Handle cell click in the file table."""
@@ -635,8 +655,7 @@ class daoShmViewer(QMainWindow):
             # Update visualization
             self.update_visualization()
             
-            # Start update timer at 10 Hz
-            self.timer.stop()  # Stop any existing timer
+            # Start update timer
             self.timer.start(100) 
             
             # Update status bar
@@ -724,7 +743,7 @@ class daoShmViewer(QMainWindow):
             diff = self.newCounter - self.lastCounter
             self.lastCounter = self.newCounter
             
-            frequency = 0 if diff == 0 else diff*10
+            frequency = 0 if diff == 0 else 10/diff
             self.updateMetadata(self.filenameEdit.text(), frequency)
             
             if diff != 0:
@@ -862,7 +881,7 @@ class daoShmViewer(QMainWindow):
         try:
             shape = self.shm.get_data().shape
             dtype = self.shm.get_data().dtype
-            counter = self.shm.get_counter()
+            counter = 1
             # self.shm.get_counter()
             
             metadata = (
@@ -947,19 +966,76 @@ class daoShmViewer(QMainWindow):
                 data = np.load(filename)
             elif filename.endswith('.fits'):
                 with fits.open(filename) as hdul:
-                    data = hdul[0].data
+                    # Get shared memory properties for matching
+                    shm_data = self.shm.get_data()
+                    shm_shape = shm_data.shape
+                    shm_base_dtype = np.dtype(shm_data.dtype.kind + str(shm_data.dtype.itemsize))
+                    
+                    # Search through all HDUs to find matching data
+                    data = None
+                    matched_hdu_index = None
+                    
+                    for i, hdu in enumerate(hdul):
+                        if hdu.data is not None and hasattr(hdu.data, 'shape'):
+                            hdu_shape = hdu.data.shape
+                            hdu_base_dtype = np.dtype(hdu.data.dtype.kind + str(hdu.data.dtype.itemsize))
+                            x
+                            # Check if this HDU matches our requirements
+                            if hdu_shape == shm_shape and hdu_base_dtype == shm_base_dtype:
+                                data = hdu.data
+                                matched_hdu_index = i
+                                break
+                    
+                    if data is None:
+                        # If no exact match found, provide detailed error information
+                        error_msg = f"No matching HDU found in FITS file.\n"
+                        error_msg += f"Required: shape {shm_shape}, dtype {shm_data.dtype}\n\n"
+                        error_msg += "Available HDUs:\n"
+                        
+                        for i, hdu in enumerate(hdul):
+                            if hdu.data is not None and hasattr(hdu.data, 'shape'):
+                                error_msg += f"  HDU {i}: shape {hdu.data.shape}, dtype {hdu.data.dtype}\n"
+                            else:
+                                error_msg += f"  HDU {i}: No data or invalid shape\n"
+                        
+                        self.show_error(error_msg)
+                        return
+                    
+                    # Show which HDU was used
+                    self.statusBar.showMessage(f"Loading from HDU {matched_hdu_index} in {filename}")
             else:
                 self.show_error("Unsupported file format")
                 return
                 
-            # Verify shape and dtype compatibility
+            # For FITS files, we've already verified compatibility during HDU selection
+            # For other files, verify shape and dtype compatibility
+            if not filename.endswith('.fits'):
+                shm_data = self.shm.get_data()
+                
+                # Check shape compatibility
+                if data.shape != shm_data.shape:
+                    self.show_error(
+                        f"Shape mismatch: Expected shape {shm_data.shape}, "
+                        f"but got shape {data.shape}"
+                    )
+                    return
+                
+                # Check dtype compatibility (handle endianness differences)
+                # Convert both dtypes to their basic type for comparison
+                data_base_dtype = np.dtype(data.dtype.kind + str(data.dtype.itemsize))
+                shm_base_dtype = np.dtype(shm_data.dtype.kind + str(shm_data.dtype.itemsize))
+                
+                if data_base_dtype != shm_base_dtype:
+                    self.show_error(
+                        f"Data type mismatch: Expected dtype {shm_data.dtype}, "
+                        f"but got dtype {data.dtype}"
+                    )
+                    return
+            
+            # Convert data to match shared memory dtype if needed
             shm_data = self.shm.get_data()
-            if data.shape != shm_data.shape or data.dtype != shm_data.dtype:
-                self.show_error(
-                    f"Data mismatch: Expected shape {shm_data.shape}, dtype {shm_data.dtype}, "
-                    f"but got shape {data.shape}, dtype {data.dtype}"
-                )
-                return
+            if data.dtype != shm_data.dtype:
+                data = data.astype(shm_data.dtype)
                 
             # Load data into shared memory
             self.shm.set_data(data)
@@ -1159,6 +1235,21 @@ class daoShmViewer(QMainWindow):
         QMessageBox.critical(self, "Error", message)
         self.statusBar.showMessage(f"Error: {message}", 5000)
 
+    def filter_files(self):
+        """Filter the file table based on search text."""
+        # Guard against calling before search_filter is created
+        if not hasattr(self, 'search_filter') or self.search_filter is None:
+            return
+            
+        search_text = self.search_filter.text().lower()
+        
+        for row in range(self.tableWidget.rowCount()):
+            filenameItem = self.tableWidget.item(row, 1)
+            if filenameItem:
+                filename = filenameItem.text().lower()
+                # Show row if search text is empty or if filename contains search text
+                show_row = not search_text or search_text in filename
+                self.tableWidget.setRowHidden(row, not show_row)
 
 def main():
     """Main application entry point."""
@@ -1182,6 +1273,5 @@ def main():
     
     sys.exit(app.exec_())
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

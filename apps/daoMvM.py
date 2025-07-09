@@ -66,7 +66,7 @@ if __name__ == '__main__':
             t0 = time.time()
             oShm.set_data(cp.asnumpy(cp.matmul(m, v)))
         else:
-            v = vShm.get_data(check=True)
+            v = vShm.get_data(check=True, semNb=semNb)
             t0 = time.time()
             oShm.set_data(np.matmul(m, v))
         t1 = time.time()

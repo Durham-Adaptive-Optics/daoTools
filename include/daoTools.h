@@ -135,6 +135,8 @@ int_fast8_t daoToolsHighPassFilterDouble(double *H,
                                          double fLoop,
                                          int size);
 
+int_fast8_t daoDmCombine(IMAGE **imageCube, IMAGE *image, int nbChannel, int nbVal, int removePiston, double clipping);
+
 #ifdef __APPLE__
 
 #include <semaphore.h>

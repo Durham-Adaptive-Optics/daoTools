@@ -50,6 +50,7 @@ char lpCmdShmName[32];
 char gainShmName[32];
 char leakyShmName[32];
 int modal=0; // modal integrator flag
+double clipping = 10.0; // clipping value
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -147,7 +148,15 @@ static int realTimeLoop()
                     avg=avg/inSize;
                     for (j=0; j< inSize; j++)
                     {
-                        outShm[0].array.F[j] = outShm[0].array.F[j] - avg;;
+                        outShm[0].array.F[j] = outShm[0].array.F[j] - avg;
+                        if (outShm[0].array.F[j] > clipping)
+                        {
+                            outShm[0].array.F[j] = clipping;
+                        }
+                        else if (outShm[0].array.F[j] < -clipping)
+                        {
+                            outShm[0].array.F[j] = -clipping;
+                        }
                     }
                 }
                 else
@@ -177,7 +186,15 @@ static int realTimeLoop()
                     avg=avg/inSize;
                     for (j=0; j< inSize; j++)
                     {
-                        outShm[0].array.D[j] = outShm[0].array.D[j] - avg;;
+                        outShm[0].array.D[j] = outShm[0].array.D[j] - avg;
+                        if (outShm[0].array.D[j] > clipping)
+                        {
+                            outShm[0].array.D[j] = clipping;
+                        }
+                        else if (outShm[0].array.D[j] < -clipping)
+                        {
+                            outShm[0].array.D[j] = -clipping;
+                        }
                     }                    
                 }
             }
@@ -279,6 +296,11 @@ static void DecodeArgs(int argc, char **argv)
                         (void)sscanf(*argv++,"%d",&a1); argc -= 1;
                         daoDebug("will sleep for %d usec\n",a1);
                         (void)usleep(a1);
+                        break;
+            case 'c':
+                        (void)sscanf(*argv++, "%lf", &clipping);
+                        argc -= 1;	
+                        daoInfo("clipping value set to %f\n", clipping);
                         break;
             case 'm':	
                         modal = 1;
