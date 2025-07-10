@@ -30,4 +30,9 @@ if __name__ == '__main__':
 
     fileName = f"{os.getenv('DAODATA')}/data/{baseName}Cube{desc}.npy"
     print(f"saving in {fileName}")
-    np.save(f"{fileName}", dataCube)
+    width = int(sys.argv[4])
+    cx = int(sys.argv[5])
+    cy = int(sys.argv[6])
+    
+    np.save(f"{fileName}", dataCube[:,cx-int(width/2):cx+int(width/2),cy-int(width/2):cy+int(width/2)])
+#    np.save(f"{fileName}", dataCube)
