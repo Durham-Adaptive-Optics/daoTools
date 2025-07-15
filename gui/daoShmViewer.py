@@ -13,7 +13,7 @@ from PyQt5.QtWidgets import (
     QCheckBox, QHeaderView, QLineEdit, QPushButton, QFileDialog, QLabel, QSpinBox,
     QTabWidget, QSplitter, QTextEdit, QListWidget, QMessageBox, QTableView,
     QComboBox, QMainWindow, QStatusBar, QToolBar, QAction, QDialog, QGridLayout,
-    QRadioButton, QButtonGroup, QDoubleSpinBox
+    QRadioButton , QButtonGroup, QDoubleSpinBox
 )
 from PyQt5.QtCore import QDir, Qt, QTimer, QAbstractTableModel
 from PyQt5.QtGui import QIcon
