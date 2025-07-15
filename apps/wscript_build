@@ -324,6 +324,15 @@ daoApplyGain = bld.program(
 	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
+daoTelemetry = bld.program(
+	source = 'daoTelemetry.cpp',
+	target = 'daoTelemetry',
+	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+	linkflags = my_link_flags,
+	ldflags = ['-ldao' , '-lpthread', '-ldaoNuma', '-ldaoProto', '-lzmq', '-lprotobuf', '-lyaml-cpp'] + my_ld_flags,
+	use= 'daoTools',
+	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
+)
 
 if bld.env.BLAS_AVAILABLE:
 	daoMvM = bld.program(
