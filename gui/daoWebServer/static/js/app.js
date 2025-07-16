@@ -14,6 +14,7 @@ class DaoShmWebViewer {
         this.renderPending = false; // Flag to prevent render spam
         this.pollingInterval = null; // For HTTP polling
         this.lastCounter = 0; // Track last counter for polling
+        this.recordingStatusInterval = null; // For recording status polling
         
         this.init();
     }
@@ -24,6 +25,20 @@ class DaoShmWebViewer {
         this.bindEvents();
         this.loadFiles();
         this.initSocket(); // Initialize socket for recording completion events
+        
+        // Add cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            this.cleanup();
+        });
+    }
+    
+    cleanup() {
+        if (this.pollingInterval) {
+            clearInterval(this.pollingInterval);
+        }
+        if (this.recordingStatusInterval) {
+            clearInterval(this.recordingStatusInterval);
+        }
     }
     
     initSocket() {
@@ -33,6 +48,9 @@ class DaoShmWebViewer {
     }
     
     handleRecordingComplete(data) {
+        // Stop polling for recording status
+        this.stopRecordingStatusPolling();
+        
         if (data.success) {
             // Show completion message with download link
             const downloadUrl = `/api/download/${data.metadata.output_filename}`;
@@ -106,15 +124,6 @@ class DaoShmWebViewer {
         // Load file
         document.getElementById('loadBtn').addEventListener('click', () => {
             this.loadFile();
-        });
-        
-        // Snapshot operations
-        document.getElementById('saveSnapshotBtn').addEventListener('click', () => {
-            this.saveSnapshot();
-        });
-        
-        document.getElementById('loadSnapshotBtn').addEventListener('click', () => {
-            this.loadSnapshot();
         });
     }
     
@@ -741,6 +750,7 @@ class DaoShmWebViewer {
             // Check if recording just completed
             if (status.completed && status.completion_data) {
                 this.handleRecordingComplete(status.completion_data);
+                this.stopRecordingStatusPolling();
                 return;
             }
             
@@ -762,9 +772,33 @@ class DaoShmWebViewer {
                         frameCounter.textContent = `${status.frame_count || 0} frames (continuous)`;
                     }
                 }
+            } else {
+                // Recording stopped, stop polling
+                this.stopRecordingStatusPolling();
             }
         } catch (error) {
             // Silently fail - recording status check is not critical
+        }
+    }
+    
+    startRecordingStatusPolling() {
+        if (this.recordingStatusInterval) {
+            clearInterval(this.recordingStatusInterval);
+        }
+        
+        // Poll recording status every 500ms when recording is active
+        this.recordingStatusInterval = setInterval(() => {
+            this.updateRecordingFrameCounter();
+        }, 500);
+        
+        // Also check immediately
+        this.updateRecordingFrameCounter();
+    }
+    
+    stopRecordingStatusPolling() {
+        if (this.recordingStatusInterval) {
+            clearInterval(this.recordingStatusInterval);
+            this.recordingStatusInterval = null;
         }
     }
      updateIndicators(data) {
@@ -970,6 +1004,9 @@ class DaoShmWebViewer {
                     frame_count: 0,
                     max_frames: maxFrames
                 });
+                
+                // Start polling for recording status updates
+                this.startRecordingStatusPolling();
             } else {
                 this.showAlert('Error', result.error, 'danger');
             }
@@ -1015,6 +1052,9 @@ class DaoShmWebViewer {
                     output_file: null,
                     frame_count: 0
                 });
+                
+                // Stop polling for recording status
+                this.stopRecordingStatusPolling();
             } else {
                 this.showAlert('Error', result.error, 'danger');
             }
@@ -1113,26 +1153,6 @@ class DaoShmWebViewer {
         
         // This would need to be implemented with file upload
         this.showAlert('Info', 'File loading functionality not yet implemented in web version', 'info');
-    }
-    
-    saveSnapshot() {
-        const filename = document.getElementById('snapshotFilename').value;
-        if (!filename) {
-            this.showAlert('Error', 'Please enter a snapshot filename', 'warning');
-            return;
-        }
-        
-        this.showAlert('Info', 'Snapshot functionality not yet implemented in web version', 'info');
-    }
-    
-    loadSnapshot() {
-        const filename = document.getElementById('snapshotFilename').value;
-        if (!filename) {
-            this.showAlert('Error', 'Please enter a snapshot filename', 'warning');
-            return;
-        }
-        
-        this.showAlert('Info', 'Snapshot functionality not yet implemented in web version', 'info');
     }
 
     startPolling(filename) {

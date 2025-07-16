@@ -32,6 +32,7 @@ class RecordingManager:
         self.start_time = None
         self.frame_count = 0
         self.max_frames = None  # None for continuous recording
+        self.need_initial_frame = False  # Flag to record initial static data
         
     def start_recording(self, shm_filename, output_filename, max_frames=None):
         """Start recording frames to file."""
@@ -46,6 +47,7 @@ class RecordingManager:
             self.start_time = datetime.now()
             self.frame_count = 0
             self.max_frames = max_frames
+            self.need_initial_frame = True  # Flag to record current static data
             
             if max_frames:
                 message = f'Started recording {shm_filename} to {output_filename} (max {max_frames} frames)'
@@ -58,6 +60,7 @@ class RecordingManager:
             }
         except Exception as e:
             self.recording = False
+            self.need_initial_frame = False  # Reset the flag on error
             return {'success': False, 'error': str(e)}
     
     def record_frame(self, data, counter):
@@ -96,6 +99,7 @@ class RecordingManager:
             
         try:
             self.recording = False
+            self.need_initial_frame = False  # Reset the flag
             
             if not self.recorded_frames:
                 return {'success': False, 'error': 'No frames recorded'}
@@ -145,6 +149,7 @@ class RecordingManager:
             
         except Exception as e:
             self.recording = False
+            self.need_initial_frame = False  # Reset the flag on error too
             return {'success': False, 'error': str(e)}
     
     def get_status(self):
@@ -325,16 +330,26 @@ class ShmManager:
                     new_counter = shm.get_counter()
                     old_counter = self.counters.get(filename, 0)
                     
-                    if new_counter != old_counter:
-                        diff = new_counter - old_counter
-                        self.counters[filename] = new_counter
+                    # Check if we need to record for this file
+                    if (recording_manager.recording and 
+                        recording_manager.shm_filename == filename):
                         
-                        # Get current data
-                        current_data = shm.get_data()
+                        should_record = False
                         
-                        # Record frame if recording is active for this file
-                        if (recording_manager.recording and 
-                            recording_manager.shm_filename == filename):
+                        # Check if we need to record initial static data
+                        if recording_manager.need_initial_frame:
+                            should_record = True
+                            recording_manager.need_initial_frame = False
+                            print(f"Recording initial static frame for {filename}")
+                        
+                        # Also record if counter changed (for dynamic data)
+                        elif new_counter != old_counter:
+                            should_record = True
+                            print(f"Recording frame on counter change: {new_counter}")
+                        
+                        # Record the frame if needed
+                        if should_record:
+                            current_data = shm.get_data()
                             should_auto_stop = recording_manager.record_frame(current_data, new_counter)
                             
                             # If we should auto-stop due to frame limit, add a small delay 
@@ -352,6 +367,14 @@ class ShmManager:
                                         json.dump(result, f)
                                 except Exception as e:
                                     print(f"Error writing completion flag: {e}")
+                    
+                    # Handle regular data updates for UI (separate from recording)
+                    if new_counter != old_counter:
+                        diff = new_counter - old_counter
+                        self.counters[filename] = new_counter
+                        
+                        # Get current data for UI updates
+                        current_data = shm.get_data()
                         
                         # Send updated data to clients
                         data_info = {
