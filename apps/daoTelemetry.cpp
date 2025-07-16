@@ -4,18 +4,23 @@
  * @date    15/07/2025
  */
 
-#include <CLI11.hpp>
+#include <cfitsio/fitsio.h>
+#include <daoComponent.hpp>
 #include <yaml-cpp/yaml.h>
 #include <daoThread.hpp>
-#include <daoComponent.hpp>
-#include <daoShmIfce.hpp>
+#include <sys/types.h>
 #include <daoLog.hpp>
+#include <sys/stat.h>
+#include <CLI11.hpp>
 #include <stdint.h>
-#include <vector>
-#include <atomic>
-#include <string>
 #include <fstream>
 #include <sstream>
+#include <vector>
+#include <atomic>
+#include <time.h>
+#include <string>
+#include <ctime>
+#include <dao.h>
 
  /*--------------------------------------------------------------------------*/
 struct collector_t;
@@ -34,13 +39,18 @@ struct telemetry_t {
 class collector_t : public Dao::Thread {
 public:
     collector_t(Dao::Log::Logger &logger, const telemetry_t &t)
-        : Thread(t.target, logger, t.core), m_telemetry(t), m_logger(logger), m_sifce(logger) 
+        : Thread(t.target, logger, t.core), m_telemetry(t), m_logger(logger), m_sifce(logger) , m_shmname(t.target), n_files(0)
     {
         // open shared memory..
-        m_sifce.OpenShm(t.target, &m_shm);
-        m_shm_md = (volatile IMAGE_METADATA *)m_shm.md;
-        if(!m_sifce.IsOpen()) {
+        if(daoShmShm2Img(t.target.c_str(), &m_shm) != DAO_SUCCESS) {
             throw std::runtime_error("collector failed to open shared memory");
+        }
+        m_shm_md = (volatile IMAGE_METADATA *)m_shm.md;
+
+        // get shared memory name from path..
+        auto x = t.target.find_last_of("/");
+        if(x != std::string::npos) {
+            m_shmname = t.target.substr(x + 1);
         }
 
         // allocate internal data buffer..
@@ -52,46 +62,62 @@ public:
 
         m_databuffer_sz = m_type_tbl.at(atype) * m_shm_md->nelement;
         m_databuffer = malloc(m_databuffer_sz);
+        m_mdbuffer = malloc(sizeof(IMAGE_METADATA));
         if(!m_databuffer) {
-            throw std::runtime_error("collector data-buffer allocation failed");
+            throw std::runtime_error("collector buffer allocation failed");
         }
-        m_logger.Debug("collector for %s allocated %zu bytes for data-buffer", t.target.c_str(), m_databuffer_sz);
 
         // create worker thread..
         Spawn();
     }
 
-    void OnceOnSpawn() override {
-        m_logger.Info("%s collector spawned", m_telemetry.target.c_str());
+private:
+    std::string next_fits_name() {
+        std::string name = m_shmname;
+        if(n_files) {
+            m_shmname += "_";
+            m_shmname += std::to_string(n_files);
+        }
+        name += ".fits";
+        return name;
     }
 
     void OnceOnStart() override {
         m_logger.Info("%s collector started", m_telemetry.target.c_str());
+        
+        int status = 0;
+        std::string fits_path = next_fits_name();
+        fits_create_file(&m_fits, fits_path.c_str(), &status);
+        if(status) {
+            // todo handle error.
+        }
+
         m_cnt0 = m_shm_md->cnt0;
     }
 
+    void OnceOnStop() override { 
+        m_logger.Info("%s collector stopped", m_telemetry.target.c_str()); 
+
+        // todo close fits file.
+    }
+
     /*
-        data collection loop.
+        telemetry collection loop.
     */
     void RestartableThread() override {
         const uint64_t cnt0_ = m_shm_md->cnt0;
         if(cnt0_ > m_cnt0) {
             m_cnt0 = cnt0_;
-            // todo copy any frame metadata + kwds etc out here.
-            memcpy(m_databuffer, m_sifce.GetPtr(), m_databuffer_sz);
+            memcpy(m_mdbuffer, m_shm.md, sizeof(IMAGE_METADATA)); // copy out metadata to prevent overwrite corruption.
+            memcpy(m_databuffer, m_shm.array.V, m_databuffer_sz); // copy out data to prevent overwrite corruption.
             if(m_shm_md->cnt0 > m_cnt0) return; // drop frame, could be corrupted.
+            
+            
+
             // todo record frame data.
         }
     }
 
-    void OnceOnStop() override {
-        m_logger.Info("%s collector stopped", m_telemetry.target.c_str());
-    }
-
-    void OnceOnExit() override {
-        m_logger.Info("%s collector exited", m_telemetry.target.c_str());
-    }
-private:
     const std::unordered_map<uint8_t,uint8_t> m_type_tbl { // lookup table from dao data types to byte sizes.
         {_DATATYPE_UINT8, SIZEOF_DATATYPE_UINT8},
         {_DATATYPE_INT8, SIZEOF_DATATYPE_INT8},
@@ -112,17 +138,16 @@ private:
     Dao::ShmIfce<uint8_t> m_sifce;
     Dao::Log::Logger &m_logger;
     size_t m_databuffer_sz;
+    std::string m_shmname;
     void *m_databuffer;
+    fitsfile *m_fits;
+    void *m_mdbuffer;
     uint64_t m_cnt0;
+    size_t n_files;
     IMAGE m_shm;
 };
 
 /*--------------------------------------------------------------------------*/
-
-/*
-    oneoff mode: must have limtis set for all targets so we can auto stop.
-    service mode: you can have no limit set if you wish - you must stop us then tho.
-*/
 
 class telemetry_agent_t : public Dao::Component {
 public:
@@ -168,8 +193,8 @@ private:
         if (!config["telemetry_root"]) {
             throw std::invalid_argument("configuration error: no data telemetry directory was specified");
         }
-        const std::string telemetry_root = config["telemetry_root"].as<std::string>();
-        m_logger.Info("telemetry will be stored to %s", telemetry_root.c_str());
+        m_telemetry_root = config["telemetry_root"].as<std::string>();
+        m_logger.Info("telemetry will be stored to %s", m_telemetry_root.c_str());
 
         //
         const int16_t nominal_core = config["nominal_core"] ? config["nominal_core"].as<int16_t>() : -1;
@@ -215,10 +240,22 @@ private:
         Prepares telemetry session by allocating collectors.
     */
     void transition_Standby_Idle() override {
+        // create session directory..
+        char timestamp[15];
+        time_t t = time(nullptr);
+        tm *td = localtime(&t);
+        strftime(timestamp, sizeof(timestamp), "%Y-%m-%d_%H-%M-%S", td);
+        std::string session_directory = m_telemetry_root + "/" + timestamp;
+        if(mkdir(session_directory.c_str(), 0755)) {
+            throw std::runtime_error("failed to create session directory");
+        }
+
+        // allocate collectors..
         for (telemetry_t &t : m_telemetry_list) {
             m_logger.Debug("allocating telemetry collector for %s..", t.target.c_str());
             t.collector = new collector_t(m_logger, t);
         }
+
         m_logger.Info("telemetry session ready");
     }
 
@@ -255,6 +292,7 @@ private:
 
     /* ----- Class Members ----- */
     std::vector<telemetry_t> m_telemetry_list;
+    std::string m_telemetry_root;
     std::string m_config_string;
     Dao::Log::Logger &m_logger;
 };
