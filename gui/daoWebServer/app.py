@@ -16,9 +16,147 @@ from datetime import datetime
 
 import eventlet
 import eventlet.wsgi
+
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'dao_shm_viewer_secret_key'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
+
+class RecordingManager:
+    """Manages recording of shared memory data to files."""
+    
+    def __init__(self):
+        self.recording = False
+        self.output_file = None
+        self.recorded_frames = []
+        self.shm_filename = None
+        self.start_time = None
+        self.frame_count = 0
+        self.max_frames = None  # None for continuous recording
+        
+    def start_recording(self, shm_filename, output_filename, max_frames=None):
+        """Start recording frames to file."""
+        if self.recording:
+            return {'success': False, 'error': 'Already recording'}
+            
+        try:
+            self.recording = True
+            self.shm_filename = shm_filename
+            self.output_file = output_filename
+            self.recorded_frames = []
+            self.start_time = datetime.now()
+            self.frame_count = 0
+            self.max_frames = max_frames
+            
+            if max_frames:
+                message = f'Started recording {shm_filename} to {output_filename} (max {max_frames} frames)'
+            else:
+                message = f'Started continuous recording {shm_filename} to {output_filename}'
+            
+            return {
+                'success': True, 
+                'message': message
+            }
+        except Exception as e:
+            self.recording = False
+            return {'success': False, 'error': str(e)}
+    
+    def record_frame(self, data, counter):
+        """Record a single frame."""
+        if not self.recording:
+            return False
+            
+        try:
+            # Store frame with metadata
+            frame_data = {
+                'data': data.copy(),  # Make a copy to avoid reference issues
+                'counter': counter,
+                'timestamp': datetime.now().isoformat(),
+                'frame_number': self.frame_count
+            }
+            self.recorded_frames.append(frame_data)
+            self.frame_count += 1
+            
+            print(f"Recorded frame {self.frame_count}/{self.max_frames if self.max_frames else 'unlimited'}")
+            
+            # Check if we've reached the frame limit
+            if self.max_frames and self.frame_count >= self.max_frames:
+                print(f"Frame limit reached: {self.frame_count} >= {self.max_frames}, signaling auto-stop")
+                # Signal that we should auto-stop after this frame
+                return True
+                
+        except Exception as e:
+            print(f"Error recording frame: {e}")
+            
+        return False
+    
+    def stop_recording(self):
+        """Stop recording and save file."""
+        if not self.recording:
+            return {'success': False, 'error': 'Not currently recording'}
+            
+        try:
+            self.recording = False
+            
+            if not self.recorded_frames:
+                return {'success': False, 'error': 'No frames recorded'}
+            
+            if not self.output_file:
+                return {'success': False, 'error': 'No output filename specified'}
+            
+            # Create output directory if it doesn't exist
+            output_dir = 'recordings'
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # Full path for the output file
+            output_path = os.path.join(output_dir, self.output_file)
+            
+            # Extract just the data arrays and stack them
+            data_arrays = [frame['data'] for frame in self.recorded_frames]
+            stacked_data = np.stack(data_arrays, axis=0)
+            
+            # Save as numpy array
+            np.save(output_path, stacked_data)
+            
+            # Create metadata file
+            metadata = {
+                'shm_filename': self.shm_filename,
+                'output_filename': self.output_file,
+                'start_time': self.start_time.isoformat() if self.start_time else None,
+                'end_time': datetime.now().isoformat(),
+                'frame_count': self.frame_count,
+                'data_shape': stacked_data.shape,
+                'data_dtype': str(stacked_data.dtype)
+            }
+            
+            metadata_path = output_path.replace('.npy', '_metadata.json')
+            with open(metadata_path, 'w') as f:
+                json.dump(metadata, f, indent=2)
+            
+            # Clear recorded data
+            self.recorded_frames = []
+            
+            return {
+                'success': True, 
+                'message': f'Recording saved to {output_path}',
+                'frames_recorded': self.frame_count,
+                'file_path': output_path,
+                'metadata': metadata
+            }
+            
+        except Exception as e:
+            self.recording = False
+            return {'success': False, 'error': str(e)}
+    
+    def get_status(self):
+        """Get current recording status."""
+        return {
+            'recording': self.recording,
+            'shm_filename': self.shm_filename,
+            'output_file': self.output_file,
+            'frame_count': self.frame_count,
+            'max_frames': self.max_frames,
+            'start_time': self.start_time.isoformat() if self.start_time else None
+        }
 
 class ShmManager:
     """Manages shared memory connections and data streaming."""
@@ -191,12 +329,36 @@ class ShmManager:
                         diff = new_counter - old_counter
                         self.counters[filename] = new_counter
                         
+                        # Get current data
+                        current_data = shm.get_data()
+                        
+                        # Record frame if recording is active for this file
+                        if (recording_manager.recording and 
+                            recording_manager.shm_filename == filename):
+                            should_auto_stop = recording_manager.record_frame(current_data, new_counter)
+                            
+                            # If we should auto-stop due to frame limit, add a small delay 
+                            # to allow status polling to see the final frame count, then stop
+                            if should_auto_stop:
+                                print(f"Auto-stopping recording due to frame limit")
+                                # Small delay to allow HTTP polling to see the final frame count
+                                time.sleep(0.2)
+                                result = recording_manager.stop_recording()
+                                print(f"Stop recording result: {result}")
+                                # Write completion flag file that can be detected by HTTP polling
+                                try:
+                                    completion_flag = os.path.join('recordings', '.recording_complete')
+                                    with open(completion_flag, 'w') as f:
+                                        json.dump(result, f)
+                                except Exception as e:
+                                    print(f"Error writing completion flag: {e}")
+                        
                         # Send updated data to clients
                         data_info = {
                             'filename': filename,
                             'counter': new_counter,
                             'frequency': 10.0 / diff if diff > 0 else 0,
-                            'data': self._serialize_data(shm.get_data()),
+                            'data': self._serialize_data(current_data),
                             'metadata': self.get_metadata(filename)
                         }
                         
@@ -210,8 +372,9 @@ class ShmManager:
                 print(f"Error in update loop: {e}")
                 time.sleep(1)
 
-# Global shared memory manager
+# Global shared memory manager and recording manager
 shm_manager = ShmManager()
+recording_manager = RecordingManager()
 
 @app.route('/')
 def index():
@@ -413,6 +576,74 @@ def poll_data(filename):
         
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/start_recording', methods=['POST'])
+def start_recording():
+    """Start recording shared memory data."""
+    data = request.get_json()
+    shm_filename = data.get('shm_filename')
+    output_filename = data.get('output_filename')
+    max_frames = data.get('max_frames')  # None for continuous recording
+    
+    if not shm_filename or not output_filename:
+        return jsonify({
+            'success': False, 
+            'error': 'Both shm_filename and output_filename are required'
+        })
+    
+    if shm_filename not in shm_manager.connections:
+        return jsonify({
+            'success': False, 
+            'error': f'Shared memory file {shm_filename} is not connected'
+        })
+    
+    # Convert max_frames to integer if provided and valid
+    if max_frames is not None:
+        try:
+            max_frames = int(max_frames)
+            if max_frames <= 0:
+                max_frames = None  # Invalid values default to continuous
+        except (ValueError, TypeError):
+            max_frames = None
+    
+    result = recording_manager.start_recording(shm_filename, output_filename, max_frames)
+    return jsonify(result)
+
+@app.route('/api/stop_recording', methods=['POST'])
+def stop_recording():
+    """Stop recording and save the file."""
+    result = recording_manager.stop_recording()
+    return jsonify(result)
+
+@app.route('/api/recording_status')
+def recording_status():
+    """Get current recording status."""
+    status = recording_manager.get_status()
+    
+    # Check for completion flag file
+    completion_flag = os.path.join('recordings', '.recording_complete')
+    if os.path.exists(completion_flag):
+        try:
+            with open(completion_flag, 'r') as f:
+                completion_data = json.load(f)
+            # Remove the flag file after reading
+            os.remove(completion_flag)
+            # Add completion info to status
+            status['completed'] = True
+            status['completion_data'] = completion_data
+        except Exception as e:
+            print(f"Error reading completion flag: {e}")
+    
+    return jsonify(status)
+
+@app.route('/api/download/<filename>')
+def download_file(filename):
+    """Download a recorded file."""
+    try:
+        recordings_dir = os.path.abspath('recordings')
+        return send_from_directory(recordings_dir, filename, as_attachment=True)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 404
 
 @socketio.on('connect')
 def handle_connect():

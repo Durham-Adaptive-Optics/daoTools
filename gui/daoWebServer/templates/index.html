@@ -168,19 +168,28 @@
                             <!-- Recording Tab -->
                             <div class="tab-pane fade" id="recordingTab">
                                 <div class="row">
-                                    <div class="col-md-6">
-                                        <label class="form-label">Filename:</label>
-                                        <input type="text" class="form-control" id="recordFilename" readonly>
+                                    <div class="col-md-4">
+                                        <label class="form-label">Output Filename:</label>
+                                        <input type="text" class="form-control" id="recordFilename" placeholder="Enter filename (will auto-add .npy)">
                                     </div>
                                     <div class="col-md-3">
-                                        <label class="form-label">Frames:</label>
-                                        <input type="number" class="form-control" id="frameCount" value="1" min="1" max="10000">
+                                        <label class="form-label">Max Frames:</label>
+                                        <input type="number" class="form-control" id="maxFrames" placeholder="Leave empty for continuous" min="1" max="100000">
+                                        <small class="text-muted">Empty = continuous</small>
                                     </div>
                                     <div class="col-md-3 d-flex align-items-end">
-                                        <button class="btn btn-danger" id="recordBtn">
+                                        <button class="btn btn-primary btn-sm" id="recordBtn">
                                             <i class="fas fa-record-vinyl"></i> Record
                                         </button>
                                     </div>
+                                    <div class="col-md-2 d-flex align-items-end">
+                                        <small class="text-muted">Real-time data capture</small>
+                                    </div>
+                                </div>
+                                
+                                <!-- Recording Status Area -->
+                                <div id="recordingStatus" style="display: none;" class="mt-3">
+                                    <!-- Status will be populated by JavaScript -->
                                 </div>
                             </div>
 

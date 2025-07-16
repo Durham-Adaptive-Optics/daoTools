@@ -23,6 +23,43 @@ class DaoShmWebViewer {
         this.updateConnectionStatus(true);
         this.bindEvents();
         this.loadFiles();
+        this.initSocket(); // Initialize socket for recording completion events
+    }
+    
+    initSocket() {
+        // Initialize socket connection for data updates only
+        this.socket = io();
+        // WebSocket recording events removed - using HTTP polling instead
+    }
+    
+    handleRecordingComplete(data) {
+        if (data.success) {
+            // Show completion message with download link
+            const downloadUrl = `/api/download/${data.metadata.output_filename}`;
+            const downloadMessage = `
+                <div>
+                    <p>Recording automatically completed (frame limit reached)</p>
+                    <p>${data.message}</p>
+                    <p>Frames recorded: ${data.frames_recorded}</p>
+                    <a href="${downloadUrl}" class="btn btn-primary btn-sm" download>
+                        <i class="fas fa-download"></i> Download ${data.metadata.output_filename}
+                    </a>
+                </div>
+            `;
+            
+            this.showCustomAlert('Recording Complete', downloadMessage, 'success');
+            
+            // Update UI to reflect recording stopped
+            this.updateRecordingUI({
+                recording: false,
+                shm_filename: null,
+                output_file: null,
+                frame_count: 0,
+                max_frames: null
+            });
+        } else {
+            this.showAlert('Recording Error', data.error, 'danger');
+        }
     }
     
     bindEvents() {
@@ -168,6 +205,12 @@ class DaoShmWebViewer {
                 
                 this.updateVisualization(result);
                 this.loadMetadata(filename);
+                
+                // Update recording filename suggestion and check recording status
+                this.updateRecordingFilename(filename);
+                this.checkRecordingStatus().catch(error => {
+                    console.warn('Could not check recording status:', error);
+                });
                 this.updateRecordingFilename(filename);
                 
                 // Start polling for updates
@@ -684,6 +727,44 @@ class DaoShmWebViewer {
             if (statusEl) {
                 statusEl.className = 'status-indicator online';
             }
+            
+            // Update recording frame counter if recording
+            this.updateRecordingFrameCounter();
+        }
+    }
+    
+    async updateRecordingFrameCounter() {
+        try {
+            const response = await fetch('/api/recording_status');
+            const status = await response.json();
+            
+            // Check if recording just completed
+            if (status.completed && status.completion_data) {
+                this.handleRecordingComplete(status.completion_data);
+                return;
+            }
+            
+            if (status.recording) {
+                const frameCounter = document.getElementById('frameCounter');
+                const progressBar = document.getElementById('recordingProgress');
+                
+                if (frameCounter) {
+                    if (status.max_frames) {
+                        frameCounter.textContent = `${status.frame_count || 0} / ${status.max_frames} frames`;
+                        
+                        // Update progress bar
+                        if (progressBar) {
+                            const percentage = ((status.frame_count || 0) / status.max_frames * 100);
+                            progressBar.style.width = `${percentage}%`;
+                            progressBar.setAttribute('aria-valuenow', percentage);
+                        }
+                    } else {
+                        frameCounter.textContent = `${status.frame_count || 0} frames (continuous)`;
+                    }
+                }
+            }
+        } catch (error) {
+            // Silently fail - recording status check is not critical
         }
     }
      updateIndicators(data) {
@@ -805,8 +886,223 @@ class DaoShmWebViewer {
             return;
         }
         
-        // This would need to be implemented on the server side
-        this.showAlert('Info', 'Recording functionality not yet implemented in web version', 'info');
+        // Check current recording status first
+        this.checkRecordingStatus()
+            .then(status => {
+                if (status.recording) {
+                    // Currently recording, so stop it
+                    this.stopRecording();
+                } else {
+                    // Not recording, so start it
+                    this.startRecording();
+                }
+            })
+            .catch(error => {
+                console.error('Error checking recording status:', error);
+                this.showAlert('Error', 'Failed to check recording status', 'danger');
+            });
+    }
+    
+    async checkRecordingStatus() {
+        try {
+            const response = await fetch('/api/recording_status');
+            const data = await response.json();
+            
+            // Update UI based on status
+            this.updateRecordingUI(data);
+            
+            return data;
+        } catch (error) {
+            console.error('Error checking recording status:', error);
+            throw error;
+        }
+    }
+    
+    async startRecording() {
+        try {
+            // Get output filename from input field
+            const outputFilename = document.getElementById('recordFilename').value.trim();
+            const maxFramesInput = document.getElementById('maxFrames').value.trim();
+            
+            if (!outputFilename) {
+                this.showAlert('Error', 'Please enter a filename for recording', 'warning');
+                return;
+            }
+            
+            // Ensure it has .npy extension
+            const filename = outputFilename.endsWith('.npy') ? outputFilename : outputFilename + '.npy';
+            
+            // Parse max frames (null for continuous recording)
+            let maxFrames = null;
+            if (maxFramesInput && maxFramesInput !== '') {
+                maxFrames = parseInt(maxFramesInput);
+                if (isNaN(maxFrames) || maxFrames <= 0) {
+                    this.showAlert('Error', 'Max frames must be a positive number or left empty for continuous recording', 'warning');
+                    return;
+                }
+            }
+            
+            const requestBody = {
+                shm_filename: this.currentFile,
+                output_filename: filename
+            };
+            
+            if (maxFrames !== null) {
+                requestBody.max_frames = maxFrames;
+            }
+            
+            const response = await fetch('/api/start_recording', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                this.showAlert('Success', result.message, 'success');
+                this.updateRecordingUI({
+                    recording: true,
+                    shm_filename: this.currentFile,
+                    output_file: filename,
+                    frame_count: 0,
+                    max_frames: maxFrames
+                });
+            } else {
+                this.showAlert('Error', result.error, 'danger');
+            }
+            
+        } catch (error) {
+            console.error('Error starting recording:', error);
+            this.showAlert('Error', 'Failed to start recording', 'danger');
+        }
+    }
+    
+    async stopRecording() {
+        try {
+            const response = await fetch('/api/stop_recording', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                this.showAlert('Success', result.message, 'success');
+                
+                // Show download link
+                const downloadUrl = `/api/download/${result.metadata.output_filename}`;
+                const downloadMessage = `
+                    <div>
+                        <p>${result.message}</p>
+                        <p>Frames recorded: ${result.frames_recorded}</p>
+                        <a href="${downloadUrl}" class="btn btn-primary btn-sm" download>
+                            <i class="fas fa-download"></i> Download ${result.metadata.output_filename}
+                        </a>
+                    </div>
+                `;
+                
+                // Use a custom alert that allows HTML
+                this.showCustomAlert('Recording Complete', downloadMessage, 'success');
+                
+                this.updateRecordingUI({
+                    recording: false,
+                    shm_filename: null,
+                    output_file: null,
+                    frame_count: 0
+                });
+            } else {
+                this.showAlert('Error', result.error, 'danger');
+            }
+            
+        } catch (error) {
+            console.error('Error stopping recording:', error);
+            this.showAlert('Error', 'Failed to stop recording', 'danger');
+        }
+    }
+    
+    updateRecordingUI(status) {
+        const recordBtn = document.getElementById('recordBtn');
+        const recordFilename = document.getElementById('recordFilename');
+        const maxFrames = document.getElementById('maxFrames');
+        const recordingStatus = document.getElementById('recordingStatus');
+        
+        if (status.recording) {
+            recordBtn.innerHTML = '<i class="fas fa-stop"></i> Stop Recording';
+            recordBtn.className = 'btn btn-danger btn-sm';
+            recordFilename.disabled = true;
+            maxFrames.disabled = true;
+            
+            if (recordingStatus) {
+                const progressInfo = status.max_frames 
+                    ? `${status.frame_count || 0} / ${status.max_frames} frames`
+                    : `${status.frame_count || 0} frames (continuous)`;
+                
+                recordingStatus.innerHTML = `
+                    <div class="alert alert-info">
+                        <strong>Recording:</strong> ${status.shm_filename} → ${status.output_file}<br>
+                        <strong>Progress:</strong> <span id="frameCounter">${progressInfo}</span>
+                        ${status.max_frames ? `<div class="progress mt-2">
+                            <div class="progress-bar" role="progressbar" style="width: ${((status.frame_count || 0) / status.max_frames * 100)}%" id="recordingProgress"></div>
+                        </div>` : ''}
+                    </div>
+                `;
+                recordingStatus.style.display = 'block';
+            }
+        } else {
+            recordBtn.innerHTML = '<i class="fas fa-record-vinyl"></i> Record';
+            recordBtn.className = 'btn btn-primary btn-sm';
+            recordFilename.disabled = false;
+            maxFrames.disabled = false;
+            
+            if (recordingStatus) {
+                recordingStatus.style.display = 'none';
+            }
+        }
+    }
+    
+    showCustomAlert(title, htmlContent, type) {
+        // Create custom modal for HTML content
+        const modalHtml = `
+            <div class="modal fade" id="customAlertModal" tabindex="-1">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header bg-${type === 'success' ? 'success' : type === 'danger' ? 'danger' : 'info'} text-white">
+                            <h5 class="modal-title">${title}</h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            ${htmlContent}
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Remove existing modal if any
+        const existingModal = document.getElementById('customAlertModal');
+        if (existingModal) {
+            existingModal.remove();
+        }
+        
+        // Add new modal
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        
+        // Show modal
+        const modal = new bootstrap.Modal(document.getElementById('customAlertModal'));
+        modal.show();
+        
+        // Clean up after modal is hidden
+        document.getElementById('customAlertModal').addEventListener('hidden.bs.modal', function() {
+            this.remove();
+        });
     }
     
     loadFile() {
