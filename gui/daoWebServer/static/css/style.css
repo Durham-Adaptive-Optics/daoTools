@@ -290,3 +290,51 @@ body {
     50% { opacity: 0.5; }
     100% { opacity: 1; }
 }
+
+/* Editable table cells */
+.editable-cell {
+    cursor: text;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+    padding: 4px 8px;
+    border-radius: 3px;
+}
+
+.editable-cell:hover {
+    background-color: #f8f9fa;
+    border-color: #dee2e6;
+}
+
+.editable-cell:focus {
+    outline: none;
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+}
+
+.editable-cell[contenteditable="true"] {
+    background-color: #fff;
+}
+
+/* Table styling for better editing experience */
+#dataTable {
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 0.9rem;
+}
+
+#dataTable td {
+    vertical-align: middle;
+}
+
+#dataTable th {
+    background-color: #f8f9fa;
+    border-bottom: 2px solid #dee2e6;
+    font-weight: 600;
+    text-align: center;
+}
+
+#dataTable td:first-child {
+    background-color: #f8f9fa;
+    font-weight: 600;
+    text-align: center;
+    cursor: default;
+}

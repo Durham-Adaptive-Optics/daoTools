@@ -512,6 +512,74 @@ def set_data():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
+@app.route('/api/update_array_value', methods=['POST'])
+def update_array_value():
+    """Update a single value in the shared memory array."""
+    data = request.get_json()
+    filename = data.get('filename')
+    indices = data.get('indices')  # List of indices [row, col] or [slice, row, col]
+    value = data.get('value')
+    
+    if filename not in shm_manager.connections:
+        return jsonify({'success': False, 'error': 'File not connected'})
+    
+    if not isinstance(indices, list) or len(indices) == 0:
+        return jsonify({'success': False, 'error': 'Invalid indices provided'})
+    
+    try:
+        shm = shm_manager.connections[filename]
+        current_data = shm.get_data()
+        
+        # Convert value to the appropriate data type
+        if np.issubdtype(current_data.dtype, np.integer):
+            try:
+                value = int(float(value))  # Handle both int and float strings
+            except (ValueError, TypeError):
+                return jsonify({'success': False, 'error': f'Invalid integer value: {value}'})
+        elif np.issubdtype(current_data.dtype, np.floating):
+            try:
+                value = float(value)
+            except (ValueError, TypeError):
+                return jsonify({'success': False, 'error': f'Invalid float value: {value}'})
+        else:
+            # For other types, try to convert appropriately
+            try:
+                value = current_data.dtype.type(value)
+            except (ValueError, TypeError):
+                return jsonify({'success': False, 'error': f'Invalid value for dtype {current_data.dtype}: {value}'})
+        
+        # Validate indices are within bounds
+        for i, idx in enumerate(indices):
+            if not isinstance(idx, int) or idx < 0 or idx >= current_data.shape[i]:
+                return jsonify({'success': False, 'error': f'Index {idx} out of bounds for dimension {i} (size {current_data.shape[i]})'})
+        
+        # Update the specific array element
+        if len(indices) == 1:
+            # 1D-like array (flattened)
+            flat_data = current_data.flatten()
+            flat_data[indices[0]] = value
+            current_data[:] = flat_data.reshape(current_data.shape)
+        elif len(indices) == 2:
+            # 2D array
+            current_data[indices[0], indices[1]] = value
+        elif len(indices) == 3:
+            # 3D array
+            current_data[indices[0], indices[1], indices[2]] = value
+        else:
+            return jsonify({'success': False, 'error': 'Unsupported number of dimensions'})
+        
+        # Update the shared memory
+        shm.set_data(current_data)
+        
+        return jsonify({
+            'success': True, 
+            'message': f'Updated value at {indices} to {value}',
+            'new_value': value
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
 @app.route('/api/load_file', methods=['POST'])
 def load_file():
     """Load data from file into shared memory."""

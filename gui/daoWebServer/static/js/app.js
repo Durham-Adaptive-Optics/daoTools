@@ -463,7 +463,12 @@ class DaoShmWebViewer {
                 flatData.forEach((value, index) => {
                     const row = tbody.insertRow();
                     row.insertCell().textContent = index;
-                    row.insertCell().textContent = typeof value === 'number' ? value.toFixed(3) : value;
+                    const cell = row.insertCell();
+                    cell.textContent = typeof value === 'number' ? value.toFixed(3) : value;
+                    cell.contentEditable = true;
+                    cell.className = 'editable-cell';
+                    cell.dataset.indices = JSON.stringify([index]);
+                    this.addCellEditHandlers(cell);
                 });
             } else if (shape.length === 2) {
                 // 2D array - full table
@@ -490,9 +495,13 @@ class DaoShmWebViewer {
                     }
                     const tableRow = tbody.insertRow();
                     tableRow.insertCell().textContent = i;
-                    row.forEach(value => {
+                    row.forEach((value, j) => {
                         const cell = tableRow.insertCell();
                         cell.textContent = typeof value === 'number' ? value.toFixed(3) : value;
+                        cell.contentEditable = true;
+                        cell.className = 'editable-cell';
+                        cell.dataset.indices = JSON.stringify([i, j]);
+                        this.addCellEditHandlers(cell);
                     });
                 });
             } else if (shape.length === 3) {
@@ -534,15 +543,101 @@ class DaoShmWebViewer {
                     }
                     const tableRow = tbody.insertRow();
                     tableRow.insertCell().textContent = i;
-                    row.forEach(value => {
+                    row.forEach((value, j) => {
                         const cell = tableRow.insertCell();
                         cell.textContent = typeof value === 'number' ? value.toFixed(3) : value;
+                        cell.contentEditable = true;
+                        cell.className = 'editable-cell';
+                        cell.dataset.indices = JSON.stringify([this.currentSlice, i, j]);
+                        this.addCellEditHandlers(cell);
                     });
                 });
             }
         } catch (error) {
             console.error('Error in renderTable:', error);
             this.showAlert('Table Error', `Failed to render table: ${error.message}`, 'danger');
+        }
+    }
+    
+    addCellEditHandlers(cell) {
+        let originalValue = cell.textContent;
+        
+        cell.addEventListener('focus', () => {
+            originalValue = cell.textContent;
+            cell.style.backgroundColor = '#fff3cd'; // Light yellow background when editing
+        });
+        
+        cell.addEventListener('blur', () => {
+            this.handleCellEdit(cell, originalValue);
+        });
+        
+        cell.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                cell.blur(); // Trigger blur event to save
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                cell.textContent = originalValue; // Restore original value
+                cell.blur();
+            }
+        });
+    }
+    
+    async handleCellEdit(cell, originalValue) {
+        const newValue = cell.textContent.trim();
+        
+        // Reset background color
+        cell.style.backgroundColor = '';
+        
+        // If value hasn't changed, do nothing
+        if (newValue === originalValue) {
+            return;
+        }
+        
+        // Validate the new value is a number (basic validation)
+        if (newValue === '' || (isNaN(newValue) && newValue !== 'inf' && newValue !== '-inf' && newValue !== 'nan')) {
+            this.showAlert('Invalid Value', 'Please enter a valid number', 'warning');
+            cell.textContent = originalValue; // Restore original value
+            return;
+        }
+        
+        try {
+            const indices = JSON.parse(cell.dataset.indices);
+            
+            const response = await fetch('/api/update_array_value', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    filename: this.currentFile,
+                    indices: indices,
+                    value: newValue
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                // Update cell with properly formatted value
+                if (typeof result.new_value === 'number') {
+                    cell.textContent = result.new_value.toFixed(3);
+                } else {
+                    cell.textContent = result.new_value;
+                }
+                cell.style.backgroundColor = '#d4edda'; // Light green to indicate success
+                setTimeout(() => {
+                    cell.style.backgroundColor = '';
+                }, 1000);
+            } else {
+                this.showAlert('Update Error', result.error, 'danger');
+                cell.textContent = originalValue; // Restore original value
+            }
+            
+        } catch (error) {
+            console.error('Error updating cell value:', error);
+            this.showAlert('Update Error', 'Failed to update value', 'danger');
+            cell.textContent = originalValue; // Restore original value
         }
     }
     
