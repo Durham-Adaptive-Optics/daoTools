@@ -10,6 +10,7 @@
 #include <daoThread.hpp>
 #include <sys/types.h>
 #include <daoLog.hpp>
+#include <filesystem>
 #include <sys/stat.h>
 #include <CLI11.hpp>
 #include <stdint.h>
@@ -27,7 +28,7 @@ struct collector_t;
 
 struct telemetry_t {
     collector_t *collector;     // object handling the collection of this telemetry.
-    std::string telemetry_root;
+    std::string fsroot; // directory path of where to store this telemetry.
     std::string target;
     size_t capacity;    // if zero all data goes into one file.
     size_t limit;      // if zero we collect until stopped.
@@ -38,32 +39,33 @@ struct telemetry_t {
 
 class collector_t : public Dao::Thread {
 public:
-    collector_t(Dao::Log::Logger &logger, const telemetry_t &t)
-        : Thread(t.target, logger, t.core), m_telemetry(t), m_logger(logger), m_sifce(logger) , m_shmname(t.target), n_files(0)
-    {
+    collector_t(Dao::Log::Logger &logger, const telemetry_t &t, volatile bool &agent_err_flag)
+        : Thread(t.target, logger, t.core), m_telemetry(t), m_logger(logger),
+        m_sifce(logger), m_shmname(t.target), m_nfiles(0), m_currfile_sz(0),
+        m_agent_err_flag(agent_err_flag), m_fits(nullptr) {
         // open shared memory..
-        if(daoShmShm2Img(t.target.c_str(), &m_shm) != DAO_SUCCESS) {
+        if (daoShmShm2Img(t.target.c_str(), &m_shm) != DAO_SUCCESS) {
             throw std::runtime_error("collector failed to open shared memory");
         }
         m_shm_md = (volatile IMAGE_METADATA *)m_shm.md;
 
         // get shared memory name from path..
         auto x = t.target.find_last_of("/");
-        if(x != std::string::npos) {
+        if (x != std::string::npos) {
             m_shmname = t.target.substr(x + 1);
         }
 
         // allocate internal data buffer..
-        const uint8_t atype = m_shm_md->atype;
-        if(m_type_tbl.find(atype) == m_type_tbl.end()) {
+        const uint8_t atype = m_shm.md->atype;
+        if (m_dt2s.find(atype) == m_dt2s.end()) {
             m_logger.Error("telemetry target %s has unknown data type %d", t.target.c_str(), atype);
             throw std::runtime_error("telemetry target has unknown data-type");
         }
 
-        m_databuffer_sz = m_type_tbl.at(atype) * m_shm_md->nelement;
+        m_databuffer_sz = m_dt2s.at(atype) * m_shm_md->nelement;
         m_databuffer = malloc(m_databuffer_sz);
-        m_mdbuffer = malloc(sizeof(IMAGE_METADATA));
-        if(!m_databuffer) {
+        m_mdbuffer = (IMAGE_METADATA *)malloc(sizeof(IMAGE_METADATA));
+        if (!m_databuffer) {
             throw std::runtime_error("collector buffer allocation failed");
         }
 
@@ -72,53 +74,117 @@ public:
     }
 
 private:
-    std::string next_fits_name() {
-        std::string name = m_shmname;
-        if(n_files) {
-            m_shmname += "_";
-            m_shmname += std::to_string(n_files);
+    bool close_fits() {
+        int status = 0;
+        fits_close_file(m_fits, &status);
+        if (status) {
+            char err_msg[FLEN_ERRMSG];
+            fits_get_errstatus(status, err_msg);
+            m_log.Error("collector for %s experienced an error when closing a datafile: %s", m_telemetry.target.c_str(), err_msg);
         }
-        name += ".fits";
-        return name;
+        else {
+            m_fits = nullptr;
+        }
+        return !status;
+    }
+
+    bool new_fits() {
+        // figure out new file name..
+        std::string name = m_shmname;
+        if (m_nfiles) {
+            m_shmname += "_";
+            m_shmname += std::to_string(m_nfiles);
+        }
+
+        // create file..
+        int status = 0;
+        std::string fpath = m_telemetry.fsroot + "/" + name + ".fits";
+        fits_create_file(&m_fits, fpath.c_str(), &status);
+        if (status) {
+            char err_msg[FLEN_ERRMSG];
+            fits_get_errstatus(status, err_msg);
+            m_log.Error("collector for %s experienced an error when creating a datafile: %s", m_telemetry.target.c_str(), err_msg);
+        }
+        else {
+            ++m_nfiles;
+            m_currfile_sz = 0;
+        }
+
+        return !status;
     }
 
     void OnceOnStart() override {
         m_logger.Info("%s collector started", m_telemetry.target.c_str());
-        
-        int status = 0;
-        std::string fits_path = next_fits_name();
-        fits_create_file(&m_fits, fits_path.c_str(), &status);
-        if(status) {
-            // todo handle error.
-        }
-
         m_cnt0 = m_shm_md->cnt0;
     }
 
-    void OnceOnStop() override { 
-        m_logger.Info("%s collector stopped", m_telemetry.target.c_str()); 
-
-        // todo close fits file.
+    void OnceOnStop() override {
+        m_logger.Info("%s collector stopped", m_telemetry.target.c_str());
+        if (m_fits && !close_fits()) {
+            m_agent_err_flag = true;
+            return;
+        }
     }
 
     /*
         telemetry collection loop.
     */
     void RestartableThread() override {
+        // stop collection (if needed)..
+        const size_t nframes_tot = m_nfiles * m_telemetry.capacity + m_currfile_sz;
+        if (m_agent_err_flag || nframes_tot >= m_telemetry.limit) {
+            Stop();
+            return;
+        }
+
+        // retire fits file if reached capacity..
+        if (m_fits && m_telemetry.capacity && m_currfile_sz >= m_telemetry.capacity) {
+            m_log.Debug("datafile for %s has reached capacity", m_telemetry.target.c_str());
+            if (!close_fits()) {
+                m_agent_err_flag = true;
+                return;
+            }
+        }
+
+        // create fits file if we don't have one..
+        if (!m_fits && !new_fits()) {
+            m_agent_err_flag = true;
+            return;
+        }
+
+        // collect next telemetry frame...
         const uint64_t cnt0_ = m_shm_md->cnt0;
-        if(cnt0_ > m_cnt0) {
+        if (cnt0_ > m_cnt0) {
             m_cnt0 = cnt0_;
             memcpy(m_mdbuffer, m_shm.md, sizeof(IMAGE_METADATA)); // copy out metadata to prevent overwrite corruption.
             memcpy(m_databuffer, m_shm.array.V, m_databuffer_sz); // copy out data to prevent overwrite corruption.
-            if(m_shm_md->cnt0 > m_cnt0) return; // drop frame, could be corrupted.
-            
-            
+            if (m_shm_md->cnt0 > m_cnt0) return; // drop frame, could be corrupted.
 
-            // todo record frame data.
+            int status = 0; // status of frame recording.
+            int fits_type = m_dt2ft.at(m_mdbuffer->atype);
+            fits_create_img(m_fits, fits_type, m_mdbuffer->naxis, (long *)m_mdbuffer->size, &status); // todo check size ordering
+            fits_write_key(m_fits, TBYTE, "atype", &m_mdbuffer->atype, nullptr, &status);
+            fits_write_key(m_fits, TLONGLONG, "atime", &m_mdbuffer->atime.tsfixed.secondlong, nullptr, &status);
+            fits_write_key(m_fits, TLONGLONG, "cnt0", &m_mdbuffer->cnt0, nullptr, &status); // todo offset thing
+            fits_write_key(m_fits, TLONGLONG, "cnt1", &m_mdbuffer->cnt1, nullptr, &status); // todo offset thing
+            fits_write_key(m_fits, TLONGLONG, "cnt2", &m_mdbuffer->cnt2, nullptr, &status); // todo offset thing
+            fits_write_img(m_fits, fits_type, 1, m_mdbuffer->nelement, m_databuffer, &status);
+            fits_write_chksum(m_fits, &status);
+            fits_flush_file(m_fits, &status);
+
+            if (status) {
+                char err_msg[FLEN_ERRMSG];
+                fits_get_errstatus(status, err_msg);
+                m_log.Error("collector for %s experienced an error when recording frame: %s", m_telemetry.target.c_str(), err_msg);
+                m_agent_err_flag = true;
+                return;
+            }
+
+            ++m_currfile_sz;
         }
     }
 
-    const std::unordered_map<uint8_t,uint8_t> m_type_tbl { // lookup table from dao data types to byte sizes.
+    const std::unordered_map<uint8_t, uint8_t> m_dt2s{ // lookup table from dao types to byte sizes.
         {_DATATYPE_UINT8, SIZEOF_DATATYPE_UINT8},
         {_DATATYPE_INT8, SIZEOF_DATATYPE_INT8},
         {_DATATYPE_UINT16, SIZEOF_DATATYPE_UINT16},
@@ -133,17 +199,34 @@ private:
         {_DATATYPE_COMPLEX_DOUBLE, SIZEOF_DATATYPE_COMPLEX_DOUBLE}
     };
 
+    const std::unordered_map<uint8_t, int> m_dt2ft{ // lookup table from dao to fits data types.
+        {_DATATYPE_UINT8, BYTE_IMG},
+        {_DATATYPE_INT8, BYTE_IMG},
+        {_DATATYPE_UINT16, SHORT_IMG},
+        {_DATATYPE_INT16, SHORT_IMG},
+        {_DATATYPE_UINT32, LONG_IMG},
+        {_DATATYPE_INT32, LONG_IMG},
+        {_DATATYPE_UINT64, LONGLONG_IMG},
+        {_DATATYPE_INT64, LONGLONG_IMG},
+        {_DATATYPE_FLOAT, FLOAT_IMG},
+        {_DATATYPE_DOUBLE, DOUBLE_IMG},
+        {_DATATYPE_COMPLEX_FLOAT, FLOAT_IMG},
+        {_DATATYPE_COMPLEX_DOUBLE, DOUBLE_IMG}
+    };
+
     volatile IMAGE_METADATA *m_shm_md;
+    volatile bool &m_agent_err_flag;
     const telemetry_t &m_telemetry;
     Dao::ShmIfce<uint8_t> m_sifce;
     Dao::Log::Logger &m_logger;
+    IMAGE_METADATA *m_mdbuffer;
     size_t m_databuffer_sz;
     std::string m_shmname;
     void *m_databuffer;
     fitsfile *m_fits;
-    void *m_mdbuffer;
+    size_t m_currfile_sz;
     uint64_t m_cnt0;
-    size_t n_files;
+    size_t m_nfiles;
     IMAGE m_shm;
 };
 
@@ -154,53 +237,64 @@ public:
     telemetry_agent_t(Dao::Log::Logger &logger, const std::string &ip, size_t port, const std::string &config_file = "")
         :
         Component("telemetry", logger, ip, port),
-        m_config_string(""),
-        m_logger(logger) 
-    {
-        if(config_file.length()) {
+        m_logger(logger), m_config_string(""), m_err_flag(false) {
+        if (config_file.length()) {
             std::ifstream file(config_file);
-            std::ostringstream ss;
-            ss << file.rdbuf();
-            m_config_string = ss.str();
-            m_logger.Info("telemetry session configuration set");
+            if (file) {
+                std::ostringstream ss;
+                ss << file.rdbuf();
+                m_config_string = ss.str();
+                m_logger.Info("telemetry session configuration loaded");
+            }
+            else {
+                m_log.Warning("telemetry session configuration file could not be loaded");
+            }
         }
+    }
+
+    // Updates agent state.
+    void activate() {
         m_logger.Info("telemetry agent active");
+        while (true) {
+            if (m_err_flag) {
+                while (GetStateText() != "Error") OnFailure();
+            }
+            else if (GetStateText() == "Running") {
+                size_t nstopped = 0;
+                for (const telemetry_t &t : m_telemetry_list) {
+                    if (t.collector->isStopped()) ++nstopped;
+                }
+                if (nstopped == m_telemetry_list.size()) {
+                    while (GetStateText() == "Running") Idle();
+                    while (GetStateText() == "Idle") Disable();
+                    while (GetStateText() == "Standby") Stop();
+                    m_log.Info("telemetry session finished");
+                }
+            }
+            sleep(1);
+        }
     }
 
 private:
-    /*
-        Accept and apply new YAML telemetry session configuration.
-    */
-    void PROCESS_OTHER(std::string payload) override {
-        m_config_string = payload;
-        m_logger.Info("telemetry session configuration set");
-    }
-
-    /*  [Off -> Standby]
-        Applies the active configuration for the next telemetry session.
-    */
-    void transition_Off_Standby() override {
+    // Parses out the currently active telemetry session configuration.
+    void configure_session() {
         if (!m_config_string.length()) {
             throw std::invalid_argument("configuration error: no telemetry session configuration");
         }
         m_logger.Debug("configuring telemetry session..");
 
-        //
         const YAML::Node &config = YAML::Load(m_config_string);
         m_logger.Debug("parsed configuration string");
 
-        //
         if (!config["telemetry_root"]) {
             throw std::invalid_argument("configuration error: no data telemetry directory was specified");
         }
         m_telemetry_root = config["telemetry_root"].as<std::string>();
-        m_logger.Info("telemetry will be stored to %s", m_telemetry_root.c_str());
+        m_logger.Info("root directory for telemetry sessions is %s", m_telemetry_root.c_str());
 
-        //
         const int16_t nominal_core = config["nominal_core"] ? config["nominal_core"].as<int16_t>() : -1;
         m_logger.Info("telemetry will be collected on core %d by default", nominal_core);
 
-        //
         if (config["telemetry"]) {
             telemetry_t ti;
             for (const YAML::Node &tc : config["telemetry"]) {
@@ -233,36 +327,55 @@ private:
             throw std::invalid_argument("configuration error: no telemetry specified");
         }
 
+        if (config["files"]) {
+            for (const YAML::Node &fc : config["files"]) {
+                const std::string file_path = fc.as<std::string>();
+                m_files_list.push_back(file_path);
+                m_log.Info("configured %s to be copied when telemetry session starts", file_path.c_str());
+            }
+        }
+
         m_logger.Debug("telemetry session configured");
     }
 
-    /*  [Standby -> Idle]
-        Prepares telemetry session by allocating collectors.
-    */
-    void transition_Standby_Idle() override {
+    void prepare_session() {
         // create session directory..
-        char timestamp[15];
+        char timestamp[16];
         time_t t = time(nullptr);
         tm *td = localtime(&t);
-        strftime(timestamp, sizeof(timestamp), "%Y-%m-%d_%H-%M-%S", td);
-        std::string session_directory = m_telemetry_root + "/" + timestamp;
-        if(mkdir(session_directory.c_str(), 0755)) {
+        strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", td);
+        m_session_dir = m_telemetry_root + "/" + timestamp;
+        if (mkdir(m_session_dir.c_str(), 0755)) {
             throw std::runtime_error("failed to create session directory");
         }
+        m_log.Info("telemetry session directory created: %s", m_session_dir.c_str());
 
         // allocate collectors..
         for (telemetry_t &t : m_telemetry_list) {
+            t.fsroot = m_session_dir;
             m_logger.Debug("allocating telemetry collector for %s..", t.target.c_str());
-            t.collector = new collector_t(m_logger, t);
+            t.collector = new collector_t(m_logger, t, m_err_flag);
         }
 
         m_logger.Info("telemetry session ready");
     }
 
-    /*  [Idle -> Running]
-        Starts telemetry session.
-    */
-    void transition_Idle_Running() override {
+    void begin_session() {
+        for (const std::string &path : m_files_list) {
+            // get file name from path..
+            std::string filename = path;
+            auto x = path.find_last_of("/");
+            if (x != std::string::npos) {
+                filename = path.substr(x + 1);
+            }
+
+            const std::string dst = m_session_dir + "/" + filename;
+            if (!std::filesystem::copy_file(path, dst)) {
+                m_log.Error("failed to copy %s to telemetry session directory", path.c_str());
+                throw std::runtime_error("failed to copy file");
+            }
+        }
+
         for (telemetry_t &t : m_telemetry_list) {
             m_logger.Debug("starting telemetry collector for %s..", t.target.c_str());
             t.collector->Start();
@@ -270,31 +383,66 @@ private:
         m_logger.Info("telemetry session started");
     }
 
-    /*  [Running -> Idle]
-        Ends telemetry session.
-    */
-    void transition_Running_Idle() override {
+    void pause_session() {
         for (telemetry_t &t : m_telemetry_list) {
-            m_logger.Debug("ending telemetry collector for %s..", t.target.c_str());
-            t.collector->Join();
+            m_logger.Debug("pausing telemetry collector for %s..", t.target.c_str());
+            t.collector->Stop();
         }
-        m_logger.Info("telemetry session ended");
+        m_logger.Info("telemetry session paused");
     }
 
-    /*  [Idle -> Standby]
-        Tidies up telemetry session resources by freeing collectors.
-    */
-    void transition_Idle_Standby() override {
-        for (telemetry_t &t : m_telemetry_list) delete t.collector;
+    void destroy_session() {
+        for (telemetry_t &t : m_telemetry_list) {
+            t.collector->Join();
+            delete t.collector;
+        }
         m_telemetry_list.clear();
-        m_logger.Info("telemetry session cleaned-up");
+        m_log.Info("telemetry session ended");
     }
 
-    /* ----- Class Members ----- */
+    /* -------------------------------------------------------------------------------------------- */
+
+    // Accept and apply new YAML telemetry session configuration.
+    void PROCESS_OTHER(std::string payload) override {
+        m_config_string = payload;
+        m_logger.Info("telemetry session configuration loaded");
+    }
+
+    void transition_Off_Standby() override {
+        configure_session();
+    }
+
+    void transition_Standby_Idle() override {
+        prepare_session();
+    }
+
+    void transition_Idle_Running() override {
+        begin_session();
+    }
+
+    void transition_Running_Idle() override {
+        pause_session();
+    }
+
+    void transition_Idle_Standby() override {
+        destroy_session();
+    }
+
+    void transition_Error_Idle() override {
+        destroy_session();
+        configure_session();
+        prepare_session();
+    }
+
+    /* -------------------------------------------------------------------------------------------- */
+
     std::vector<telemetry_t> m_telemetry_list;
+    std::vector<std::string> m_files_list;
     std::string m_telemetry_root;
     std::string m_config_string;
     Dao::Log::Logger &m_logger;
+    std::string m_session_dir;
+    volatile bool m_err_flag;
 };
 
 /*--------------------------------------------------------------------------*/
@@ -307,53 +455,22 @@ struct context_t {
     size_t port;
 };
 
-#define DEBUG_
-
-//! todo modify daoBase so statemachine goto error if callback throws - check w/ David for this.
-//! todo modify to allow service mode.
-//! todo use dao c interface instead of cpp interface to avoid incorrect keywords due to templating as uint8_t? 
-
 int main(int argc, char *argv[]) {
-    //
     context_t cxt;
-    CLI::App app("DAO Telemetry Agent");
-    app.add_option("PORT", cxt.port, "Telemetry agent interface port")->required();
+    CLI::App app("DAO Telemetry");
+    app.add_option("port", cxt.port, "Telemetry tool interface port")->required();
     app.add_option("--ip", cxt.ip, "Telemetry agent ip address");
-    app.add_option("--config", cxt.configFile, "Telemetry session configuration file");
-    app.add_flag("-a,--auto-run", cxt.autorun, "Auto-start telemetry session upon launch");
+    app.add_option("-c,--config", cxt.configFile, "Telemetry session configuration file");
     app.add_flag("-f,--file-logging", cxt.fileLogging, "Output logs to file");
     CLI11_PARSE(app, argc, argv);
 
-    //
     Dao::Log::Logger logger(
         "telemetry-agent",
         cxt.fileLogging ? Dao::Log::Logger::DESTINATION::FILE : Dao::Log::Logger::DESTINATION::SCREEN,
         "dao-telemetry-agent.logs" // used if file logging.
     );
-    #ifdef DEBUG_
-    logger.SetLevel(Dao::Log::LEVEL::DEBUG);
-    #endif
+    // logger.SetLevel(Dao::Log::LEVEL::DEBUG);
 
-    //
     telemetry_agent_t agent(logger, cxt.ip, cxt.port, cxt.configFile);
-    if (cxt.autorun) {
-        logger.Info("auto-starting telemetry session");
-        agent.Init();
-        agent.Enable();
-        agent.Run();
-    }
-
-    //
-    while (true) {
-        // if (agent.GetState() != "Error" && agent.error()) {
-        //     while (agent.GetState() != "Error") agent.Error();
-        // }
-        sleep(1);
-    }
-    // if (GetStateText() == "Running" &&
-    //     mNumFinished == mRecorders.size()) {
-    //     mLogger.Debug("Controller finish flagged");
-    //     Idle();
-    //     Disable();
-    // }
+    agent.activate();
 }
