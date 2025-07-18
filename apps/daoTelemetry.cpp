@@ -51,14 +51,13 @@ public:
         m_shm_md = (volatile IMAGE_METADATA *)m_shm.md;
 
         // get shared memory name from path..
-        std::string shmname = t.target;
-        auto x = t.target.find_last_of('/');
+        auto x = m_shmname.find_last_of('/');
         if (x != std::string::npos) {
-            shmname = t.target.substr(x + 1);
+            m_shmname = m_shmname.substr(x + 1);
         }
         auto y = m_shmname.find('.');
         if (y != std::string::npos) {
-            m_shmname = shmname.substr(0, y);
+            m_shmname = m_shmname.substr(0, y);
         }
         m_log.Debug("target %s has name: %s", t.target.c_str(), m_shmname.c_str());
 
@@ -398,7 +397,7 @@ private:
                 m_log.Error("failed to copy %s to telemetry session directory", path.c_str());
                 throw std::runtime_error("failed to copy file");
             }
-            
+
             m_log.Debug("successfully copied file %s to %s", path.c_str(), dst.c_str());
         }
 
