@@ -743,7 +743,7 @@ class daoShmViewer(QMainWindow):
             diff = self.newCounter - self.lastCounter
             self.lastCounter = self.newCounter
             
-            frequency = 0 if diff == 0 else 10/diff
+            frequency = 0 if diff == 0 else 10*diff
             self.updateMetadata(self.filenameEdit.text(), frequency)
             
             if diff != 0:
@@ -881,8 +881,7 @@ class daoShmViewer(QMainWindow):
         try:
             shape = self.shm.get_data().shape
             dtype = self.shm.get_data().dtype
-            counter = 1
-            # self.shm.get_counter()
+            counter = self.shm.get_counter()
             
             metadata = (
                 f"Metadata for {filename}:\n"
