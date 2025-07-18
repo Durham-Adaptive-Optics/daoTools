@@ -392,12 +392,14 @@ private:
             if (x != std::string::npos) {
                 filename = path.substr(x + 1);
             }
-
+            
             const std::string dst = m_session_dir + "/" + filename;
             if (!std::filesystem::copy_file(path, dst)) {
                 m_log.Error("failed to copy %s to telemetry session directory", path.c_str());
                 throw std::runtime_error("failed to copy file");
             }
+            
+            m_log.Debug("successfully copied file %s to %s", path.c_str(), dst.c_str());
         }
 
         for (telemetry_t &t : m_telemetry_list) {
