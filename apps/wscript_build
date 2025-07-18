@@ -329,9 +329,9 @@ daoTelemetry = bld.program(
 	target = 'daoTelemetry',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-ldaoNuma', '-ldaoProto', '-lzmq', '-lprotobuf', '-lyaml-cpp', '-lcfitsio'] + my_ld_flags,
+	ldflags = ['-ldao' , '-lpthread', '-ldaoNuma', '-ldaoProto', '-lzmq', '-lprotobuf', '-lyaml-cpp', '-lcfitsio', '-lstdc++fs'] + my_ld_flags,
 	use= 'daoTools',
-	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
+	cxxflags = ['-O3', '-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto', '-std=c++17']
 )
 
 if bld.env.BLAS_AVAILABLE:

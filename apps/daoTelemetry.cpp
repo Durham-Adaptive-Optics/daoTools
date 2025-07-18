@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 #include <CLI11.hpp>
 #include <stdint.h>
+#include <assert.h>
 #include <fstream>
 #include <sstream>
 #include <vector>
@@ -50,10 +51,16 @@ public:
         m_shm_md = (volatile IMAGE_METADATA *)m_shm.md;
 
         // get shared memory name from path..
-        auto x = t.target.find_last_of("/");
+        std::string shmname = t.target;
+        auto x = t.target.find_last_of('/');
         if (x != std::string::npos) {
-            m_shmname = t.target.substr(x + 1);
+            shmname = t.target.substr(x + 1);
         }
+        auto y = m_shmname.find('.');
+        if (y != std::string::npos) {
+            m_shmname = shmname.substr(0, y);
+        }
+        m_log.Debug("target %s has name: %s", t.target.c_str(), m_shmname.c_str());
 
         // allocate internal data buffer..
         const uint8_t atype = m_shm.md->atype;
@@ -77,6 +84,7 @@ private:
     bool close_fits() {
         int status = 0;
         fits_close_file(m_fits, &status);
+        
         if (status) {
             char err_msg[FLEN_ERRMSG];
             fits_get_errstatus(status, err_msg);
@@ -85,20 +93,19 @@ private:
         else {
             m_fits = nullptr;
         }
+        
         return !status;
     }
 
     bool new_fits() {
         // figure out new file name..
-        std::string name = m_shmname;
-        if (m_nfiles) {
-            m_shmname += "_";
-            m_shmname += std::to_string(m_nfiles);
-        }
+        const std::string name = m_shmname + "_" + std::to_string(m_nfiles + 1);
 
         // create file..
         int status = 0;
         std::string fpath = m_telemetry.fsroot + "/" + name + ".fits";
+        m_log.Debug("collector for %s creating new datafile: %s", m_telemetry.target.c_str(), fpath.c_str());
+
         fits_create_file(&m_fits, fpath.c_str(), &status);
         if (status) {
             char err_msg[FLEN_ERRMSG];
@@ -106,21 +113,19 @@ private:
             m_log.Error("collector for %s experienced an error when creating a datafile: %s", m_telemetry.target.c_str(), err_msg);
         }
         else {
-            ++m_nfiles;
             m_currfile_sz = 0;
+            ++m_nfiles;
         }
 
         return !status;
     }
 
     void OnceOnStart() override {
-        m_logger.Info("%s collector started", m_telemetry.target.c_str());
         m_cnt0 = m_shm_md->cnt0;
     }
 
     void OnceOnStop() override {
-        m_logger.Info("%s collector stopped", m_telemetry.target.c_str());
-        if (m_fits && !close_fits()) {
+        if(m_fits && !close_fits()) {
             m_agent_err_flag = true;
             return;
         }
@@ -132,8 +137,8 @@ private:
     void RestartableThread() override {
         // stop collection (if needed)..
         const size_t nframes_tot = m_nfiles * m_telemetry.capacity + m_currfile_sz;
-        if (m_agent_err_flag || nframes_tot >= m_telemetry.limit) {
-            Stop();
+        if (m_agent_err_flag || (m_telemetry.limit && nframes_tot >= m_telemetry.limit)) {
+            Exit();
             return;
         }
 
@@ -161,14 +166,18 @@ private:
             if (m_shm_md->cnt0 > m_cnt0) return; // drop frame, could be corrupted.
 
             int status = 0; // status of frame recording.
-            int fits_type = m_dt2ft.at(m_mdbuffer->atype);
-            fits_create_img(m_fits, fits_type, m_mdbuffer->naxis, (long *)m_mdbuffer->size, &status); // todo check size ordering
+            long axes_sz[3] { 
+                m_mdbuffer->size[0],
+                m_mdbuffer->size[1],
+                m_mdbuffer->size[2] 
+            };
+            fits_create_img(m_fits, m_d2fd.at(m_mdbuffer->atype), m_mdbuffer->naxis, axes_sz, &status); // todo check size ordering
             fits_write_key(m_fits, TBYTE, "atype", &m_mdbuffer->atype, nullptr, &status);
             fits_write_key(m_fits, TLONGLONG, "atime", &m_mdbuffer->atime.tsfixed.secondlong, nullptr, &status);
             fits_write_key(m_fits, TLONGLONG, "cnt0", &m_mdbuffer->cnt0, nullptr, &status); // todo offset thing
             fits_write_key(m_fits, TLONGLONG, "cnt1", &m_mdbuffer->cnt1, nullptr, &status); // todo offset thing
             fits_write_key(m_fits, TLONGLONG, "cnt2", &m_mdbuffer->cnt2, nullptr, &status); // todo offset thing
-            fits_write_img(m_fits, fits_type, 1, m_mdbuffer->nelement, m_databuffer, &status);
+            fits_write_img(m_fits, m_d2fs.at(m_mdbuffer->atype), 1, m_mdbuffer->nelement, m_databuffer, &status);
             fits_write_chksum(m_fits, &status);
             fits_flush_file(m_fits, &status);
 
@@ -199,7 +208,7 @@ private:
         {_DATATYPE_COMPLEX_DOUBLE, SIZEOF_DATATYPE_COMPLEX_DOUBLE}
     };
 
-    const std::unordered_map<uint8_t, int> m_dt2ft{ // lookup table from dao to fits data types.
+    const std::unordered_map<uint8_t, int> m_d2fd{ // lookup table from dao to fits disk data types.
         {_DATATYPE_UINT8, BYTE_IMG},
         {_DATATYPE_INT8, BYTE_IMG},
         {_DATATYPE_UINT16, SHORT_IMG},
@@ -212,6 +221,22 @@ private:
         {_DATATYPE_DOUBLE, DOUBLE_IMG},
         {_DATATYPE_COMPLEX_FLOAT, FLOAT_IMG},
         {_DATATYPE_COMPLEX_DOUBLE, DOUBLE_IMG}
+    };
+
+    const std::unordered_map<uint8_t, int> m_d2fs{ // lookup table from dao to fits source data types.
+        // todo fill in missing.
+        {_DATATYPE_UINT8, TBYTE},
+        {_DATATYPE_INT8, TSBYTE},
+        {_DATATYPE_UINT16, TUSHORT},
+        {_DATATYPE_INT16, TSHORT},
+        {_DATATYPE_UINT32, TUINT},
+        {_DATATYPE_INT32, TINT},
+        // {_DATATYPE_UINT64, ??},
+        {_DATATYPE_INT64, TLONGLONG},
+        {_DATATYPE_FLOAT, TFLOAT},
+        {_DATATYPE_DOUBLE, TDOUBLE}
+        // {_DATATYPE_COMPLEX_FLOAT, ??},
+        // {_DATATYPE_COMPLEX_DOUBLE, ??}
     };
 
     volatile IMAGE_METADATA *m_shm_md;
@@ -260,15 +285,14 @@ public:
                 while (GetStateText() != "Error") OnFailure();
             }
             else if (GetStateText() == "Running") {
-                size_t nstopped = 0;
+                size_t n_exited = 0;
                 for (const telemetry_t &t : m_telemetry_list) {
-                    if (t.collector->isStopped()) ++nstopped;
+                    if (!t.collector->isRunning()) ++n_exited;
                 }
-                if (nstopped == m_telemetry_list.size()) {
+                if (n_exited == m_telemetry_list.size()) {
                     while (GetStateText() == "Running") Idle();
                     while (GetStateText() == "Idle") Disable();
                     while (GetStateText() == "Standby") Stop();
-                    m_log.Info("telemetry session finished");
                 }
             }
             sleep(1);
@@ -283,7 +307,7 @@ private:
         }
         m_logger.Debug("configuring telemetry session..");
 
-        const YAML::Node &config = YAML::Load(m_config_string);
+        const YAML::Node &config = YAML::Load(m_config_string); // todo throw if fails to load.
         m_logger.Debug("parsed configuration string");
 
         if (!config["telemetry_root"]) {
@@ -320,7 +344,7 @@ private:
 
                 m_telemetry_list.push_back(ti);
 
-                m_logger.Info("configured telemetry-%zu (%s)..", telnum, ti.target.c_str());
+                m_logger.Debug("configured telemetry-%zu (%s)..", telnum, ti.target.c_str());
             }
         }
         else {
@@ -428,7 +452,7 @@ private:
         destroy_session();
     }
 
-    void transition_Error_Idle() override {
+    void transition_Error_Idle() override { // todo crashes.
         destroy_session();
         configure_session();
         prepare_session();
@@ -469,7 +493,7 @@ int main(int argc, char *argv[]) {
         cxt.fileLogging ? Dao::Log::Logger::DESTINATION::FILE : Dao::Log::Logger::DESTINATION::SCREEN,
         "dao-telemetry-agent.logs" // used if file logging.
     );
-    // logger.SetLevel(Dao::Log::LEVEL::DEBUG);
+    logger.SetLevel(Dao::Log::LEVEL::DEBUG);
 
     telemetry_agent_t agent(logger, cxt.ip, cxt.port, cxt.configFile);
     agent.activate();
