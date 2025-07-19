@@ -4,6 +4,8 @@
  * @date    15/07/2025
  */
 
+// todo support dao complex-float & complex-double datatypes (requires table hdu).
+
 #include <cfitsio/fitsio.h>
 #include <daoComponent.hpp>
 #include <yaml-cpp/yaml.h>
@@ -13,6 +15,7 @@
 #include <filesystem>
 #include <sys/stat.h>
 #include <CLI11.hpp>
+#include <algorithm>
 #include <stdint.h>
 #include <assert.h>
 #include <fstream>
@@ -43,7 +46,8 @@ public:
     collector_t(Dao::Log::Logger &logger, const telemetry_t &t, volatile bool &agent_err_flag)
         : Thread(t.target, logger, t.core), m_telemetry(t), m_logger(logger),
         m_sifce(logger), m_shmname(t.target), m_nfiles(0), m_currfile_sz(0),
-        m_agent_err_flag(agent_err_flag), m_fits(nullptr) {
+        m_agent_err_flag(agent_err_flag), m_fits(nullptr) 
+    {
         // open shared memory..
         if (daoShmShm2Img(t.target.c_str(), &m_shm) != DAO_SUCCESS) {
             throw std::runtime_error("collector failed to open shared memory");
@@ -60,6 +64,10 @@ public:
             m_shmname = m_shmname.substr(0, y);
         }
         m_log.Debug("target %s has name: %s", t.target.c_str(), m_shmname.c_str());
+
+        // get data shape..
+        for(size_t i = 0; i < m_shm_md->naxis; ++i) m_axes_sizes.push_back(m_shm_md->size[i]);
+        std::reverse(m_axes_sizes.begin(), m_axes_sizes.end());
 
         // allocate internal data buffer..
         const uint8_t atype = m_shm.md->atype;
@@ -164,21 +172,15 @@ private:
             memcpy(m_databuffer, m_shm.array.V, m_databuffer_sz); // copy out data to prevent overwrite corruption.
             if (m_shm_md->cnt0 > m_cnt0) return; // drop frame, could be corrupted.
 
-            int status = 0; // status of frame recording.
-            long axes_sz[3] { 
-                m_mdbuffer->size[0],
-                m_mdbuffer->size[1],
-                m_mdbuffer->size[2] 
-            };
-            fits_create_img(m_fits, m_d2fd.at(m_mdbuffer->atype), m_mdbuffer->naxis, axes_sz, &status); // todo check size ordering
+            int status = 0;
+            fits_create_img(m_fits, m_d2fd.at(m_mdbuffer->atype), m_mdbuffer->naxis, m_axes_sizes.data(), &status);
             fits_write_key(m_fits, TBYTE, "atype", &m_mdbuffer->atype, nullptr, &status);
             fits_write_key(m_fits, TLONGLONG, "atime", &m_mdbuffer->atime.tsfixed.secondlong, nullptr, &status);
-            fits_write_key(m_fits, TLONGLONG, "cnt0", &m_mdbuffer->cnt0, nullptr, &status); // todo offset thing
-            fits_write_key(m_fits, TLONGLONG, "cnt1", &m_mdbuffer->cnt1, nullptr, &status); // todo offset thing
-            fits_write_key(m_fits, TLONGLONG, "cnt2", &m_mdbuffer->cnt2, nullptr, &status); // todo offset thing
+            fits_write_key(m_fits, TULONGLONG, "cnt0", &m_mdbuffer->cnt0, nullptr, &status);
+            fits_write_key(m_fits, TULONGLONG, "cnt1", &m_mdbuffer->cnt1, nullptr, &status);
+            fits_write_key(m_fits, TULONGLONG, "cnt2", &m_mdbuffer->cnt2, nullptr, &status);
             fits_write_img(m_fits, m_d2fs.at(m_mdbuffer->atype), 1, m_mdbuffer->nelement, m_databuffer, &status);
             fits_write_chksum(m_fits, &status);
-            fits_flush_file(m_fits, &status);
 
             if (status) {
                 char err_msg[FLEN_ERRMSG];
@@ -202,46 +204,40 @@ private:
         {_DATATYPE_UINT64, SIZEOF_DATATYPE_UINT64},
         {_DATATYPE_INT64, SIZEOF_DATATYPE_INT64},
         {_DATATYPE_FLOAT, SIZEOF_DATATYPE_FLOAT},
-        {_DATATYPE_DOUBLE, SIZEOF_DATATYPE_DOUBLE},
-        {_DATATYPE_COMPLEX_FLOAT, SIZEOF_DATATYPE_COMPLEX_FLOAT},
-        {_DATATYPE_COMPLEX_DOUBLE, SIZEOF_DATATYPE_COMPLEX_DOUBLE}
+        {_DATATYPE_DOUBLE, SIZEOF_DATATYPE_DOUBLE}
     };
 
     const std::unordered_map<uint8_t, int> m_d2fd{ // lookup table from dao to fits disk data types.
         {_DATATYPE_UINT8, BYTE_IMG},
-        {_DATATYPE_INT8, BYTE_IMG},
-        {_DATATYPE_UINT16, SHORT_IMG},
+        {_DATATYPE_INT8, SBYTE_IMG},
+        {_DATATYPE_UINT16, USHORT_IMG},
         {_DATATYPE_INT16, SHORT_IMG},
-        {_DATATYPE_UINT32, LONG_IMG},
+        {_DATATYPE_UINT32, ULONG_IMG},
         {_DATATYPE_INT32, LONG_IMG},
-        {_DATATYPE_UINT64, LONGLONG_IMG},
+        {_DATATYPE_UINT64, ULONGLONG_IMG},
         {_DATATYPE_INT64, LONGLONG_IMG},
         {_DATATYPE_FLOAT, FLOAT_IMG},
-        {_DATATYPE_DOUBLE, DOUBLE_IMG},
-        {_DATATYPE_COMPLEX_FLOAT, FLOAT_IMG},
-        {_DATATYPE_COMPLEX_DOUBLE, DOUBLE_IMG}
+        {_DATATYPE_DOUBLE, DOUBLE_IMG}
     };
 
     const std::unordered_map<uint8_t, int> m_d2fs{ // lookup table from dao to fits source data types.
-        // todo fill in missing.
         {_DATATYPE_UINT8, TBYTE},
         {_DATATYPE_INT8, TSBYTE},
         {_DATATYPE_UINT16, TUSHORT},
         {_DATATYPE_INT16, TSHORT},
         {_DATATYPE_UINT32, TUINT},
         {_DATATYPE_INT32, TINT},
-        // {_DATATYPE_UINT64, ??},
+        {_DATATYPE_UINT64, TULONGLONG},
         {_DATATYPE_INT64, TLONGLONG},
         {_DATATYPE_FLOAT, TFLOAT},
         {_DATATYPE_DOUBLE, TDOUBLE}
-        // {_DATATYPE_COMPLEX_FLOAT, ??},
-        // {_DATATYPE_COMPLEX_DOUBLE, ??}
     };
 
     volatile IMAGE_METADATA *m_shm_md;
     volatile bool &m_agent_err_flag;
     const telemetry_t &m_telemetry;
     Dao::ShmIfce<uint8_t> m_sifce;
+    std::vector<long> m_axes_sizes;
     Dao::Log::Logger &m_logger;
     IMAGE_METADATA *m_mdbuffer;
     size_t m_databuffer_sz;
@@ -306,7 +302,7 @@ private:
         }
         m_logger.Debug("configuring telemetry session..");
 
-        const YAML::Node &config = YAML::Load(m_config_string); // todo throw if fails to load.
+        const YAML::Node &config = YAML::Load(m_config_string);
         m_logger.Debug("parsed configuration string");
 
         if (!config["telemetry_root"]) {
@@ -474,7 +470,7 @@ private:
 
 struct context_t {
     std::string ip = "127.0.0.1";
-    bool fileLogging = false;
+    std::string logfile = "";
     std::string configFile;
     bool autorun = false;
     size_t port;
@@ -486,13 +482,13 @@ int main(int argc, char *argv[]) {
     app.add_option("port", cxt.port, "Telemetry tool interface port")->required();
     app.add_option("--ip", cxt.ip, "Telemetry agent ip address");
     app.add_option("-c,--config", cxt.configFile, "Telemetry session configuration file");
-    app.add_flag("-f,--file-logging", cxt.fileLogging, "Output logs to file");
+    app.add_option("-l,--logfile", cxt.logfile, "Log file");
     CLI11_PARSE(app, argc, argv);
 
     Dao::Log::Logger logger(
         "telemetry-agent",
-        cxt.fileLogging ? Dao::Log::Logger::DESTINATION::FILE : Dao::Log::Logger::DESTINATION::SCREEN,
-        "dao-telemetry-agent.logs" // used if file logging.
+        cxt.logfile.length() ? Dao::Log::Logger::DESTINATION::FILE : Dao::Log::Logger::DESTINATION::SCREEN,
+        cxt.logfile
     );
     logger.SetLevel(Dao::Log::LEVEL::DEBUG);
 
