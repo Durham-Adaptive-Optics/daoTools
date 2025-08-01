@@ -23,7 +23,7 @@ BOUNDS_INT32 = (np.iinfo(np.int32).min, np.iinfo(np.int32).max)
 BOUNDS_INT64 = (np.iinfo(np.int64).min, np.iinfo(np.int64).max)
 
 DELAY = 0.1
-PORT = 9000
+PORT = 19000
 NFRAMES = 10
 LOGFILE = f"{os.getcwd()}/daoTelemetry.logs"
 ROOT = "/tmp/daoTelemetryTests"
@@ -92,9 +92,11 @@ def ifce():
 def test_integer_types(ifce, specs):
     # get test specs
     dtype,shape,bounds = specs
+    reference_frames = []
     
     # create shm
     shm = dao.shm(SHM, np.zeros(shape, dtype=dtype))
+    reference_frames.append(shm.get_data())
     
     # start telemetry session
     assert(ifce.Exec("Init")[0] == 0)
@@ -106,7 +108,6 @@ def test_integer_types(ifce, specs):
     assert(state == "Running")
     
     # write frames in to shared memory
-    reference_frames = []
     for i in range(NFRAMES):
         data = np.random.randint(bounds[0], bounds[-1], size=shape, dtype=dtype)
         reference_frames.append(data)
@@ -133,11 +134,12 @@ def test_integer_types(ifce, specs):
         assert(len(data) == NFRAMES) # check all frames were recorded.
         
         for frame_id, hdu in enumerate(data): # for each frame, ensure metadata is present & data was recorded correctly.
+            print(f"frame {frame_id}")
             assert("atype" in hdu.header)
             assert("cnt0" in hdu.header)
             assert("cnt1" in hdu.header)
             assert("cnt2" in hdu.header)
-            print(hdu.data)
+            print(f"expected: {reference_frames[frame_id]} : got: {hdu.data}")
             assert(np.array_equal(hdu.data, reference_frames[frame_id]))
     
     shutil.rmtree(session_folder)
@@ -158,9 +160,11 @@ def test_integer_types(ifce, specs):
 def test_real_types(ifce, specs):
     # get test specs
     dtype,shape = specs
+    reference_frames = []
     
     # create shm
     shm = dao.shm(SHM, np.zeros(shape, dtype=dtype))
+    reference_frames.append(shm.get_data())
     
     # start telemetry session
     assert(ifce.Exec("Init")[0] == 0)
@@ -172,7 +176,6 @@ def test_real_types(ifce, specs):
     assert(state == "Running")
     
     # write frames in to shared memory
-    reference_frames = []
     for i in range(NFRAMES):
         data = np.random.random(size=shape).astype(dtype)
         reference_frames.append(data)
@@ -203,7 +206,7 @@ def test_real_types(ifce, specs):
             assert("cnt0" in hdu.header)
             assert("cnt1" in hdu.header)
             assert("cnt2" in hdu.header)
-            print(hdu.data)
+            print(f"expected: {reference_frames[frame_id]} : got: {hdu.data}")
             assert(np.array_equal(hdu.data, reference_frames[frame_id]))
     
     shutil.rmtree(session_folder)
