@@ -159,12 +159,6 @@ private:
             }
         }
 
-        // create fits file if we don't have one..
-        if (!m_fits && !new_fits()) {
-            m_agent_err_flag = true;
-            return;
-        }
-
         // collect next telemetry frame (or first, if we've only just started)
         const uint64_t cnt0_ = m_shm_md->cnt0;
         if (cnt0_ > m_cnt0 || m_first_time) {
@@ -173,10 +167,27 @@ private:
             memcpy(m_databuffer, m_shm.array.V, m_databuffer_sz); // copy out data to prevent overwrite corruption.
             if (m_shm_md->cnt0 > m_cnt0) return; // drop frame, could be corrupted.
 
+            // create fits file if we don't have one..
+            if (!m_fits && !new_fits()) {
+                m_agent_err_flag = true;
+                return;
+            }
+
             m_first_time = false;
 
             int status = 0;
+            
+            // Create a new image (this will be a primary HDU if the file is empty, otherwise it will be an image extension)
             fits_create_img(m_fits, m_d2fd.at(m_mdbuffer->atype), m_mdbuffer->naxis, m_axes_sizes.data(), &status);
+            
+            if (status) {
+                char err_msg[FLEN_ERRMSG];
+                fits_get_errstatus(status, err_msg);
+                m_log.Error("collector for %s experienced an error when creating image HDU: %s", m_telemetry.target.c_str(), err_msg);
+                m_agent_err_flag = true;
+                return;
+            }
+            
             fits_write_key(m_fits, TBYTE, "atype", &m_mdbuffer->atype, nullptr, &status);
             fits_write_key(m_fits, TLONGLONG, "atime", &m_mdbuffer->atime.tsfixed.secondlong, nullptr, &status);
             fits_write_key(m_fits, TULONGLONG, "cnt0", &m_mdbuffer->cnt0, nullptr, &status);
