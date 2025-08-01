@@ -6,7 +6,6 @@
 
 // todo support dao complex-float & complex-double datatypes (requires table hdu).
 
-#include <cfitsio/fitsio.h>
 #include <daoComponent.hpp>
 #include <yaml-cpp/yaml.h>
 #include <daoThread.hpp>
@@ -17,6 +16,7 @@
 #include <CLI11.hpp>
 #include <algorithm>
 #include <stdint.h>
+#include <fitsio.h>
 #include <assert.h>
 #include <fstream>
 #include <sstream>
@@ -91,16 +91,14 @@ private:
     bool close_fits() {
         int status = 0;
         fits_close_file(m_fits, &status);
+        m_fits = nullptr;
         
         if (status) {
             char err_msg[FLEN_ERRMSG];
             fits_get_errstatus(status, err_msg);
             m_log.Error("collector for %s experienced an error when closing a datafile: %s", m_telemetry.target.c_str(), err_msg);
         }
-        else {
-            m_fits = nullptr;
-        }
-        
+
         return !status;
     }
 
@@ -449,8 +447,9 @@ private:
         destroy_session();
     }
 
-    void transition_Error_Idle() override { // todo crashes.
+    void transition_Error_Idle() override {
         destroy_session();
+        m_err_flag = false;
         configure_session();
         prepare_session();
     }
