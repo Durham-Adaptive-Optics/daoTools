@@ -274,6 +274,8 @@ public:
                 m_log.Warning("telemetry session configuration file could not be loaded");
             }
         }
+
+        m_first_run = true;
     }
 
     // Updates agent state.
@@ -384,6 +386,7 @@ private:
     }
 
     void begin_session() {
+        if (m_first_run) {
         for (const std::string &path : m_files_list) {
             // get file name from path..
             std::string filename = path;
@@ -399,6 +402,9 @@ private:
             }
 
             m_log.Debug("successfully copied file %s to %s", path.c_str(), dst.c_str());
+            }
+
+            m_first_run = false;
         }
 
         for (telemetry_t &t : m_telemetry_list) {
@@ -468,6 +474,7 @@ private:
     Dao::Log::Logger &m_logger;
     std::string m_session_dir;
     volatile bool m_err_flag;
+    bool m_first_run;
 };
 
 /*--------------------------------------------------------------------------*/
