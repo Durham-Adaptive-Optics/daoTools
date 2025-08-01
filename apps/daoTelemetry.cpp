@@ -129,6 +129,7 @@ private:
 
     void OnceOnStart() override {
         m_cnt0 = m_shm_md->cnt0;
+        m_first_time = true;
     }
 
     void OnceOnStop() override {
@@ -164,13 +165,15 @@ private:
             return;
         }
 
-        // collect next telemetry frame...
+        // collect next telemetry frame (or first, if we've only just started)
         const uint64_t cnt0_ = m_shm_md->cnt0;
-        if (cnt0_ > m_cnt0) {
+        if (cnt0_ > m_cnt0 || m_first_time) {
             m_cnt0 = cnt0_;
             memcpy(m_mdbuffer, m_shm.md, sizeof(IMAGE_METADATA)); // copy out metadata to prevent overwrite corruption.
             memcpy(m_databuffer, m_shm.array.V, m_databuffer_sz); // copy out data to prevent overwrite corruption.
             if (m_shm_md->cnt0 > m_cnt0) return; // drop frame, could be corrupted.
+
+            m_first_time = false;
 
             int status = 0;
             fits_create_img(m_fits, m_d2fd.at(m_mdbuffer->atype), m_mdbuffer->naxis, m_axes_sizes.data(), &status);
@@ -248,6 +251,7 @@ private:
     uint64_t m_cnt0;
     size_t m_nfiles;
     IMAGE m_shm;
+    bool m_first_time;
 };
 
 /*--------------------------------------------------------------------------*/
