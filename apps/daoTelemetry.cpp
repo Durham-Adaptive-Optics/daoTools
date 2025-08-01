@@ -129,7 +129,6 @@ private:
 
     void OnceOnStart() override {
         m_cnt0 = m_shm_md->cnt0;
-        m_first_time = true;
     }
 
     void OnceOnStop() override {
@@ -161,7 +160,7 @@ private:
 
         // collect next telemetry frame (or first, if we've only just started)
         const uint64_t cnt0_ = m_shm_md->cnt0;
-        if (cnt0_ > m_cnt0 || m_first_time) {
+        if (cnt0_ > m_cnt0 || !nframes_tot) {
             m_cnt0 = cnt0_;
             memcpy(m_mdbuffer, m_shm.md, sizeof(IMAGE_METADATA)); // copy out metadata to prevent overwrite corruption.
             memcpy(m_databuffer, m_shm.array.V, m_databuffer_sz); // copy out data to prevent overwrite corruption.
@@ -172,14 +171,10 @@ private:
                 m_agent_err_flag = true;
                 return;
             }
-
-            m_first_time = false;
-
+            
+            // record frame..
             int status = 0;
-            
-            // Create a new image (this will be a primary HDU if the file is empty, otherwise it will be an image extension)
             fits_create_img(m_fits, m_d2fd.at(m_mdbuffer->atype), m_mdbuffer->naxis, m_axes_sizes.data(), &status);
-            
             if (status) {
                 char err_msg[FLEN_ERRMSG];
                 fits_get_errstatus(status, err_msg);
@@ -187,7 +182,6 @@ private:
                 m_agent_err_flag = true;
                 return;
             }
-            
             fits_write_key(m_fits, TBYTE, "atype", &m_mdbuffer->atype, nullptr, &status);
             fits_write_key(m_fits, TLONGLONG, "atime", &m_mdbuffer->atime.tsfixed.secondlong, nullptr, &status);
             fits_write_key(m_fits, TULONGLONG, "cnt0", &m_mdbuffer->cnt0, nullptr, &status);
@@ -195,7 +189,6 @@ private:
             fits_write_key(m_fits, TULONGLONG, "cnt2", &m_mdbuffer->cnt2, nullptr, &status);
             fits_write_img(m_fits, m_d2fs.at(m_mdbuffer->atype), 1, m_mdbuffer->nelement, m_databuffer, &status);
             fits_write_chksum(m_fits, &status);
-
             if (status) {
                 char err_msg[FLEN_ERRMSG];
                 fits_get_errstatus(status, err_msg);
@@ -203,7 +196,6 @@ private:
                 m_agent_err_flag = true;
                 return;
             }
-
             ++m_currfile_sz;
         }
     }
@@ -262,7 +254,6 @@ private:
     uint64_t m_cnt0;
     size_t m_nfiles;
     IMAGE m_shm;
-    bool m_first_time;
 };
 
 /*--------------------------------------------------------------------------*/
