@@ -40,6 +40,18 @@ struct telemetry_t {
 
 /*--------------------------------------------------------------------------*/
 
+#define FITS_CHECK(expr) \
+        (expr);
+        if (status) { \
+            char err_msg[FLEN_ERRMSG]; \
+            fits_get_errstatus(status, err_msg); \
+            m_log.Error("collector for %s experienced an error when recording frame: %s", m_telemetry.target.c_str(), err_msg); \
+            m_agent_err_flag = true; \
+            return; \
+        }
+
+/*--------------------------------------------------------------------------*/
+
 class collector_t : public Dao::Thread {
 public:
     collector_t(Dao::Log::Logger &logger, const telemetry_t &t, volatile bool &agent_err_flag)
@@ -175,28 +187,14 @@ private:
 
             // record frame..
             int status = 0;
-            fits_create_img(m_fits, m_d2fd.at(m_mdbuffer->atype), m_mdbuffer->naxis, m_axes_sizes.data(), &status);
-            if (status) {
-                char err_msg[FLEN_ERRMSG];
-                fits_get_errstatus(status, err_msg);
-                m_log.Error("collector for %s experienced an error when creating image HDU: %s", m_telemetry.target.c_str(), err_msg);
-                m_agent_err_flag = true;
-                return;
-            }
-            fits_write_key(m_fits, TBYTE, "atype", &m_mdbuffer->atype, nullptr, &status);
-            fits_write_key(m_fits, TLONGLONG, "atime", &m_mdbuffer->atime.tsfixed.secondlong, nullptr, &status);
-            fits_write_key(m_fits, TULONGLONG, "cnt0", &m_mdbuffer->cnt0, nullptr, &status);
-            fits_write_key(m_fits, TULONGLONG, "cnt1", &m_mdbuffer->cnt1, nullptr, &status);
-            fits_write_key(m_fits, TULONGLONG, "cnt2", &m_mdbuffer->cnt2, nullptr, &status);
-            fits_write_img(m_fits, m_d2fs.at(m_mdbuffer->atype), 1, m_mdbuffer->nelement, m_databuffer, &status);
-            fits_write_chksum(m_fits, &status);
-            if (status) {
-                char err_msg[FLEN_ERRMSG];
-                fits_get_errstatus(status, err_msg);
-                m_log.Error("collector for %s experienced an error when recording frame: %s", m_telemetry.target.c_str(), err_msg);
-                m_agent_err_flag = true;
-                return;
-            }
+            FITS_CHECK( fits_create_img(m_fits, m_d2fd.at(m_mdbuffer->atype), m_mdbuffer->naxis, m_axes_sizes.data(), &status) );
+            FITS_CHECK( fits_write_key(m_fits, TBYTE, "atype", &m_mdbuffer->atype, nullptr, &status) );
+            FITS_CHECK( fits_write_key(m_fits, TLONGLONG, "atime", &m_mdbuffer->atime.tsfixed.secondlong, nullptr, &status) );
+            FITS_CHECK( fits_write_key(m_fits, TULONGLONG, "cnt0", &m_mdbuffer->cnt0, nullptr, &status) );
+            FITS_CHECK( fits_write_key(m_fits, TULONGLONG, "cnt1", &m_mdbuffer->cnt1, nullptr, &status) );
+            FITS_CHECK( fits_write_key(m_fits, TULONGLONG, "cnt2", &m_mdbuffer->cnt2, nullptr, &status) );
+            FITS_CHECK( fits_write_img(m_fits, m_d2fs.at(m_mdbuffer->atype), 1, m_mdbuffer->nelement, m_databuffer, &status) );
+            FITS_CHECK( fits_write_chksum(m_fits, &status) );
             ++m_currfile_sz;
         }
     }
