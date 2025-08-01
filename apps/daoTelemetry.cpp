@@ -41,7 +41,7 @@ struct telemetry_t {
 /*--------------------------------------------------------------------------*/
 
 #define FITS_CHECK(expr) \
-        (expr);
+        (expr); \
         if (status) { \
             char err_msg[FLEN_ERRMSG]; \
             fits_get_errstatus(status, err_msg); \
@@ -121,7 +121,7 @@ private:
 
         // create file..
         int status = 0;
-        std::string fpath = m_fsroot + name + ".fits";
+        std::string fpath = m_fsroot + "/" + name + ".fits";
         m_log.Debug("collector for %s creating new datafile: %s", m_telemetry.target.c_str(), fpath.c_str());
 
         fits_create_file(&m_fits, fpath.c_str(), &status);
@@ -140,6 +140,8 @@ private:
 
     void OnceOnStart() override {
         m_cnt0 = m_shm_md->cnt0;
+        m_currfile_sz = 0;
+        m_nfiles = 0;
     }
 
     void OnceOnStop() override {
@@ -375,7 +377,7 @@ private:
         time_t t = time(nullptr);
         tm *td = localtime(&t);
         strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", td);
-        session_dir = m_telemetry_root + "/" + timestamp;
+        const std::string session_dir = m_telemetry_root + "/" + timestamp;
         if (mkdir(session_dir.c_str(), 0755)) {
             throw std::runtime_error("failed to create session directory");
         }
@@ -430,7 +432,7 @@ private:
 
     // set configuration string
     void set_config(const std::string &configstr) {
-        m_config_string = payload;
+        m_config_string = configstr;
         m_logger.Info("configuration loaded");
     }
 
@@ -452,6 +454,7 @@ private:
         m_err_flag = false;
         configure();
         alloc_recording_resources();
+    }
 
     /* -------------------------------------------------------------------------------------------- */
 
