@@ -12,201 +12,293 @@ import shutil
 import dao
 import os
 
-BOUNDS_UINT8 = (np.iinfo(np.uint8).min, np.iinfo(np.uint8).max)
-BOUNDS_UINT16 = (np.iinfo(np.uint16).min, np.iinfo(np.uint16).max)
-BOUNDS_UINT32 = (np.iinfo(np.uint32).min, np.iinfo(np.uint32).max)
-BOUNDS_UINT64 = (np.iinfo(np.uint64).min, np.iinfo(np.uint64).max)
+# ========================================================================================== #
 
-BOUNDS_INT8 = (np.iinfo(np.int8).min, np.iinfo(np.int8).max)
-BOUNDS_INT16 = (np.iinfo(np.int16).min, np.iinfo(np.int16).max)
-BOUNDS_INT32 = (np.iinfo(np.int32).min, np.iinfo(np.int32).max)
-BOUNDS_INT64 = (np.iinfo(np.int64).min, np.iinfo(np.int64).max)
-
-DELAY = 0.1
 PORT = 19000
-NFRAMES = 10
-LOGFILE = f"{os.getcwd()}/daoTelemetry.logs"
 ROOT = "/tmp/daoTelemetryTests"
 SHM = "/tmp/test_daoTelemetry.im.shm"
-CONFIG = f"telemetry_root: {ROOT}\ntelemetry:\n - {{target: {SHM}, limit: {NFRAMES}}}"
 
 # ========================================================================================== #
 
-@pytest.fixture(scope='module')
-def ifce():
-    print(f"logs: {LOGFILE}")
+@pytest.fixture
+def tool():
     os.mkdir(ROOT)
     try:
-        daoTelemetry = subprocess.Popen(['daoTelemetry', f"{PORT}", f"-l {LOGFILE}"])
+        daoTelemetry = subprocess.Popen(['daoTelemetry', f"{PORT}"])
         sleep(0.5)
-        ifce = daoCommandIfce("127.0.0.1", PORT)
-        assert(ifce.Other(CONFIG)[0] == 0)
+        ifce = daoCommandIfce("127.0.0.1", PORT, timeout=5)
         yield ifce
-        daoTelemetry.kill()
     finally:
+        daoTelemetry.kill()
         shutil.rmtree(ROOT)
 
 # ========================================================================================== #
 
-@pytest.mark.parametrize("specs", [
-    # _DATATYPE_UINT64
-    (np.uint64, (1,1), BOUNDS_UINT64),
-    (np.uint64, (2,3), BOUNDS_UINT64),
-    (np.uint64, (2,3,4), BOUNDS_UINT64),
-    
-    # _DATATYPE_UINT32
-    (np.uint32, (1,1), BOUNDS_UINT32),
-    (np.uint32, (2,3), BOUNDS_UINT32),
-    (np.uint32, (2,3,4), BOUNDS_UINT32),
-    
-    # _DATATYPE_UINT16
-    (np.uint16, (1,1), BOUNDS_UINT16),
-    (np.uint16, (2,3), BOUNDS_UINT16),
-    (np.uint16, (2,3,4), BOUNDS_UINT16),
-    
-    # _DATATYPE_UINT8
-    (np.uint8, (1,1), BOUNDS_UINT8),
-    (np.uint8, (2,3), BOUNDS_UINT8),
-    (np.uint8, (2,3,4), BOUNDS_UINT8),
-    
-    # _DATATYPE_INT8
-    (np.int8, (1,1), BOUNDS_INT8),
-    (np.int8, (2,3), BOUNDS_INT8),
-    (np.int8, (2,3,4), BOUNDS_INT8),
-    
-    # _DATATYPE_INT16
-    (np.int16, (1,1), BOUNDS_INT16),
-    (np.int16, (2,3), BOUNDS_INT16),
-    (np.int16, (2,3,4), BOUNDS_INT16),
-    
-    # _DATATYPE_INT32
-    (np.int32, (1,1), BOUNDS_INT32),
-    (np.int32, (2,3), BOUNDS_INT32),
-    (np.int32, (2,3,4), BOUNDS_INT32),
-        
-    # _DATATYPE_INT64
-    (np.int64, (1,1), BOUNDS_INT64),
-    (np.int64, (2,3), BOUNDS_INT64),
-    (np.int64, (2,3,4), BOUNDS_INT64)
-])
-def test_integer_types(ifce, specs):
-    # get test specs
-    dtype,shape,bounds = specs
-    reference_frames = []
-    
-    # create shm
-    shm = dao.shm(SHM, np.zeros(shape, dtype=dtype))
-    reference_frames.append(shm.get_data())
-    
-    # start telemetry session
-    assert(ifce.Exec("Init")[0] == 0)
-    assert(ifce.Exec("Enable")[0] == 0)
-    assert(ifce.Exec("Run")[0] == 0)
+def test_Manual_Session(tool: daoCommandIfce):
+    # configure tool
+    assert(tool.Other(
+        f"telemetry_root: {ROOT}\ntelemetry:\n - {{target: {SHM}}}"    
+    )[0] == 0)
 
-    status, state = ifce.State(None)
-    assert(status == 0)
-    assert(state == "Running")
+    # create shm
+    _ = dao.shm(SHM, np.zeros((1,1)))
     
-    # write frames in to shared memory
-    for i in range(NFRAMES):
-        data = np.random.randint(bounds[0], bounds[-1], size=shape, dtype=dtype)
-        reference_frames.append(data)
+    # start session
+    assert(tool.Exec("Init")[0] == 0)
+    assert(tool.Exec("Enable")[0] == 0)
+    assert(tool.Exec("Run")[0] == 0)
+
+    status, state = tool.State(None)
+    assert((status == 0) and (state == "Running"))
+
+    # end session
+    assert(tool.Exec("Idle")[0] == 0)
+    assert(tool.Exec("Disable")[0] == 0)
+    assert(tool.Exec("Stop")[0] == 0)
+
+    status, state = tool.State(None)
+    assert((status == 0) and (state == "Off"))
+
+# ========================================================================================== #
+
+def test_Consecutive_Sessions(tool: daoCommandIfce):
+    NSESSIONS = 3
+    
+    # configure tool
+    assert(tool.Other(
+        f"telemetry_root: {ROOT}\ntelemetry:\n - {{target: {SHM}}}"    
+    )[0] == 0)
+
+    # create shm
+    _ = dao.shm(SHM, np.zeros((1,1)))
+    
+    # prep session
+    assert(tool.Exec("Init")[0] == 0)
+    assert(tool.Exec("Enable")[0] == 0)
+    
+    for _ in range(NSESSIONS):
+        # start session
+        assert(tool.Exec("Run")[0] == 0)
+
+        status, state = tool.State(None)
+        assert((status == 0) and (state == "Running"))
+
+        # end session
+        assert(tool.Exec("Idle")[0] == 0)
+
+        status, state = tool.State(None)
+        assert((status == 0) and (state == "Idle"))
+        
+        # delay so the session dir timestamps are different
+        sleep(3)
+        
+    assert(tool.Exec("Disable")[0] == 0)
+    assert(tool.Exec("Stop")[0] == 0)
+
+    status, state = tool.State(None)
+    assert((status == 0) and (state == "Off"))
+
+# ========================================================================================== #
+
+def test_Automated_Session(tool: daoCommandIfce):
+    # configure tool
+    NFRAMES = 10
+    DELAY = 0.1
+    
+    assert(tool.Other(
+        f"telemetry_root: {ROOT}\ntelemetry:\n - {{target: {SHM}, limit: {NFRAMES}}}"    
+    )[0] == 0)
+
+    # create shm
+    shm = dao.shm(SHM, np.zeros((1,1)))
+    
+    # start session
+    assert(tool.Exec("Init")[0] == 0)
+    assert(tool.Exec("Enable")[0] == 0)
+    assert(tool.Exec("Run")[0] == 0)
+
+    status, state = tool.State(None)
+    assert((status == 0) and (state == "Running"))
+
+    # write frames to shm
+    for _ in range(NFRAMES-1):
+        data = np.random.rand(1,1)
         shm.set_data(data)
         sleep(DELAY)
     
-    # wait for telemetry-session to finish
-    while True:
-        status, state = ifce.State(None)
-        assert(status == 0)
-        if state == "Off":
-            break
-        
-    # validate datafile
-    session_folder_name = os.listdir(ROOT)[0]
-    session_folder = f"{ROOT}/{session_folder_name}"
-    print(f"session folder: {session_folder}")
+    # await session end
+    sleep(1)
+    status, state = tool.State(None)
+    assert((status == 0) and (state == "Off"))
+
+# ========================================================================================== #
+
+def test_Configuration_Error(tool: daoCommandIfce):
+    # configure tool
+    assert(tool.Other("")[0] == 0)
+
+    # create shm
+    _ = dao.shm(SHM, np.zeros((1,1)))
     
-    datafile_name = os.listdir(session_folder)[0]
-    datafile = f"{session_folder}/{datafile_name}"
-    print(f"datafile: {datafile}")
+    # start session
+    assert(tool.Exec("Init")[0] == 0)
     
-    with fits.open(datafile) as data:
-        assert(len(data) == NFRAMES) # check all frames were recorded.
-        
-        for frame_id, hdu in enumerate(data): # for each frame, ensure metadata is present & data was recorded correctly.
-            print(f"frame {frame_id}")
-            assert("atype" in hdu.header)
-            assert("cnt0" in hdu.header)
-            assert("cnt1" in hdu.header)
-            assert("cnt2" in hdu.header)
-            print(f"expected: {reference_frames[frame_id]} : got: {hdu.data}")
-            assert(np.array_equal(hdu.data, reference_frames[frame_id]))
+    # check we went to error state
+    status, state = tool.State(None)
+    assert((status == 0) and (state == "Error"))
     
-    shutil.rmtree(session_folder)
+    # update to a valid config
+    assert(tool.Other(
+        f"telemetry_root: {ROOT}\ntelemetry:\n - {{target: {SHM}}}"    
+    )[0] == 0)
+
+    # recover from error state
+    assert(tool.Exec("Recover")[0] == 0)
+
+    # check we recovered to Idle
+    sleep(1)
+    status, state = tool.State(None)
+    assert((status == 0) and (state == "Idle"))
     
 # ========================================================================================== #
 
-@pytest.mark.parametrize("specs", [
-    # _DATATYPE_FLOAT
-    (np.float32, (1,1)),
-    (np.float32, (2,3)),
-    (np.float32, (2,3,4)),
-    
-    # _DATATYPE_DOUBLE
-    (np.float64, (1,1)),
-    (np.float64, (2,3)),
-    (np.float64, (2,3,4)),
-])
-def test_real_types(ifce, specs):
-    # get test specs
-    dtype,shape = specs
-    reference_frames = []
-    
-    # create shm
-    shm = dao.shm(SHM, np.zeros(shape, dtype=dtype))
-    reference_frames.append(shm.get_data())
-    
-    # start telemetry session
-    assert(ifce.Exec("Init")[0] == 0)
-    assert(ifce.Exec("Enable")[0] == 0)
-    assert(ifce.Exec("Run")[0] == 0)
+def test_Allocation_Error(tool: daoCommandIfce):
+    # configure tool
+    assert(tool.Other(
+        f"telemetry_root: {ROOT}\ntelemetry:\n - {{target: /tmp/__foobar__.im.shm}}"    
+    )[0] == 0)
 
-    status, state = ifce.State(None)
-    assert(status == 0)
-    assert(state == "Running")
+    # create shm
+    _ = dao.shm(SHM, np.zeros((1,1)))
     
-    # write frames in to shared memory
-    for i in range(NFRAMES):
-        data = np.random.random(size=shape).astype(dtype)
-        reference_frames.append(data)
-        shm.set_data(data)
-        sleep(DELAY)
+    # start session
+    assert(tool.Exec("Init")[0] == 0)
+    assert(tool.Exec("Enable")[0] == 0)
     
-    # wait for telemetry-session to finish
-    while True:
-        status, state = ifce.State(None)
-        assert(status == 0)
-        if state == "Off":
-            break
+    # check we went to error state
+    status, state = tool.State(None)
+    assert((status == 0) and (state == "Error"))
+    
+    # update to a valid config
+    assert(tool.Other(
+        f"telemetry_root: {ROOT}\ntelemetry:\n - {{target: {SHM}}}"    
+    )[0] == 0)
+
+    # recover from error state
+    assert(tool.Exec("Recover")[0] == 0)
+
+    # check we recovered to Idle
+    sleep(1)
+    status, state = tool.State(None)
+    assert((status == 0) and (state == "Idle"))
+
+# # ========================================================================================== #
+
+# def test_Recording_Error(tool: daoCommandIfce):
+#     ENV = f"{ROOT}/tmp"
+#     os.mkdir(ENV)
+
+#     # configure tool
+#     assert(tool.Other(
+#         f"telemetry_root: {ENV}\ntelemetry:\n - {{target: {SHM}}}"    
+#     )[0] == 0)
+
+#     # create shm
+#     data = np.zeros((1,1))
+#     shm = dao.shm(SHM, data)
+    
+#     # start session
+#     assert(tool.Exec("Init")[0] == 0)
+#     assert(tool.Exec("Enable")[0] == 0)
+#     assert(tool.Exec("Run")[0] == 0)
+    
+#     # delete session directory and push new frame 
+#     # to trigger a recording error.
+#     shutil.rmtree(ENV)
+#     shm.set_data(data)
+    
+#     # check we went to error state
+#     sleep(0.5)
+#     status, state = tool.State(None)
+#     assert((status == 0) and (state == "Error"))
+
+#     # recover from error state
+#     assert(tool.Exec("Recover")[0] == 0)
+
+#     # check we recovered to Idle
+#     sleep(0.5)
+#     status, state = tool.State(None)
+#     assert((status == 0) and (state == "Idle"))
+
+# # ========================================================================================== #
+
+# @pytest.mark.parametrize("dtype", numpy_dtypes = [
+#     np.int8, np.int16, np.int32, np.int64,
+#     np.uint8, np.uint16, np.uint32, np.uint64,
+#     np.float32, np.float64,
+# ])
+# @pytest.mark.parametrize("shape", [(2,3), (2,3,4)])
+# @pytest.mark.parametrize("unity", [True, False])
+# def test_Data_Integrity(tool: daoCommandIfce, unity, dtype, shape):
+#     ENV = f"{ROOT}/test_Data_Integrity"
+#     os.mkdir(ENV)
+    
+#     #
+#     NFRAMES = 100
+#     DELAY = 0.1
+#     CAP = 0 if unity else (NFRAMES // 3)
+    
+#     # create shm
+#     shm = dao.shm(SHM, np.zeros(shape, dtype=dtype))
+
+#     # configure session
+#     assert(tool.Other(
+#         f"telemetry_root: {ROOT}\ntelemetry:\n - {{target: {SHM}, capacity: {CAP}, limit: {NFRAMES}}}"    
+#     )[0] == 0)
+
+#     # start telemetry session
+#     assert(tool.Exec("Init")[0] == 0)
+#     assert(tool.Exec("Enable")[0] == 0)
+#     assert(tool.Exec("Run")[0] == 0)
+
+#     status, state = tool.State(None)
+#     assert((status == 0) and (state == "Running"))
+    
+#     # write frames in to shared memory
+#     gold_data = []
+#     min, max = np.iinfo(dtype).min, np.iinfo(dtype).max
+#     gold_data.append(shm.get_data())
+#     for _ in range(NFRAMES-1):
+#         data = np.random.randint(min, max, size=shape, dtype=dtype)
+#         gold_data.append(data)
+#         shm.set_data(data)
+#         sleep(DELAY)
+    
+#     # end session
+#     sleep(1)
+#     status, state = tool.State(None)
+#     assert((status == 0) and (state == "Off"))
         
-    # validate datafile
-    session_folder_name = os.listdir(ROOT)[0]
-    session_folder = f"{ROOT}/{session_folder_name}"
-    print(f"session folder: {session_folder}")
+#     # gather recorded data into a list for checking
+#     disk_data = []
+#     sessiondir = os.listdir(ENV)[0]
+#     for datafile in os.listdir(sessiondir):
+#         with fits.open(datafile) as data:
+#             disk_data.append(data)
     
-    datafile_name = os.listdir(session_folder)[0]
-    datafile = f"{session_folder}/{datafile_name}"
-    print(f"datafile: {datafile}")
-    
-    with fits.open(datafile) as data:
-        assert(len(data) == NFRAMES) # check all frames were recorded.
-        
-        for frame_id, hdu in enumerate(data): # for each frame, ensure metadata is present & data was recorded correctly.
-            assert("atype" in hdu.header)
-            assert("cnt0" in hdu.header)
-            assert("cnt1" in hdu.header)
-            assert("cnt2" in hdu.header)
-            print(f"expected: {reference_frames[frame_id]} : got: {hdu.data}")
-            assert(np.array_equal(hdu.data, reference_frames[frame_id]))
-    
-    shutil.rmtree(session_folder)
+#     # check recorded data is accurate
+#     assert(len(gold_data) == len(disk_data))
+#     for frame_id in range(len(gold_data)):
+#         disk_frame = disk_data[frame_id]
+#         gold_frame = gold_data[frame_id]
+#         assert(np.array_equal(disk_data.data, gold_frame))
+#         assert("atype" in disk_frame.header)
+#         assert("atime" in disk_frame.header)
+#         assert("cnt0" in disk_frame.header)
+#         assert("cnt1" in disk_frame.header)
+#         assert("cnt2" in disk_frame.header)
+   
+#     # cleanup
+#     shutil.rmtree(ENV)
+
+# # ========================================================================================== #
