@@ -59,6 +59,10 @@ public:
         m_sifce(logger), m_shmname(t.target), m_nfiles(0), m_currfile_sz(0),
         m_agent_err_flag(agent_err_flag), m_fits(nullptr) 
     {
+        // create worker thread - this is done first so it is joinable
+        // upon error recovery.
+        Spawn();
+        
         // open shared memory..
         if (daoShmShm2Img(t.target.c_str(), &m_shm) != DAO_SUCCESS) {
             throw std::runtime_error("collector failed to open shared memory");
@@ -78,7 +82,7 @@ public:
 
         // get data shape..
         for (size_t i = 0; i < m_shm_md->naxis; ++i) m_axes_sizes.push_back(m_shm_md->size[i]);
-        std::reverse(m_axes_sizes.begin(), m_axes_sizes.end());
+        std::reverse(m_axes_sizes.begin(), m_axes_sizes.end()); // todo dont need this, do i=n etc 
 
         // allocate internal data buffer..
         const uint8_t atype = m_shm.md->atype;
@@ -93,9 +97,6 @@ public:
         if (!m_databuffer) {
             throw std::runtime_error("collector buffer allocation failed");
         }
-
-        // create worker thread..
-        Spawn();
     }
 
     void set_fsroot(const std::string &fsroot) { m_fsroot = fsroot; }
@@ -292,6 +293,7 @@ public:
                 }
                 if (n_exited == m_telemetry_list.size()) {
                     while (GetStateText() == "Running") Idle();
+                    // todo: just goto idle here to end session?
                     while (GetStateText() == "Idle") Disable();
                     while (GetStateText() == "Standby") Stop();
                 }
@@ -378,10 +380,10 @@ private:
         tm *td = localtime(&t);
         strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", td);
         const std::string session_dir = m_telemetry_root + "/" + timestamp;
+        m_log.Info("creating session directory: %s", session_dir.c_str());
         if (mkdir(session_dir.c_str(), 0755)) {
             throw std::runtime_error("failed to create session directory");
         }
-        m_log.Info("telemetry session directory created: %s", session_dir.c_str());
 
         // copy over desired files..
         for (const std::string &path : m_files_list) {
@@ -421,6 +423,7 @@ private:
 
     void dealloc_recording_resources() {
         for (telemetry_t &t : m_telemetry_list) {
+            t.collector->Exit();
             t.collector->Join();
             delete t.collector;
         }
