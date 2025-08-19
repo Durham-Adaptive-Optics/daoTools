@@ -31,7 +31,7 @@
 struct collector_t;
 
 struct telemetry_t {
-    collector_t *collector;     // object handling the collection of this telemetry.
+    collector_t *collector = nullptr;     // object handling the collection of this telemetry.
     std::string target;
     size_t capacity;    // if zero all data goes into one file.
     size_t limit;      // if zero we collect until stopped.
@@ -59,10 +59,6 @@ public:
         m_sifce(logger), m_shmname(t.target), m_nfiles(0), m_currfile_sz(0),
         m_agent_err_flag(agent_err_flag), m_fits(nullptr) 
     {
-        // create worker thread - this is done first so it is joinable
-        // upon error recovery.
-        Spawn();
-        
         // open shared memory..
         if (daoShmShm2Img(t.target.c_str(), &m_shm) != DAO_SUCCESS) {
             throw std::runtime_error("collector failed to open shared memory");
@@ -364,11 +360,11 @@ private:
         m_logger.Debug("configuration applied");
     }
 
-
     void alloc_recording_resources() {
         for (telemetry_t &t : m_telemetry_list) {
             m_logger.Debug("allocating telemetry collector for %s..", t.target.c_str());
             t.collector = new collector_t(m_logger, t, m_err_flag);
+            t.collector->Spawn();
         }
         m_log.Info("recording resources allocated");
     }
@@ -423,9 +419,11 @@ private:
 
     void dealloc_recording_resources() {
         for (telemetry_t &t : m_telemetry_list) {
-            t.collector->Exit();
-            t.collector->Join();
-            delete t.collector;
+            if(t.collector) {
+                t.collector->Exit();
+                t.collector->Join();
+                delete t.collector;
+            }
         }
         m_telemetry_list.clear();
         m_log.Info("recording resources freed");
