@@ -1,10 +1,14 @@
 /**
- * @brief   Dao Telemetry Tool
- * @author  T.N Davies
- * @date    15/07/2025
+ * @ Author: Thomas N. Davies
+ * @ Company: Centre for Advanced Instrumentation, Durham University
+ * @ Contact: thomas.n.davies@durham.ac.uk
+ * @ Create Time: 2025-09-01 13:06:33
+ * @ Description: Tool for recording dao shared memory frames to FITS data files.
  */
 
- // todo support dao complex-float & complex-double datatypes (requires table hdu).
+/*--------------------------------------------------------------------------*/
+
+// todo support dao complex-float & complex-double datatypes (requires table hdu).
 
 #include <daoComponent.hpp>
 #include <yaml-cpp/yaml.h>
@@ -27,7 +31,8 @@
 #include <ctime>
 #include <dao.h>
 
- /*--------------------------------------------------------------------------*/
+/*--------------------------------------------------------------------------*/
+
 struct collector_t;
 
 struct telemetry_t {
