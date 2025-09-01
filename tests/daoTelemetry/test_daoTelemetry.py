@@ -1,10 +1,15 @@
-# @author: Thomas Davies
-# @date: 15/08/2025
-# @brief: daoTelemetry testing
+'''
+ # @ Author: Thomas N. Davies
+ # @ Company: Centre for Advanced Instrumentation, Durham University
+ # @ Contact: thomas.n.davies@durham.ac.uk
+ # @ Create Time: 2025-09-01 13:06:33
+ # @ Description: Test suite for daoTelemetry.
+ '''
 
 # ========================================================================================== #
 # IMPORTS
 # ========================================================================================== #
+
 from daoCommandIfce import daoCommandIfce
 import astropy.io.fits as fits
 from time import perf_counter, sleep
@@ -21,6 +26,7 @@ import pathlib
 # ========================================================================================== #
 # DEFINES
 # ========================================================================================== #
+
 TEST_DIRECTORY = "/tmp/daoTelemetry_"
 TEST_CONFIGFILE = "daoTelemetry/config.yaml"
 
@@ -42,7 +48,7 @@ def AssertState(i: daoCommandIfce, target_state: str):
         Queries daoTelemetry tool for its current state
         and asserts it is the desired state.
     """
-    state = QueryState()
+    state = QueryState(i)
     assert(state == target_state)
 
 def StateTransition(i: daoCommandIfce, transition: str, target_state: str = None):
@@ -99,7 +105,7 @@ def i2():
     port = 15000
     os.mkdir(TEST_DIRECTORY)
     try:
-        daoTelemetry = subprocess.Popen(['daoTelemetry', f"{port} -c {TEST_CONFIGFILE}"])
+        daoTelemetry = subprocess.Popen(['daoTelemetry', f"{port}", f"-c{TEST_CONFIGFILE}"])
         sleep(0.5)
         ifce = daoCommandIfce("127.0.0.1", port)
         yield ifce
@@ -114,37 +120,35 @@ def i2():
 def test_CliConfig(i2: daoCommandIfce):
     InitTestRoutine()
     """ 
-       Checks config set via CLI was applied.
+       Checks config can be set via CLI flag.
     """
     StateTransition(i2, "Init", "Standby")
     
 def test_NetworkConfig(i: daoCommandIfce):
     InitTestRoutine()
     """ 
-       Checks config set via network was applied.
+       Checks config can be set via network.
     """
     with open(TEST_CONFIGFILE) as config_file:
         config = config_file.read()
     
-    SetConfig(config)
+    SetConfig(i, config)
     StateTransition(i, "Init", "Standby")
     
 def test_NoConfig(i: daoCommandIfce):
     InitTestRoutine()
     """ 
-        Inits telemetry tool without setting a config,
-        and checks the Error state is raised.
+        Checks no config triggers an error state.
     """
     StateTransition(i, "Init", "Error")
 
 def test_MalformedConfig(i: daoCommandIfce):
     InitTestRoutine()
     """ 
-        Inits telemetry tool without setting a config,
-        and checks the Error state is raised.
+        Checks an invalid config triggers an error state.
     """
     with open(TEST_CONFIGFILE) as config_file:
-        cfg_yml = yaml.load(config_file)
+        cfg_yml = yaml.safe_load(config_file)
 
     # remove required field to invalidate config.
     cfg_yml.pop("telemetry")
@@ -152,18 +156,19 @@ def test_MalformedConfig(i: daoCommandIfce):
     # generate config string
     config = yaml.dump(cfg_yml)
     
-    SetConfig(config)
+    SetConfig(i, config)
     StateTransition(i, "Init", "Error")
 
 def test_InvalidSharedMemory(i: daoCommandIfce):
     InitTestRoutine()
     """ 
-       Checks config set via network was applied.
+       Checks an error is raised if a shared memory
+       target fails to be opened.
     """
     with open(TEST_CONFIGFILE) as config_file:
         config = config_file.read()
 
-    SetConfig(config)
+    SetConfig(i, config)
     StateTransition(i, "Init", "Standby")
     StateTransition(i, "Enable", "Error")
 
@@ -171,46 +176,48 @@ def test_InvalidSharedMemory(i: daoCommandIfce):
 def test_UnsupportedType(i: daoCommandIfce, T):
     root = InitTestRoutine()
     """ 
-       Checks config set via network was applied.
+       Checks an error is raised if a shared memory target
+       uses an unsupported data type.
     """
     # create shm
-    shmpath = f"{root}/shm.im.shm"
+    shmpath = f"/tmp/shm.im.shm"
     _ = dao.shm(shmpath, np.zeros((1,1), dtype=T))
     
     # create config
     yml = {}
     yml["telemetry_root"] = root
-    yml["telemetry"].append({
+    yml["telemetry"] = [{
         "target": shmpath
-    })
+    }]
     config = yaml.dump(yml)
 
-    SetConfig(config)
+    SetConfig(i, config)
     StateTransition(i, "Init", "Standby")
     StateTransition(i, "Enable", "Error")
 
 def test_ThreadAffinity(i: daoCommandIfce):
     root = InitTestRoutine()
     """ 
-       Checks config set via network was applied.
+       Checks that a target's collector thread
+       has the configured core affinity.
     """
     cores = np.arange(os.cpu_count())
-    core = cores[cores.size // 2]
+    core = int(cores[cores.size // 2])
     
     # create shm
-    shmpath = f"{root}/shm.im.shm"
+    shmpath = f"/tmp/shm.im.shm"
     _ = dao.shm(shmpath, np.zeros((1,1)))
     
     # create config
     yml = {}
     yml["telemetry_root"] = root
-    yml["telemetry"].append({
+    yml["telemetry"] = [{
         "target": shmpath,
         "core": core
-    })
+    }]
     config = yaml.dump(yml)
 
-    SetConfig(config)
+    SetConfig(i, config)
     StateTransition(i, "Init", "Standby")
     StateTransition(i, "Enable", "Idle")
     
@@ -226,7 +233,7 @@ def test_ThreadAffinity(i: daoCommandIfce):
             if exePath.endswith("daoTelemetry"):
                 PID = pid
                 break
-    assert(PID, "Could not find daoTelemetry PID")    
+    assert PID, "Could not find daoTelemetry PID"    
     
     TID = None
     for tid in os.listdir(f"/proc/{PID}/task"):
@@ -235,100 +242,107 @@ def test_ThreadAffinity(i: daoCommandIfce):
             if threadName == shmpath:
                 TID = tid
                 break
-    assert(TID, "Could not find collector thread TID")    
+    assert TID, "Could not find collector thread TID"
 
     with open(f"/proc/{PID}/task/{TID}/status") as status:
         threadMetadata = status.read().split("\n")
         for entry in threadMetadata:
             kv = entry.split(":")
             if kv[0] == "Cpus_allowed":
-                cpuMask = kv[1].strip()
-                assert(cpuMask & (1 << core) != 0) # desired core is allowed
-                assert(cpuMask & ~(1 << core) == 0) # no other cores are allowed
+                cpuMask = int(kv[1].strip(), 16)
+                assert cpuMask & (1 << core) != 0, "Thread not running on specified core!"
+                assert cpuMask & ~(1 << core) == 0, "Thread is running on unspecified cores!"
 
 def test_FileCopy(i: daoCommandIfce):
     root = InitTestRoutine()
     """ 
-       Checks config set via network was applied.
+       Checks configured files are copied to the
+       session directory upon session start.
     """
-    fileCpy = "test_daoTelemetry.py" # file to copy
+    COPY_FILE = "test_daoTelemetry.py" # file to copy
     
     # create shm
-    shmpath = f"{root}/shm.im.shm"
+    shmpath = f"/tmp/shm.im.shm"
     _ = dao.shm(shmpath, np.zeros((1,1)))
     
     # create config
     yml = {}
     yml["telemetry_root"] = root
-    yml["files"].append([
-        os.path.abspath(f"daoTelemetry/{fileCpy}")
-    ])
-    yml["telemetry"].append({
+    yml["files"] = [
+        os.path.abspath(f"daoTelemetry/{COPY_FILE}")
+    ]
+    yml["telemetry"] = [{
         "target": shmpath       
-    })
+    }]
     config = yaml.dump(yml)
 
-    SetConfig(config)
+    SetConfig(i, config)
     StateTransition(i, "Init", "Standby")
     StateTransition(i, "Enable", "Idle")
     StateTransition(i, "Run", "Running")
-    
+
     fileCopied = False
     sessionDir = os.listdir(root)[0]
-    for file in os.listdir(sessionDir):
-        if file == fileCpy:
+    for file in os.listdir(f"{root}/{sessionDir}"):
+        print(file)
+        if file == COPY_FILE:
             fileCopied = True
             break
+        
     assert(fileCopied)
 
 def test_ErrorRecovery(i: daoCommandIfce):
     root = InitTestRoutine()
     """ 
-       Checks config set via network was applied.
+       Checks that the error state can be recovered from.
     """
     # create shm
-    shmpath = f"{root}/shm.im.shm"
+    shmpath = f"/tmp/shm.im.shm"
     _ = dao.shm(shmpath, np.zeros((1,1)))
     
     # create config
     yml = {}
     yml["telemetry_root"] = root
-    yml["telemetry"].append({
+    yml["telemetry"] = [{
         "target": shmpath       
-    })
+    }]
     config = yaml.dump(yml)
 
-    SetConfig(config)
+    SetConfig(i, config)
+    StateTransition(i, "Init", "Standby")
+    StateTransition(i, "Enable", "Idle")
+    StateTransition(i, "Run", "Running")
     StateTransition(i, "OnFailue", "Error")
     StateTransition(i, "Recover", "Idle")
 
 def test_RecordingLimit(i: daoCommandIfce):
     root = InitTestRoutine()
     """ 
-       Checks config set via network was applied.
+       Checks that the recording session automatically
+       stops once the configured limit is reached.
     """
-    nFrames = 10 # number of frames to record to disk.
+    NUM_FRAMES = 10 # number of frames to record to disk.
     
     # create shm
-    shmpath = f"{root}/shm.im.shm"
+    shmpath = f"/tmp/shm.im.shm"
     shm = dao.shm(shmpath, np.zeros((1,1)))
     
     # create config
     yml = {}
     yml["telemetry_root"] = root
-    yml["telemetry"].append({
+    yml["telemetry"] = [{
         "target": shmpath,
-        "limit": nFrames  
-    })
+        "limit": NUM_FRAMES  
+    }]
     config = yaml.dump(yml)
 
-    SetConfig(config)
+    SetConfig(i, config)
     StateTransition(i, "Init", "Standby")
     StateTransition(i, "Enable", "Idle")
     StateTransition(i, "Run", "Running")
     
     # write frames to shm
-    for _ in range(nFrames - 1):
+    for _ in range(NUM_FRAMES - 1):
         data = np.random.rand(1,1)
         shm.set_data(data)
         sleep(0.5)
@@ -338,76 +352,75 @@ def test_RecordingLimit(i: daoCommandIfce):
 def test_DatafileCapacity(i: daoCommandIfce):
     root = InitTestRoutine()
     """ 
-       Checks config set via network was applied.
+       Checks that frames are recorded into multiple
+       data files to ensure that each file's size does not
+       exceed its configured capacity.
     """
-    fileCap = 10 # number of frames per datafile.
-    file2Size = fileCap // 3 # number of frames to write into 2nd datafile
+    FILE_CAPACITY = 10 # number of frames per datafile.
     
     # create shm
     shmName = "shm"
-    shmPath = f"{root}/{shmName}.im.shm"
+    shmPath = f"/tmp/{shmName}.im.shm"
     shm = dao.shm(shmPath, np.zeros((1,1)))
     
     # create config
     yml = {}
     yml["telemetry_root"] = root
-    yml["telemetry"].append({
+    yml["telemetry"] = [{
         "target": shmPath,
-        "capacity": fileCap
-    })
+        "capacity": FILE_CAPACITY,
+        "limit": FILE_CAPACITY + 1
+    }]
     config = yaml.dump(yml)
 
-    SetConfig(config)
+    SetConfig(i, config)
     StateTransition(i, "Init", "Standby")
     StateTransition(i, "Enable", "Idle")
-    StateTransition(i, "Run", "Running")
+    StateTransition(i, "Run")
     
-    # write frames for 1st datafile.
-    for _ in range(fileCap - 1):
+    # write (FILE_CAPACITY - 1) frames for 1st datafile.
+    # and another frame for the 2nd datafile.
+    for _ in range(FILE_CAPACITY):
         data = np.random.rand(1,1)
         shm.set_data(data)
-        sleep(0.5)
+        sleep(1)
         
-    # write frame for 2nd datafile
-    for _ in range(file2Size):
-        data = np.random.rand(1,1)
-        shm.set_data(data)
-        sleep(0.5)
-
     # check two datafiles were created
     sessionDir = os.listdir(root)[0]
-    for file in os.listdir(sessionDir):
+    for file in os.listdir(f"{root}/{sessionDir}"):
+        fileID = int(file[file.index("_")+1 : file.index(".")])
         fileName = file.split("_")[0]
-        fileID = int(file.split("_")[1])
-        
+
         assert(fileName == shmName)
         assert(fileID == 1 or fileID == 2)
+
         with fits.open(f"{root}/{sessionDir}/{file}") as data:
-            expectedFrames = fileCap if fileID == 1 else file2Size
+            expectedFrames = FILE_CAPACITY if fileID == 1 else 1
             assert(len(data) == expectedFrames)
 
 def test_RecordingError(i: daoCommandIfce):
     root = InitTestRoutine()
     """ 
-       Checks config set via network was applied.
+       Checks an error is raised when an issue occurs
+       within the main recording loop of a collector thread.
     """
-    fileCap = 10 # number of frames per datafile.
+    FILE_CAPACITY = 10 # number of frames per datafile.
     
     # create shm
     shmName = "shm"
-    shmPath = f"{root}/{shmName}.im.shm"
+    shmPath = f"/tmp/{shmName}.im.shm"
     shm = dao.shm(shmPath, np.zeros((1,1)))
     
     # create config
     yml = {}
     yml["telemetry_root"] = root
-    yml["telemetry"].append({
+    yml["telemetry"] = [{
         "target": shmPath,
-        "capacity": fileCap
-    })
+        "capacity": FILE_CAPACITY
+    }]
     config = yaml.dump(yml)
 
-    SetConfig(config)
+    SetConfig(i, config)
     StateTransition(i, "Init", "Standby")
     StateTransition(i, "Enable", "Idle")
     StateTransition(i, "Run", "Running")
@@ -418,7 +431,7 @@ def test_RecordingError(i: daoCommandIfce):
     file2.touch(exist_ok=False)
     
     # write frames
-    for _ in range(fileCap):
+    for _ in range(FILE_CAPACITY):
         data = np.random.rand(1,1)
         shm.set_data(data)
         sleep(0.5)
@@ -428,21 +441,24 @@ def test_RecordingError(i: daoCommandIfce):
 @pytest.mark.parametrize("dtype", [
     np.int8, np.int16, np.int32, np.int64,
     np.uint8, np.uint16, np.uint32, np.uint64,
-    np.float32, np.float64,
+    np.float32, np.float64
 ])
 @pytest.mark.parametrize("shape", [(2,3), (2,3,4)])
 def test_RecordingAccuracy(i: daoCommandIfce, dtype, shape):
     root = InitTestRoutine()
     """ 
-       Checks config set via network was applied.
+       Checks that data across all supported types and array dimensions
+       is correctly recorded.
     """
     
     #
-    nFrames = 10
-    min, max = np.iinfo(dtype).min, np.iinfo(dtype).max
+    NUM_FRAMES = 10
+    type = np.dtype(dtype)
+    dtype_limits = np.iinfo(type) if type.kind in "iu" else np.finfo(type)
+    min, max = dtype_limits.min, dtype_limits.max
     
     # create shm
-    shmPath = f"{root}/shm.im.shm"
+    shmPath = f"/tmp/shm.im.shm"
     shm = dao.shm(shmPath, np.zeros(shape, dtype=dtype))
 
     # track golden frames
@@ -452,20 +468,21 @@ def test_RecordingAccuracy(i: daoCommandIfce, dtype, shape):
     # create config
     yml = {}
     yml["telemetry_root"] = root
-    yml["telemetry"].append({
+    yml["telemetry"] = [{
         "target": shmPath,
-        "limit": nFrames
-    })
+        "limit": NUM_FRAMES
+    }]
     config = yaml.dump(yml)
 
-    SetConfig(config)
+    SetConfig(i, config)
     StateTransition(i, "Init", "Standby")
     StateTransition(i, "Enable", "Idle")
     StateTransition(i, "Run", "Running")
 
     # write golden frames
-    for _ in range(nFrames - 1):
-        data = np.random.randint(min, max, size=shape, dtype=dtype)
+    for _ in range(NUM_FRAMES - 1):
+        raw_data = np.random.random(size=shape) * (max - min) + min # array of random floats between min & max
+        data = raw_data.astype(dtype) # cast vals into desired type.
         gold_data.append(data)
         shm.set_data(data)
         sleep(0.5)
@@ -496,14 +513,29 @@ def test_RecordingAccuracy(i: daoCommandIfce, dtype, shape):
             assert(hdu.header["cnt0"] == (frame_id + 1))
 
 def test_StateMachine(i: daoCommandIfce):
-    InitTestRoutine()
+    root = InitTestRoutine()
     """ 
-       Checks config set via network was applied.
+       Stress tests the state transitions by 
+       performing a random walk through the state space.
     """
-    tThreshold = 120 # number seconds to run test for
-    pThreshold = 0.5 # probability of taking forward transition.
-    t0 = perf_counter()
+    # create shm
+    shmPath = f"/tmp/shm.im.shm"
+    _ = dao.shm(shmPath, np.zeros((1,1)))
+
+    # create config
+    yml = {}
+    yml["telemetry_root"] = root
+    yml["telemetry"] = [{
+        "target": shmPath
+    }]
+    config = yaml.dump(yml)
+    SetConfig(i, config)
     
+    # cycle states
+    tThreshold = 180 # number seconds to run test for
+    pThreshold = 0.5 # probability of taking forward transition.
+
+    t0 = perf_counter()
     while (perf_counter() - t0) < tThreshold:
         state = QueryState(i)
 
@@ -525,7 +557,8 @@ def test_StateMachine(i: daoCommandIfce):
             }
             
             assert(state in transition_lookup)
-            i = 0 if np.random.random() <= pThreshold else 1
-            transition, goto_state = transition_lookup[state][i]
+            k = 0 if np.random.random() <= pThreshold else 1
+            transition, goto_state = transition_lookup[state][k]
             StateTransition(i, transition, goto_state)
+            sleep(0.5)
         
