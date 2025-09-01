@@ -57,7 +57,7 @@ public:
     collector_t(Dao::Log::Logger &logger, const telemetry_t &t, volatile bool &agent_err_flag)
         : Thread(t.target, logger, t.core), m_telemetry(t), m_logger(logger),
         m_sifce(logger), m_shmname(t.target), m_nfiles(0), m_currfile_sz(0),
-        m_agent_err_flag(agent_err_flag), m_fits(nullptr) 
+        m_agent_err_flag(agent_err_flag), m_fits(nullptr), m_total_frames(0)
     {
         // open shared memory..
         if (daoShmShm2Img(t.target.c_str(), &m_shm) != DAO_SUCCESS) {
@@ -148,13 +148,14 @@ private:
         }
     }
 
+    void OnceOnExit() override { m_logger.Debug("%s collector has exited", m_telemetry.target.c_str()); }
+
     /*
         telemetry collection loop.
     */
     void RestartableThread() override {
         // stop collection (if needed)..
-        const size_t nframes_tot = m_nfiles * m_telemetry.capacity + m_currfile_sz;
-        if (m_agent_err_flag || (m_telemetry.limit && nframes_tot >= m_telemetry.limit)) {
+        if (m_agent_err_flag || (m_telemetry.limit && m_total_frames >= m_telemetry.limit)) {
             Exit();
             return;
         }
@@ -170,7 +171,7 @@ private:
 
         // collect next telemetry frame (or first, if we've only just started)
         const uint64_t cnt0_ = m_shm_md->cnt0;
-        if (cnt0_ > m_cnt0 || !nframes_tot) {
+        if (cnt0_ > m_cnt0 || !m_total_frames) {
             m_cnt0 = cnt0_;
             memcpy(m_mdbuffer, m_shm.md, sizeof(IMAGE_METADATA)); // copy out metadata to prevent overwrite corruption.
             memcpy(m_databuffer, m_shm.array.V, m_databuffer_sz); // copy out data to prevent overwrite corruption.
@@ -192,7 +193,9 @@ private:
             FITS_CHECK( fits_write_key(m_fits, TULONGLONG, "cnt2", &m_mdbuffer->cnt2, nullptr, &status) );
             FITS_CHECK( fits_write_img(m_fits, m_d2fs.at(m_mdbuffer->atype), 1, m_mdbuffer->nelement, m_databuffer, &status) );
             FITS_CHECK( fits_write_chksum(m_fits, &status) );
+
             ++m_currfile_sz;
+            ++m_total_frames;
         }
     }
 
@@ -244,6 +247,7 @@ private:
     IMAGE_METADATA *m_mdbuffer;
     size_t m_databuffer_sz;
     std::string m_shmname;
+    size_t m_total_frames;
     void *m_databuffer;
     fitsfile *m_fits;
     size_t m_currfile_sz;
@@ -270,7 +274,7 @@ public:
                 set_config(ss.str());
             }
             else {
-                m_log.Warning("configuration file could not be loaded");
+                m_log.Warning("configuration file could not be loaded (%s)", config_file.c_str());
             }
         }
     }
@@ -288,6 +292,7 @@ public:
                     if (!t.collector->isRunning()) ++n_exited;
                 }
                 if (n_exited == m_telemetry_list.size()) {
+                    m_logger.Debug("Auto resetting state");
                     while (GetStateText() == "Running") Idle();
                     // todo: just goto idle here to end session?
                     while (GetStateText() == "Idle") Disable();
@@ -360,6 +365,10 @@ private:
         m_logger.Debug("configuration applied");
     }
 
+    void clear_config() {
+        m_telemetry_list.clear();
+    }
+    
     void alloc_recording_resources() {
         for (telemetry_t &t : m_telemetry_list) {
             m_logger.Debug("allocating telemetry collector for %s..", t.target.c_str());
@@ -425,8 +434,7 @@ private:
                 delete t.collector;
             }
         }
-        m_telemetry_list.clear();
-        m_log.Info("recording resources freed");
+        m_log.Info("collectors resources freed");
     }
 
     /* -------------------------------------------------------------------------------------------- */
@@ -448,6 +456,7 @@ private:
     // Running -> Off
     void transition_Running_Idle() override { end_session(); }
     void transition_Idle_Standby() override { dealloc_recording_resources(); }
+    void transition_Standby_Off() override { clear_config(); }
 
     // Error recovery
     void transition_Error_Idle() override {
