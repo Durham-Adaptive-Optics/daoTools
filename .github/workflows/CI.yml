@@ -13,8 +13,8 @@ jobs:
 
     steps:
       - name: Checkout daoBase
-          uses: actions/checkout@v4
-          with:
-            repository: Durham-Adaptive-Optics/daoBase
-            path: daoBase
-            token: ${{ secrets.CI_CLONE_ACCESS_TOKEN }}
+        uses: actions/checkout@v4
+        with:
+          repository: Durham-Adaptive-Optics/daoBase
+          path: daoBase
+          token: ${{ secrets.CI_CLONE_ACCESS_TOKEN }}
