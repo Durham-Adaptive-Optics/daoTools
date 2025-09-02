@@ -2,9 +2,9 @@ name: Build and Test Project
 
 on:
   push:
-    branches: [ main ]
+    branches: [ CI-Pipeline ]
   pull_request:
-    branches: [ main ]
+    branches: [ CI-Pipeline ]
   workflow_dispatch:
 
 jobs:
