@@ -12,9 +12,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout daoBase
-        uses: actions/checkout@v4
-        with:
-          repository: Durham-Adaptive-Optics/daoBase
-          path: daoBase
-          token: ${{ secrets.CI_CLONE_ACCESS_TOKEN }}
+      - name: Hello world
+        run: echo "Hello world"
+
