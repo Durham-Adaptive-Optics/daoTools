@@ -24,8 +24,10 @@ jobs:
 
       - name: Install WAF Build System
         run: |
-          curl -o /usr/bin/waf https://waf.io/waf-2.0.24
-          chmod +x /usr/bin/waf
+          mkdir -p ~/.local/bin
+          curl -o ~/.local/bin/waf https://waf.io/waf-2.0.24
+          chmod +x ~/.local/bin/waf
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Install Python (v3.10)
         uses: actions/setup-python@v4
