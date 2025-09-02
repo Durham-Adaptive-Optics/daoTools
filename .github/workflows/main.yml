@@ -13,7 +13,7 @@ jobs:
     steps:
       - name: Checkout daoTools
         uses: actions/checkout@v4
-      
+
       - name: Install System Dependencies (Ubuntu)
         if: runner.os == 'Linux'
         run: |
@@ -39,10 +39,33 @@ jobs:
           python -m pip install --upgrade pip
           pip install posix_ipc zmq protobuf==3.20.0 astropy python-statemachine statemachine redis sphinx screeninfo
 
-      - name: Build daoTools
-        run: |
-          export DAOROOT=/home/runner/DAOROOT
+      - name: Setup Dao Environment
+        run: 
+          export DAOROOT=$HOME/DAOROOT
+          export DAODATA=$HOME/DAODATA
+          export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$DAOROOT/lib:$DAOROOT/lib64
+          export PATH=$PATH:$HOME/bin:$HOME/DAOROOT/bin
+          export PYTHONPATH=$PYTHONPATH:$DAOROOT/python
+          export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:$DAOROOT/lib/pkgconfig
           mkdir $DAOROOT
+
+      - name: Checkout daoBase
+        uses: actions/checkout@v4
+        with:
+          repository: Durham-Adaptive-Optics/daoBase
+          path: daoBase
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install daoBase
+        run: |
+          cd ./daoBase 
+          waf configure --prefix=$DAOROOT
+          waf -v
+          waf install
+
+      - name: Install daoTools
+        run: |
+          cd ./daoTools
           waf configure --prefix=$DAOROOT
           waf -v
           waf install
