@@ -24,7 +24,7 @@ jobs:
 
       - name: Install WAF Build System
         run: |
-          curl -o waf https://waf.io/waf-2.0.24
+          curl -o ~/.local/bin/waf https://waf.io/waf-2.0.24
           chmod +x waf
 
       - name: Install Python (v3.10)
