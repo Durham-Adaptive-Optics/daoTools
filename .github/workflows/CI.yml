@@ -2,9 +2,9 @@ name: Clone Test
 
 on:
   push:
-    branches: [ CI-Pipeline ]
+    branches: [ CI-Workflow ]
   pull_request:
-    branches: [ CI-Pipeline ]
+    branches: [ CI-Workflow ]
   workflow_dispatch:
 
 jobs:
