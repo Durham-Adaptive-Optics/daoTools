@@ -1,0 +1,18 @@
+files:
+- /home/daousr/DKIST/config/simconfig_26_fov.yaml
+nominal_core: 2
+telemetry:
+- capacity: 500
+  target: /tmp/daoTelemetry_/covmaps.im.shm
+- target: /tmp/daoTelemetry_/preproc.im.shm
+- target: /tmp/daoTelemetry_/profile.im.shm
+- capacity: 100
+  target: /tmp/daoTelemetry_/ref_img.im.shm
+- capacity: 25000
+  core: 3
+  target: /tmp/daoTelemetry_/slopes.im.shm
+- target: /tmp/daoTelemetry_/subap_map.im.shm
+- target: /tmp/daoTelemetry_/sub_sample.im.shm
+- capacity: 100
+  target: /tmp/daoTelemetry_/xcorr.im.shm
+telemetry_root: /tmp/daoTelemetry_/
