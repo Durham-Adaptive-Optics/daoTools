@@ -14,13 +14,13 @@ if __name__ == '__main__':
     shmrefName = '/tmp/references.im.shm'
     shmpupName = '/tmp/pupMask1.im.shm'
     try:
-        opts, args = getopt.getopt(sys.argv[1:],"hi:c:r:",["help", "shmimName=", "shmcentName=", "shmrefName="])
+        opts, args = getopt.getopt(sys.argv[1:],"hi:c:r:p:",["help", "shmimName=", "shmcentName=", "shmrefName=", "shmpupName="])
     except getopt.GetoptError:
-      print('err, usage: doaShRTD.py -i <shmimName> -c <shmcentName> -r <referenceName>')
+      print('err, usage: doaShRTD.py -i <shmimName> -c <shmcentName> -r <referenceName> -p <shmpupName>')
       sys.exit(2)
     for opt, arg in opts:
         if opt == '-h':
-            print('daoShRTD.py -s <shmimName> -c <shmcentName> -r <shmrefName>')
+            print('daoShRTD.py -i <shmimName> -c <shmcentName> -r <shmrefName> -p <shmpupName>')
             sys.exit()
         elif opt in ("-i", "--shmimName"):
             shmimName = str(arg)
@@ -28,6 +28,10 @@ if __name__ == '__main__':
             shmcentName = str(arg)
         elif opt in ("-r", "--shmrefName"):
             shmrefName = str(arg)
+        elif opt in ("-p", "--shmpupName"):
+            shmpupName = str(arg)
+    
+    
     print(shmimName)
     print(shmimName)
     print(shmrefName)
