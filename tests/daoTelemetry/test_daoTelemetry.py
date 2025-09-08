@@ -34,98 +34,96 @@ TEST_CONFIGFILE = "daoTelemetry/config.yaml"
 # UTIL ROUTINES
 # ========================================================================================== #
 
-def test_foo(i):
-    print("Hello World!")
 
-# def QueryState(i: daoCommandIfce) -> str:
-#     """
-#         Queries daoTelemetry tool for its current state.
-#     """
-#     sleep(0.5)
-#     status, state = i.State(None)
-#     assert((status == 0))
-#     return state
+def QueryState(i: daoCommandIfce) -> str:
+    """
+        Queries daoTelemetry tool for its current state.
+    """
+    sleep(0.5)
+    status, state = i.State(None)
+    assert((status == 0))
+    return state
 
-# def AssertState(i: daoCommandIfce, target_state: str):
-#     """
-#         Queries daoTelemetry tool for its current state
-#         and asserts it is the desired state.
-#     """
-#     state = QueryState(i)
-#     assert(state == target_state)
+def AssertState(i: daoCommandIfce, target_state: str):
+    """
+        Queries daoTelemetry tool for its current state
+        and asserts it is the desired state.
+    """
+    state = QueryState(i)
+    assert(state == target_state)
 
-# def StateTransition(i: daoCommandIfce, transition: str, target_state: str = None):
-#     """
-#         Sends command to daoTelemetry tool to carry
-#         out the desired state transition.
-#     """
-#     assert(i.Exec(transition)[0] == 0)
+def StateTransition(i: daoCommandIfce, transition: str, target_state: str = None):
+    """
+        Sends command to daoTelemetry tool to carry
+        out the desired state transition.
+    """
+    assert(i.Exec(transition)[0] == 0)
     
-#     if target_state:
-#         AssertState(i, target_state)
+    if target_state:
+        AssertState(i, target_state)
     
-# def SetConfig(i: daoCommandIfce, config: str):
-#     """
-#         Sends command to daoTelemetry tool to set the
-#         active configuration string.
-#     """
-#     assert(i.Other(config)[0] == 0)
+def SetConfig(i: daoCommandIfce, config: str):
+    """
+        Sends command to daoTelemetry tool to set the
+        active configuration string.
+    """
+    assert(i.Other(config)[0] == 0)
      
-# def InitTestRoutine():
-#     """
-#         Creates subdirectory for test routine inside root
-#         test directory.
-#     """
-#     caller_name = inspect.stack()[1].function
-#     subdir_name = f"{TEST_DIRECTORY}/{caller_name}"
-#     os.mkdir(subdir_name)
-#     return subdir_name
+def InitTestRoutine():
+    """
+        Creates subdirectory for test routine inside root
+        test directory.
+    """
+    caller_name = inspect.stack()[1].function
+    subdir_name = f"{TEST_DIRECTORY}/{caller_name}"
+    os.mkdir(subdir_name)
+    return subdir_name
 
-# @pytest.fixture
-# def i():
-#     """ 
-#         Creates dedicated testing directory and launches daoTelemetry process,
-#         providing a command interface, and kills the process and removes
-#         testing directory after each test has ended. 
-#     """
-#     port = 15000
-#     os.mkdir(TEST_DIRECTORY)
-#     try:
-#         daoTelemetry = subprocess.Popen(['daoTelemetry', f"{port}"])
-#         sleep(0.5)
-#         ifce = daoCommandIfce("127.0.0.1", port)
-#         yield ifce
-#     finally:
-#         daoTelemetry.kill()
-#         shutil.rmtree(TEST_DIRECTORY)
+@pytest.fixture
+def i():
+    """ 
+        Creates dedicated testing directory and launches daoTelemetry process,
+        providing a command interface, and kills the process and removes
+        testing directory after each test has ended. 
+    """
+    port = 15000
+    os.mkdir(TEST_DIRECTORY)
+    try:
+        daoTelemetry = subprocess.Popen(['daoTelemetry', f"{port}"])
+        sleep(0.5)
+        ifce = daoCommandIfce("127.0.0.1", port)
+        yield ifce
+    finally:
+        daoTelemetry.kill()
+        shutil.rmtree(TEST_DIRECTORY)
         
-# @pytest.fixture
-# def i2():
-#     """ 
-#         Same as i() but passed a valid configuration file on the cli
-#         when the daoTelemetry process is launched. 
-#     """
-#     port = 15000
-#     os.mkdir(TEST_DIRECTORY)
-#     try:
-#         daoTelemetry = subprocess.Popen(['daoTelemetry', f"{port}", f"-c{TEST_CONFIGFILE}"])
-#         sleep(0.5)
-#         ifce = daoCommandIfce("127.0.0.1", port)
-#         yield ifce
-#     finally:
-#         daoTelemetry.kill()
-#         shutil.rmtree(TEST_DIRECTORY)
+@pytest.fixture
+def i2():
+    """ 
+        Same as i() but passed a valid configuration file on the cli
+        when the daoTelemetry process is launched. 
+    """
+    port = 15000
+    os.mkdir(TEST_DIRECTORY)
+    try:
+        daoTelemetry = subprocess.Popen(['daoTelemetry', f"{port}", f"-c{TEST_CONFIGFILE}"])
+        sleep(0.5)
+        ifce = daoCommandIfce("127.0.0.1", port)
+        yield ifce
+    finally:
+        daoTelemetry.kill()
+        shutil.rmtree(TEST_DIRECTORY)
 
 # # ========================================================================================== #
 # # TEST ROUTINES
 # # ========================================================================================== #
 
-# def test_CliConfig(i2: daoCommandIfce):
-#     InitTestRoutine()
-#     """ 
-#        Checks config can be set via CLI flag.
-#     """
-#     StateTransition(i2, "Init", "Standby")
+def test_CliConfig(i2: daoCommandIfce):
+    InitTestRoutine()
+    """ 
+       Checks config can be set via CLI flag.
+    """
+    StateTransition(i2, "Init", "Standby")
     
 # def test_NetworkConfig(i: daoCommandIfce):
 #     InitTestRoutine()
