@@ -160,18 +160,18 @@ def test_MalformedConfig(i: daoCommandIfce):
     SetConfig(i, config)
     StateTransition(i, "Init", "Error")
 
-# def test_InvalidSharedMemory(i: daoCommandIfce):
-#     InitTestRoutine()
-#     """ 
-#        Checks an error is raised if a shared memory
-#        target fails to be opened.
-#     """
-#     with open(TEST_CONFIGFILE) as config_file:
-#         config = config_file.read()
+def test_InvalidSharedMemory(i: daoCommandIfce):
+    InitTestRoutine()
+    """ 
+       Checks an error is raised if a shared memory
+       target fails to be opened.
+    """
+    with open(TEST_CONFIGFILE) as config_file:
+        config = config_file.read()
 
-#     SetConfig(i, config)
-#     StateTransition(i, "Init", "Standby")
-#     StateTransition(i, "Enable", "Error")
+    SetConfig(i, config)
+    StateTransition(i, "Init", "Standby")
+    StateTransition(i, "Enable", "Error")
 
 @pytest.mark.parametrize("T", [np.complex64, np.complex128])
 def test_UnsupportedType(i: daoCommandIfce, T):
