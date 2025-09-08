@@ -57,7 +57,8 @@ jobs:
         run: |
           cd ./daoBase 
           waf configure --prefix=$DAOROOT
-          waf
+          waf -v
+          waf install
 
       - name: Checkout daoTools
         uses: actions/checkout@v4
@@ -66,7 +67,7 @@ jobs:
           
       - name: Build daoTools
         run: |
-          ls
           cd ./daoTools
           waf configure --prefix=$DAOROOT
-          waf
+          waf -v
+          waf install
