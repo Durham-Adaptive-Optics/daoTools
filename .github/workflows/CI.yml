@@ -85,4 +85,4 @@ jobs:
       - name: Run daoTools Test Suite
         run: |
           cd ./daoTools/tests
-          pytest --durations=0 -v
+          pytest -v
