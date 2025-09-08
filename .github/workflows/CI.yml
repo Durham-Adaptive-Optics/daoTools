@@ -46,16 +46,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install posix_ipc zmq protobuf==3.20.0 astropy python-statemachine statemachine redis sphinx screeninfo
 
-      - name: Download CLI11
-        uses: dsaltares/fetch-gh-release-asset@master
-        with:
-          repo: CLIUtils/CLI11
-          file: CLI11.hpp
-
-      - name: Inspect
-        run: |
-          ls
-          
       - name: Checkout daoBase
         uses: actions/checkout@v4
         with:
@@ -74,6 +64,17 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: daoTools
+
+      - name: Download CLI11
+        uses: dsaltares/fetch-gh-release-asset@master
+        with:
+          repo: CLIUtils/CLI11
+          file: CLI11.hpp
+
+      - name: Install CLI11
+        run: |
+          mv ./CLI11.hpp $DAOROOT/include
+        
           
       - name: Build daoTools
         run: |
