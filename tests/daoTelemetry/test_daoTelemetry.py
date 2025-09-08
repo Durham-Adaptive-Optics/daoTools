@@ -125,40 +125,40 @@ def test_CliConfig(i2: daoCommandIfce):
     """
     StateTransition(i2, "Init", "Standby")
     
-# def test_NetworkConfig(i: daoCommandIfce):
-#     InitTestRoutine()
-#     """ 
-#        Checks config can be set via network.
-#     """
-#     with open(TEST_CONFIGFILE) as config_file:
-#         config = config_file.read()
+def test_NetworkConfig(i: daoCommandIfce):
+    InitTestRoutine()
+    """ 
+       Checks config can be set via network.
+    """
+    with open(TEST_CONFIGFILE) as config_file:
+        config = config_file.read()
     
-#     SetConfig(i, config)
-#     StateTransition(i, "Init", "Standby")
+    SetConfig(i, config)
+    StateTransition(i, "Init", "Standby")
     
-# def test_NoConfig(i: daoCommandIfce):
-#     InitTestRoutine()
-#     """ 
-#         Checks no config triggers an error state.
-#     """
-#     StateTransition(i, "Init", "Error")
+def test_NoConfig(i: daoCommandIfce):
+    InitTestRoutine()
+    """ 
+        Checks no config triggers an error state.
+    """
+    StateTransition(i, "Init", "Error")
 
-# def test_MalformedConfig(i: daoCommandIfce):
-#     InitTestRoutine()
-#     """ 
-#         Checks an invalid config triggers an error state.
-#     """
-#     with open(TEST_CONFIGFILE) as config_file:
-#         cfg_yml = yaml.safe_load(config_file)
+def test_MalformedConfig(i: daoCommandIfce):
+    InitTestRoutine()
+    """ 
+        Checks an invalid config triggers an error state.
+    """
+    with open(TEST_CONFIGFILE) as config_file:
+        cfg_yml = yaml.safe_load(config_file)
 
-#     # remove required field to invalidate config.
-#     cfg_yml.pop("telemetry")
+    # remove required field to invalidate config.
+    cfg_yml.pop("telemetry")
     
-#     # generate config string
-#     config = yaml.dump(cfg_yml)
+    # generate config string
+    config = yaml.dump(cfg_yml)
     
-#     SetConfig(i, config)
-#     StateTransition(i, "Init", "Error")
+    SetConfig(i, config)
+    StateTransition(i, "Init", "Error")
 
 # def test_InvalidSharedMemory(i: daoCommandIfce):
 #     InitTestRoutine()
