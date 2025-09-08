@@ -1,4 +1,4 @@
-# daoTools
+# daoTools [![daoTools](https://github.com/Durham-Adaptive-Optics/daoTools/actions/workflows/main.yml/badge.svg?branch=CI-Workflow)](https://github.com/Durham-Adaptive-Optics/daoTools/actions/workflows/main.yml)
 Useful tools using daoBase
 
 # Prerequiries
