@@ -63,7 +63,7 @@ jobs:
           waf
       - name: Build daoTools
         run: |
-          ll
+          ls
           cd ./daoTools
           waf configure --prefix=$DAOROOT
           waf
