@@ -70,7 +70,7 @@ def configure(conf):
 
 def build(bld):
 	bld.env.DEFINES=['WAF=1']
-	# bld.recurse('src')
+	bld.recurse('src')
 	bld.recurse('apps')
 
 

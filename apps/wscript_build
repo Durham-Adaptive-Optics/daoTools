@@ -1,4 +1,3 @@
-
 import os
 import platform
 
@@ -12,6 +11,7 @@ else:
 	my_cxx_flags = ['']
 	my_cflags = ['-Ofast']
 	my_link_flags = ['-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/']
+
 
 daoRandWriterSync = bld.program(
 	source = 'daoRandWriterSync.c',
