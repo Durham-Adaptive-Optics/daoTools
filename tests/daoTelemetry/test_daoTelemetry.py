@@ -196,125 +196,126 @@ def test_UnsupportedType(i: daoCommandIfce, T):
     StateTransition(i, "Init", "Standby")
     StateTransition(i, "Enable", "Error")
 
-# def test_ThreadAffinity(i: daoCommandIfce):
-#     root = InitTestRoutine()
-#     """ 
-#        Checks that a target's collector thread
-#        has the configured core affinity.
-#     """
-#     cores = np.arange(os.cpu_count())
-#     core = int(cores[cores.size // 2])
+#! @test_ThreadAffinity only works on Linux currently.
+def test_ThreadAffinity(i: daoCommandIfce):
+    root = InitTestRoutine()
+    """ 
+       Checks that a target's collector thread
+       has the configured core affinity.
+    """
+    cores = np.arange(os.cpu_count())
+    core = int(cores[cores.size // 2])
     
-#     # create shm
-#     shmpath = f"/tmp/shm.im.shm"
-#     _ = dao.shm(shmpath, np.zeros((1,1)))
+    # create shm
+    shmpath = f"/tmp/shm.im.shm"
+    _ = dao.shm(shmpath, np.zeros((1,1)))
     
-#     # create config
-#     yml = {}
-#     yml["telemetry_root"] = root
-#     yml["telemetry"] = [{
-#         "target": shmpath,
-#         "core": core
-#     }]
-#     config = yaml.dump(yml)
+    # create config
+    yml = {}
+    yml["telemetry_root"] = root
+    yml["telemetry"] = [{
+        "target": shmpath,
+        "core": core
+    }]
+    config = yaml.dump(yml)
 
-#     SetConfig(i, config)
-#     StateTransition(i, "Init", "Standby")
-#     StateTransition(i, "Enable", "Idle")
+    SetConfig(i, config)
+    StateTransition(i, "Init", "Standby")
+    StateTransition(i, "Enable", "Idle")
     
-#     # check affinity of collector thread
-#     PID = None
-#     for pid in os.listdir("/proc"):
-#         if pid.isdigit():
-#             try:
-#                 exePath = os.readlink(f"/proc/{pid}/exe")
-#             except:
-#                 continue
+    # check affinity of collector thread
+    PID = None
+    for pid in os.listdir("/proc"):
+        if pid.isdigit():
+            try:
+                exePath = os.readlink(f"/proc/{pid}/exe")
+            except:
+                continue
             
-#             if exePath.endswith("daoTelemetry"):
-#                 PID = pid
-#                 break
-#     assert PID, "Could not find daoTelemetry PID"    
+            if exePath.endswith("daoTelemetry"):
+                PID = pid
+                break
+    assert PID, "Could not find daoTelemetry PID"    
     
-#     TID = None
-#     for tid in os.listdir(f"/proc/{PID}/task"):
-#         with open(f"/proc/{PID}/task/{tid}/comm") as comm:
-#             threadName = comm.read().strip()
-#             if threadName == shmpath:
-#                 TID = tid
-#                 break
-#     assert TID, "Could not find collector thread TID"
+    TID = None
+    for tid in os.listdir(f"/proc/{PID}/task"):
+        with open(f"/proc/{PID}/task/{tid}/comm") as comm:
+            threadName = comm.read().strip()
+            if threadName == shmpath:
+                TID = tid
+                break
+    assert TID, "Could not find collector thread TID"
 
-#     with open(f"/proc/{PID}/task/{TID}/status") as status:
-#         threadMetadata = status.read().split("\n")
-#         for entry in threadMetadata:
-#             kv = entry.split(":")
-#             if kv[0] == "Cpus_allowed":
-#                 cpuMask = int(kv[1].strip(), 16)
-#                 assert cpuMask & (1 << core) != 0, "Thread not running on specified core!"
-#                 assert cpuMask & ~(1 << core) == 0, "Thread is running on unspecified cores!"
+    with open(f"/proc/{PID}/task/{TID}/status") as status:
+        threadMetadata = status.read().split("\n")
+        for entry in threadMetadata:
+            kv = entry.split(":")
+            if kv[0] == "Cpus_allowed":
+                cpuMask = int(kv[1].strip(), 16)
+                assert cpuMask & (1 << core) != 0, "Thread not running on specified core!"
+                assert cpuMask & ~(1 << core) == 0, "Thread is running on unspecified cores!"
 
-# def test_FileCopy(i: daoCommandIfce):
-#     root = InitTestRoutine()
-#     """ 
-#        Checks configured files are copied to the
-#        session directory upon session start.
-#     """
-#     COPY_FILE = "test_daoTelemetry.py" # file to copy
+def test_FileCopy(i: daoCommandIfce):
+    root = InitTestRoutine()
+    """ 
+       Checks configured files are copied to the
+       session directory upon session start.
+    """
+    COPY_FILE = "test_daoTelemetry.py" # file to copy
     
-#     # create shm
-#     shmpath = f"/tmp/shm.im.shm"
-#     _ = dao.shm(shmpath, np.zeros((1,1)))
+    # create shm
+    shmpath = f"/tmp/shm.im.shm"
+    _ = dao.shm(shmpath, np.zeros((1,1)))
     
-#     # create config
-#     yml = {}
-#     yml["telemetry_root"] = root
-#     yml["files"] = [
-#         os.path.abspath(f"daoTelemetry/{COPY_FILE}")
-#     ]
-#     yml["telemetry"] = [{
-#         "target": shmpath       
-#     }]
-#     config = yaml.dump(yml)
+    # create config
+    yml = {}
+    yml["telemetry_root"] = root
+    yml["files"] = [
+        os.path.abspath(f"daoTelemetry/{COPY_FILE}")
+    ]
+    yml["telemetry"] = [{
+        "target": shmpath       
+    }]
+    config = yaml.dump(yml)
 
-#     SetConfig(i, config)
-#     StateTransition(i, "Init", "Standby")
-#     StateTransition(i, "Enable", "Idle")
-#     StateTransition(i, "Run", "Running")
+    SetConfig(i, config)
+    StateTransition(i, "Init", "Standby")
+    StateTransition(i, "Enable", "Idle")
+    StateTransition(i, "Run", "Running")
 
-#     fileCopied = False
-#     sessionDir = os.listdir(root)[0]
-#     for file in os.listdir(f"{root}/{sessionDir}"):
-#         print(file)
-#         if file == COPY_FILE:
-#             fileCopied = True
-#             break
+    fileCopied = False
+    sessionDir = os.listdir(root)[0]
+    for file in os.listdir(f"{root}/{sessionDir}"):
+        print(file)
+        if file == COPY_FILE:
+            fileCopied = True
+            break
         
-#     assert(fileCopied)
+    assert(fileCopied)
 
-# def test_ErrorRecovery(i: daoCommandIfce):
-#     root = InitTestRoutine()
-#     """ 
-#        Checks that the error state can be recovered from.
-#     """
-#     # create shm
-#     shmpath = f"/tmp/shm.im.shm"
-#     _ = dao.shm(shmpath, np.zeros((1,1)))
+def test_ErrorRecovery(i: daoCommandIfce):
+    root = InitTestRoutine()
+    """ 
+       Checks that the error state can be recovered from.
+    """
+    # create shm
+    shmpath = f"/tmp/shm.im.shm"
+    _ = dao.shm(shmpath, np.zeros((1,1)))
     
-#     # create config
-#     yml = {}
-#     yml["telemetry_root"] = root
-#     yml["telemetry"] = [{
-#         "target": shmpath       
-#     }]
-#     config = yaml.dump(yml)
+    # create config
+    yml = {}
+    yml["telemetry_root"] = root
+    yml["telemetry"] = [{
+        "target": shmpath       
+    }]
+    config = yaml.dump(yml)
 
-#     SetConfig(i, config)
-#     StateTransition(i, "Init", "Standby")
-#     StateTransition(i, "Enable", "Idle")
-#     StateTransition(i, "Run", "Running")
-#     StateTransition(i, "OnFailue", "Error")
-#     StateTransition(i, "Recover", "Idle")
+    SetConfig(i, config)
+    StateTransition(i, "Init", "Standby")
+    StateTransition(i, "Enable", "Idle")
+    StateTransition(i, "Run", "Running")
+    StateTransition(i, "OnFailue", "Error")
+    StateTransition(i, "Recover", "Idle")
 
 # def test_RecordingLimit(i: daoCommandIfce):
 #     root = InitTestRoutine()
