@@ -81,3 +81,8 @@ jobs:
           waf configure --prefix=$DAOROOT
           waf -v
           waf install
+
+      - name: Run daoTools Test Suite
+        run: |
+          cd ./daoTools/tests
+          pytest -v -s
