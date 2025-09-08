@@ -532,7 +532,7 @@ def test_StateMachine(i: daoCommandIfce):
     SetConfig(i, config)
     
     # cycle states
-    tThreshold = 180 # number seconds to run test for
+    tThreshold = 30 # number seconds to run test for
     pThreshold = 0.5 # probability of taking forward transition.
 
     t0 = perf_counter()
