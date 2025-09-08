@@ -56,13 +56,14 @@ jobs:
           path: daoBase
           token: ${{ secrets.CI_CLONE_ACCESS_TOKEN }}
 
-      - name: Install daoBase
+      - name: Build daoBase
         run: |
           cd ./daoBase 
           waf configure --prefix=$DAOROOT
           waf
-      - name: Install daoTools
+      - name: Build daoTools
         run: |
+          ll
           cd ./daoTools
           waf configure --prefix=$DAOROOT
           waf
