@@ -13,7 +13,6 @@ else:
 	my_cflags = ['-Ofast']
 	my_link_flags = ['-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/']
 
-'''
 daoRandWriterSync = bld.program(
 	source = 'daoRandWriterSync.c',
 	target = 'daoRandWriterSync',
@@ -323,7 +322,7 @@ daoApplyGain = bld.program(
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 	)
-'''
+
 daoTelemetry = bld.program(
 	source = 'daoTelemetry.cpp',
 	target = 'daoTelemetry',

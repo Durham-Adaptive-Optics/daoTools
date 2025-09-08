@@ -196,8 +196,7 @@ def test_UnsupportedType(i: daoCommandIfce, T):
     StateTransition(i, "Init", "Standby")
     StateTransition(i, "Enable", "Error")
 
-#! @test_ThreadAffinity only works on Linux currently.
-def test_ThreadAffinity(i: daoCommandIfce):
+def test_ThreadAffinity(i: daoCommandIfce): #! Linux specific.
     root = InitTestRoutine()
     """ 
        Checks that a target's collector thread
