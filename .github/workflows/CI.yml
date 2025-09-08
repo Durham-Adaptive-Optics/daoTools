@@ -10,20 +10,17 @@ jobs:
   build:
     runs-on: ubuntu-latest
     
-    env:
-      DAOROOT: ${{ runner.temp }}/DAOROOT
-      DAODATA: ${{ runner.temp }}/DAODATA
-      LD_LIBRARY_PATH: ${{ env.LD_LIBRARY_PATH }}:${{ runner.temp }}/DAOROOT/lib:${{ runner.temp }}/DAOROOT/lib64
-      PATH: ${{ env.PATH }}:${{ runner.temp }}/bin:${{ runner.temp }}/DAOROOT/bin
-      PYTHONPATH: ${{ env.PYTHONPATH }}:${{ runner.temp }}/DAOROOT/python
-      PKG_CONFIG_PATH: ${{ env.PKG_CONFIG_PATH }}:${{ runner.temp }}/DAOROOT/lib/pkgconfig
-
     steps:
-      - name: Checkout daoTools
-        uses: actions/checkout@v4
-        with:
-          path: daoTools
-
+      - name: Set environment variables
+        run: |
+          echo "DAOROOT=$HOME/DAOROOT" >> $GITHUB_ENV
+          echo "DAODATA=$HOME/DAODATA" >> $GITHUB_ENV
+          echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$HOME/DAOROOT/lib:$HOME/DAOROOT/lib64" >> $GITHUB_ENV
+          echo "PATH=$PATH:$HOME/bin:$HOME/DAOROOT/bin" >> $GITHUB_ENV
+          echo "PYTHONPATH=${PYTHONPATH:+$PYTHONPATH:}$HOME/DAOROOT/python" >> $GITHUB_ENV
+          echo "PKG_CONFIG_PATH=${PKG_CONFIG_PATH:+$PKG_CONFIG_PATH:}$HOME/DAOROOT/lib/pkgconfig" >> $GITHUB_ENV
+          mkdir -p "$HOME/DAOROOT"
+    
       - name: Install System Dependencies (Ubuntu)
         if: runner.os == 'Linux'
         run: |
@@ -61,6 +58,12 @@ jobs:
           cd ./daoBase 
           waf configure --prefix=$DAOROOT
           waf
+
+      - name: Checkout daoTools
+        uses: actions/checkout@v4
+        with:
+          path: daoTools
+          
       - name: Build daoTools
         run: |
           ls
