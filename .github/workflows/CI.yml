@@ -60,12 +60,9 @@ jobs:
         run: |
           cd ./daoBase 
           waf configure --prefix=$DAOROOT
-          waf -v
-          waf install
-
+          waf
       - name: Install daoTools
         run: |
           cd ./daoTools
           waf configure --prefix=$DAOROOT
-          waf -v
-          waf install
+          waf
