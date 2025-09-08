@@ -13,6 +13,8 @@ jobs:
     steps:
       - name: Checkout daoTools
         uses: actions/checkout@v4
+        with:
+          path: daoTools
 
       - name: Install System Dependencies (Ubuntu)
         if: runner.os == 'Linux'
