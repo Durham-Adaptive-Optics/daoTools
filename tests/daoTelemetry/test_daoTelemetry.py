@@ -160,41 +160,41 @@ def test_MalformedConfig(i: daoCommandIfce):
     SetConfig(i, config)
     StateTransition(i, "Init", "Error")
 
-def test_InvalidSharedMemory(i: daoCommandIfce):
-    InitTestRoutine()
-    """ 
-       Checks an error is raised if a shared memory
-       target fails to be opened.
-    """
-    with open(TEST_CONFIGFILE) as config_file:
-        config = config_file.read()
-
-    SetConfig(i, config)
-    StateTransition(i, "Init", "Standby")
-    StateTransition(i, "Enable", "Error")
-
-# @pytest.mark.parametrize("T", [np.complex64, np.complex128])
-# def test_UnsupportedType(i: daoCommandIfce, T):
-#     root = InitTestRoutine()
+# def test_InvalidSharedMemory(i: daoCommandIfce):
+#     InitTestRoutine()
 #     """ 
-#        Checks an error is raised if a shared memory target
-#        uses an unsupported data type.
+#        Checks an error is raised if a shared memory
+#        target fails to be opened.
 #     """
-#     # create shm
-#     shmpath = f"/tmp/shm.im.shm"
-#     _ = dao.shm(shmpath, np.zeros((1,1), dtype=T))
-    
-#     # create config
-#     yml = {}
-#     yml["telemetry_root"] = root
-#     yml["telemetry"] = [{
-#         "target": shmpath
-#     }]
-#     config = yaml.dump(yml)
+#     with open(TEST_CONFIGFILE) as config_file:
+#         config = config_file.read()
 
 #     SetConfig(i, config)
 #     StateTransition(i, "Init", "Standby")
 #     StateTransition(i, "Enable", "Error")
+
+@pytest.mark.parametrize("T", [np.complex64, np.complex128])
+def test_UnsupportedType(i: daoCommandIfce, T):
+    root = InitTestRoutine()
+    """ 
+       Checks an error is raised if a shared memory target
+       uses an unsupported data type.
+    """
+    # create shm
+    shmpath = f"/tmp/shm.im.shm"
+    _ = dao.shm(shmpath, np.zeros((1,1), dtype=T))
+    
+    # create config
+    yml = {}
+    yml["telemetry_root"] = root
+    yml["telemetry"] = [{
+        "target": shmpath
+    }]
+    config = yaml.dump(yml)
+
+    SetConfig(i, config)
+    StateTransition(i, "Init", "Standby")
+    StateTransition(i, "Enable", "Error")
 
 # def test_ThreadAffinity(i: daoCommandIfce):
 #     root = InitTestRoutine()
