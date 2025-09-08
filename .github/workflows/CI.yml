@@ -9,14 +9,14 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    
     env:
-      DAOROOT: ${{ github.workspace }}/DAOROOT
-      DAODATA: ${{ github.workspace }}/DAODATA
-      LD_LIBRARY_PATH: ${{ env.LD_LIBRARY_PATH }}:${{ github.workspace }}/DAOROOT/lib:${{ github.workspace }}/DAOROOT/lib64
-      PATH: ${{ env.PATH }}:${{ github.workspace }}/bin:${{ github.workspace }}/DAOROOT/bin
-      PYTHONPATH: ${{ env.PYTHONPATH }}:${{ github.workspace }}/DAOROOT/python
-      PKG_CONFIG_PATH: ${{ env.PKG_CONFIG_PATH }}:${{ github.workspace }}/DAOROOT/lib/pkgconfig
+      DAOROOT: ${{ runner.temp }}/DAOROOT
+      DAODATA: ${{ runner.temp }}/DAODATA
+      LD_LIBRARY_PATH: ${{ env.LD_LIBRARY_PATH }}:${{ runner.temp }}/DAOROOT/lib:${{ runner.temp }}/DAOROOT/lib64
+      PATH: ${{ env.PATH }}:${{ runner.temp }}/bin:${{ runner.temp }}/DAOROOT/bin
+      PYTHONPATH: ${{ env.PYTHONPATH }}:${{ runner.temp }}/DAOROOT/python
+      PKG_CONFIG_PATH: ${{ env.PKG_CONFIG_PATH }}:${{ runner.temp }}/DAOROOT/lib/pkgconfig
 
     steps:
       - name: Checkout daoTools
