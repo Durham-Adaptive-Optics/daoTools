@@ -114,12 +114,9 @@ def i2():
         daoTelemetry.kill()
         shutil.rmtree(TEST_DIRECTORY)
 
-# # ========================================================================================== #
-# # TEST ROUTINES
-# # ========================================================================================== #
-
-def test_foo(i):
-    assert False
+# ========================================================================================== #
+# TEST ROUTINES
+# ========================================================================================== #
 
 # def test_CliConfig(i2: daoCommandIfce):
 #     InitTestRoutine()
@@ -163,18 +160,18 @@ def test_foo(i):
 #     SetConfig(i, config)
 #     StateTransition(i, "Init", "Error")
 
-# def test_InvalidSharedMemory(i: daoCommandIfce):
-#     InitTestRoutine()
-#     """ 
-#        Checks an error is raised if a shared memory
-#        target fails to be opened.
-#     """
-#     with open(TEST_CONFIGFILE) as config_file:
-#         config = config_file.read()
+def test_InvalidSharedMemory(i: daoCommandIfce):
+    InitTestRoutine()
+    """ 
+       Checks an error is raised if a shared memory
+       target fails to be opened.
+    """
+    with open(TEST_CONFIGFILE) as config_file:
+        config = config_file.read()
 
-#     SetConfig(i, config)
-#     StateTransition(i, "Init", "Standby")
-#     StateTransition(i, "Enable", "Error")
+    SetConfig(i, config)
+    StateTransition(i, "Init", "Standby")
+    StateTransition(i, "Enable", "Error")
 
 # @pytest.mark.parametrize("T", [np.complex64, np.complex128])
 # def test_UnsupportedType(i: daoCommandIfce, T):
@@ -517,53 +514,53 @@ def test_foo(i):
 #             assert(hdu.header["atype"] == shm.get_meta_data()["atype"])
 #             assert(hdu.header["cnt0"] == (frame_id + 1))
 
-# # def test_StateMachine(i: daoCommandIfce):
-# #     root = InitTestRoutine()
-# #     """ 
-# #        Stress tests the state transitions by 
-# #        performing a random walk through the state space.
-# #     """
-# #     # create shm
-# #     shmPath = f"/tmp/shm.im.shm"
-# #     _ = dao.shm(shmPath, np.zeros((1,1)))
+# def test_StateMachine(i: daoCommandIfce):
+#     root = InitTestRoutine()
+#     """ 
+#        Stress tests the state transitions by 
+#        performing a random walk through the state space.
+#     """
+#     # create shm
+#     shmPath = f"/tmp/shm.im.shm"
+#     _ = dao.shm(shmPath, np.zeros((1,1)))
 
-# #     # create config
-# #     yml = {}
-# #     yml["telemetry_root"] = root
-# #     yml["telemetry"] = [{
-# #         "target": shmPath
-# #     }]
-# #     config = yaml.dump(yml)
-# #     SetConfig(i, config)
+#     # create config
+#     yml = {}
+#     yml["telemetry_root"] = root
+#     yml["telemetry"] = [{
+#         "target": shmPath
+#     }]
+#     config = yaml.dump(yml)
+#     SetConfig(i, config)
     
-# #     # cycle states
-# #     tThreshold = 30 # number seconds to run test for
-# #     pThreshold = 0.5 # probability of taking forward transition.
+#     # cycle states
+#     tThreshold = 30 # number seconds to run test for
+#     pThreshold = 0.5 # probability of taking forward transition.
 
-# #     t0 = perf_counter()
-# #     while (perf_counter() - t0) < tThreshold:
-# #         state = QueryState(i)
+#     t0 = perf_counter()
+#     while (perf_counter() - t0) < tThreshold:
+#         state = QueryState(i)
 
-# #         if state == "Off":
-# #             StateTransition(i, "Init", "Standby")
-# #         elif state == "Running":
-# #             StateTransition(i, "Idle", "Idle")
-# #         else:
-# #             transition_lookup = {
-# #                 "Standby": [
-# #                     ("Enable", "Idle"), # forward transition
-# #                     ("Stop", "Off") # back transition
-# #                 ],
+#         if state == "Off":
+#             StateTransition(i, "Init", "Standby")
+#         elif state == "Running":
+#             StateTransition(i, "Idle", "Idle")
+#         else:
+#             transition_lookup = {
+#                 "Standby": [
+#                     ("Enable", "Idle"), # forward transition
+#                     ("Stop", "Off") # back transition
+#                 ],
                 
-# #                 "Idle": [
-# #                     ("Run", "Running"), # forward transition
-# #                     ("Idle", "Idle") # back transition
-# #                 ]   
-# #             }
+#                 "Idle": [
+#                     ("Run", "Running"), # forward transition
+#                     ("Idle", "Idle") # back transition
+#                 ]   
+#             }
             
-# #             assert(state in transition_lookup)
-# #             k = 0 if np.random.random() <= pThreshold else 1
-# #             transition, goto_state = transition_lookup[state][k]
-# #             StateTransition(i, transition, goto_state)
-# #             sleep(0.5)
+#             assert(state in transition_lookup)
+#             k = 0 if np.random.random() <= pThreshold else 1
+#             transition, goto_state = transition_lookup[state][k]
+#             StateTransition(i, transition, goto_state)
+#             sleep(0.5)
         
