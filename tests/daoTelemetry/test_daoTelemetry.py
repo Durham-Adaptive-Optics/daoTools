@@ -204,7 +204,7 @@ def test_ThreadAffinity(i: daoCommandIfce):
        has the configured core affinity.
     """
     cores = np.arange(os.cpu_count())
-    core = int(cores[cores.size // 2])
+    core = int(cores[-1])
     
     # create shm
     shmpath = f"/tmp/shm.im.shm"
