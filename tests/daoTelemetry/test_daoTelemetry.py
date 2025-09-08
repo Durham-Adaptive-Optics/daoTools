@@ -440,79 +440,79 @@ def test_RecordingError(i: daoCommandIfce):
 
     AssertState(i, "Error")
 
-# @pytest.mark.parametrize("dtype", [
-#     np.int8, np.int16, np.int32, np.int64,
-#     np.uint8, np.uint16, np.uint32, np.uint64,
-#     np.float32, np.float64
-# ])
-# @pytest.mark.parametrize("shape", [(2,3), (2,3,4)])
-# def test_RecordingAccuracy(i: daoCommandIfce, dtype, shape):
-#     root = InitTestRoutine()
-#     """ 
-#        Checks that data across all supported types and array dimensions
-#        is correctly recorded.
-#     """
+@pytest.mark.parametrize("dtype", [
+    np.int8, np.int16, np.int32, np.int64,
+    np.uint8, np.uint16, np.uint32, np.uint64,
+    np.float32, np.float64
+])
+@pytest.mark.parametrize("shape", [(2,3), (2,3,4)])
+def test_RecordingAccuracy(i: daoCommandIfce, dtype, shape):
+    root = InitTestRoutine()
+    """ 
+       Checks that data across all supported types and array dimensions
+       is correctly recorded.
+    """
     
-#     #
-#     NUM_FRAMES = 10
-#     type = np.dtype(dtype)
-#     dtype_limits = np.iinfo(type) if type.kind in "iu" else np.finfo(type)
-#     min, max = dtype_limits.min, dtype_limits.max
+    #
+    NUM_FRAMES = 10
+    type = np.dtype(dtype)
+    dtype_limits = np.iinfo(type) if type.kind in "iu" else np.finfo(type)
+    min, max = dtype_limits.min, dtype_limits.max
     
-#     # create shm
-#     shmPath = f"/tmp/shm.im.shm"
-#     shm = dao.shm(shmPath, np.zeros(shape, dtype=dtype))
+    # create shm
+    shmPath = f"/tmp/shm.im.shm"
+    shm = dao.shm(shmPath, np.zeros(shape, dtype=dtype))
 
-#     # track golden frames
-#     gold_data = []
-#     gold_data.append(shm.get_data())
+    # track golden frames
+    gold_data = []
+    gold_data.append(shm.get_data())
 
-#     # create config
-#     yml = {}
-#     yml["telemetry_root"] = root
-#     yml["telemetry"] = [{
-#         "target": shmPath,
-#         "limit": NUM_FRAMES
-#     }]
-#     config = yaml.dump(yml)
+    # create config
+    yml = {}
+    yml["telemetry_root"] = root
+    yml["telemetry"] = [{
+        "target": shmPath,
+        "limit": NUM_FRAMES
+    }]
+    config = yaml.dump(yml)
 
-#     SetConfig(i, config)
-#     StateTransition(i, "Init", "Standby")
-#     StateTransition(i, "Enable", "Idle")
-#     StateTransition(i, "Run", "Running")
+    SetConfig(i, config)
+    StateTransition(i, "Init", "Standby")
+    StateTransition(i, "Enable", "Idle")
+    StateTransition(i, "Run", "Running")
 
-#     # write golden frames
-#     for _ in range(NUM_FRAMES - 1):
-#         raw_data = np.random.random(size=shape) * (max - min) + min # array of random floats between min & max
-#         data = raw_data.astype(dtype) # cast vals into desired type.
-#         gold_data.append(data)
-#         shm.set_data(data)
-#         sleep(0.5)
+    # write golden frames
+    for _ in range(NUM_FRAMES - 1):
+        raw_data = np.random.random(size=shape) * (max - min) + min # array of random floats between min & max
+        data = raw_data.astype(dtype) # cast vals into desired type.
+        gold_data.append(data)
+        shm.set_data(data)
+        sleep(0.5)
     
-#     AssertState(i, "Off")
+    AssertState(i, "Off")
         
-#     # check recorded data is accurate
-#     sessionDir = os.listdir(root)[0]
-#     datafile = os.listdir(f"{root}/{sessionDir}")[0]
-#     with fits.open(f"{root}/{sessionDir}/{datafile}") as data:
-#         assert(len(gold_data) == len(data))
+    # check recorded data is accurate
+    sessionDir = os.listdir(root)[0]
+    datafile = os.listdir(f"{root}/{sessionDir}")[0]
+    with fits.open(f"{root}/{sessionDir}/{datafile}") as data:
+        assert(len(gold_data) == len(data))
     
-#         for frame_id in range(len(gold_data)):
-#             # fetch recorded frame and its reference.
-#             hdu = data[frame_id]
-#             gold_frame = gold_data[frame_id]
+        for frame_id in range(len(gold_data)):
+            # fetch recorded frame and its reference.
+            hdu = data[frame_id]
+            gold_frame = gold_data[frame_id]
 
-#             # check all metadata is present
-#             assert("atype" in hdu.header)
-#             assert("atime" in hdu.header)
-#             assert("cnt0" in hdu.header)
-#             assert("cnt1" in hdu.header)
-#             assert("cnt2" in hdu.header)
+            # check all metadata is present
+            assert("atype" in hdu.header)
+            assert("atime" in hdu.header)
+            assert("cnt0" in hdu.header)
+            assert("cnt1" in hdu.header)
+            assert("cnt2" in hdu.header)
 
-#             # check data accuracy
-#             assert(np.array_equal(hdu.data, gold_frame))
-#             assert(hdu.header["atype"] == shm.get_meta_data()["atype"])
-#             assert(hdu.header["cnt0"] == (frame_id + 1))
+            # check data accuracy
+            assert(np.array_equal(hdu.data, gold_frame))
+            assert(hdu.header["atype"] == shm.get_meta_data()["atype"])
+            assert(hdu.header["cnt0"] == (frame_id + 1))
 
 # def test_StateMachine(i: daoCommandIfce):
 #     root = InitTestRoutine()
