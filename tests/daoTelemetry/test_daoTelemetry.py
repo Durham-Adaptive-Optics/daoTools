@@ -317,128 +317,128 @@ def test_ErrorRecovery(i: daoCommandIfce):
     StateTransition(i, "OnFailue", "Error")
     StateTransition(i, "Recover", "Idle")
 
-# def test_RecordingLimit(i: daoCommandIfce):
-#     root = InitTestRoutine()
-#     """ 
-#        Checks that the recording session automatically
-#        stops once the configured limit is reached.
-#     """
-#     NUM_FRAMES = 10 # number of frames to record to disk.
+def test_RecordingLimit(i: daoCommandIfce):
+    root = InitTestRoutine()
+    """ 
+       Checks that the recording session automatically
+       stops once the configured limit is reached.
+    """
+    NUM_FRAMES = 10 # number of frames to record to disk.
     
-#     # create shm
-#     shmpath = f"/tmp/shm.im.shm"
-#     shm = dao.shm(shmpath, np.zeros((1,1)))
+    # create shm
+    shmpath = f"/tmp/shm.im.shm"
+    shm = dao.shm(shmpath, np.zeros((1,1)))
     
-#     # create config
-#     yml = {}
-#     yml["telemetry_root"] = root
-#     yml["telemetry"] = [{
-#         "target": shmpath,
-#         "limit": NUM_FRAMES  
-#     }]
-#     config = yaml.dump(yml)
+    # create config
+    yml = {}
+    yml["telemetry_root"] = root
+    yml["telemetry"] = [{
+        "target": shmpath,
+        "limit": NUM_FRAMES  
+    }]
+    config = yaml.dump(yml)
 
-#     SetConfig(i, config)
-#     StateTransition(i, "Init", "Standby")
-#     StateTransition(i, "Enable", "Idle")
-#     StateTransition(i, "Run", "Running")
+    SetConfig(i, config)
+    StateTransition(i, "Init", "Standby")
+    StateTransition(i, "Enable", "Idle")
+    StateTransition(i, "Run", "Running")
     
-#     # write frames to shm
-#     for _ in range(NUM_FRAMES - 1):
-#         data = np.random.rand(1,1)
-#         shm.set_data(data)
-#         sleep(0.5)
+    # write frames to shm
+    for _ in range(NUM_FRAMES - 1):
+        data = np.random.rand(1,1)
+        shm.set_data(data)
+        sleep(0.5)
 
-#     AssertState(i, "Off")
+    AssertState(i, "Off")
 
-# def test_DatafileCapacity(i: daoCommandIfce):
-#     root = InitTestRoutine()
-#     """ 
-#        Checks that frames are recorded into multiple
-#        data files to ensure that each file's size does not
-#        exceed its configured capacity.
-#     """
-#     FILE_CAPACITY = 10 # number of frames per datafile.
+def test_DatafileCapacity(i: daoCommandIfce):
+    root = InitTestRoutine()
+    """ 
+       Checks that frames are recorded into multiple
+       data files to ensure that each file's size does not
+       exceed its configured capacity.
+    """
+    FILE_CAPACITY = 10 # number of frames per datafile.
     
-#     # create shm
-#     shmName = "shm"
-#     shmPath = f"/tmp/{shmName}.im.shm"
-#     shm = dao.shm(shmPath, np.zeros((1,1)))
+    # create shm
+    shmName = "shm"
+    shmPath = f"/tmp/{shmName}.im.shm"
+    shm = dao.shm(shmPath, np.zeros((1,1)))
     
-#     # create config
-#     yml = {}
-#     yml["telemetry_root"] = root
-#     yml["telemetry"] = [{
-#         "target": shmPath,
-#         "capacity": FILE_CAPACITY,
-#         "limit": FILE_CAPACITY + 1
-#     }]
-#     config = yaml.dump(yml)
+    # create config
+    yml = {}
+    yml["telemetry_root"] = root
+    yml["telemetry"] = [{
+        "target": shmPath,
+        "capacity": FILE_CAPACITY,
+        "limit": FILE_CAPACITY + 1
+    }]
+    config = yaml.dump(yml)
 
-#     SetConfig(i, config)
-#     StateTransition(i, "Init", "Standby")
-#     StateTransition(i, "Enable", "Idle")
-#     StateTransition(i, "Run")
+    SetConfig(i, config)
+    StateTransition(i, "Init", "Standby")
+    StateTransition(i, "Enable", "Idle")
+    StateTransition(i, "Run")
     
-#     # write (FILE_CAPACITY - 1) frames for 1st datafile.
-#     # and another frame for the 2nd datafile.
-#     for _ in range(FILE_CAPACITY):
-#         data = np.random.rand(1,1)
-#         shm.set_data(data)
-#         sleep(1)
+    # write (FILE_CAPACITY - 1) frames for 1st datafile.
+    # and another frame for the 2nd datafile.
+    for _ in range(FILE_CAPACITY):
+        data = np.random.rand(1,1)
+        shm.set_data(data)
+        sleep(1)
         
-#     # check two datafiles were created
-#     sessionDir = os.listdir(root)[0]
-#     for file in os.listdir(f"{root}/{sessionDir}"):
-#         fileID = int(file[file.index("_")+1 : file.index(".")])
-#         fileName = file.split("_")[0]
+    # check two datafiles were created
+    sessionDir = os.listdir(root)[0]
+    for file in os.listdir(f"{root}/{sessionDir}"):
+        fileID = int(file[file.index("_")+1 : file.index(".")])
+        fileName = file.split("_")[0]
 
-#         assert(fileName == shmName)
-#         assert(fileID == 1 or fileID == 2)
+        assert(fileName == shmName)
+        assert(fileID == 1 or fileID == 2)
 
-#         with fits.open(f"{root}/{sessionDir}/{file}") as data:
-#             expectedFrames = FILE_CAPACITY if fileID == 1 else 1
-#             assert(len(data) == expectedFrames)
+        with fits.open(f"{root}/{sessionDir}/{file}") as data:
+            expectedFrames = FILE_CAPACITY if fileID == 1 else 1
+            assert(len(data) == expectedFrames)
 
-# def test_RecordingError(i: daoCommandIfce):
-#     root = InitTestRoutine()
-#     """ 
-#        Checks an error is raised when an issue occurs
-#        within the main recording loop of a collector thread.
-#     """
-#     FILE_CAPACITY = 10 # number of frames per datafile.
+def test_RecordingError(i: daoCommandIfce):
+    root = InitTestRoutine()
+    """ 
+       Checks an error is raised when an issue occurs
+       within the main recording loop of a collector thread.
+    """
+    FILE_CAPACITY = 10 # number of frames per datafile.
     
-#     # create shm
-#     shmName = "shm"
-#     shmPath = f"/tmp/{shmName}.im.shm"
-#     shm = dao.shm(shmPath, np.zeros((1,1)))
+    # create shm
+    shmName = "shm"
+    shmPath = f"/tmp/{shmName}.im.shm"
+    shm = dao.shm(shmPath, np.zeros((1,1)))
     
-#     # create config
-#     yml = {}
-#     yml["telemetry_root"] = root
-#     yml["telemetry"] = [{
-#         "target": shmPath,
-#         "capacity": FILE_CAPACITY
-#     }]
-#     config = yaml.dump(yml)
+    # create config
+    yml = {}
+    yml["telemetry_root"] = root
+    yml["telemetry"] = [{
+        "target": shmPath,
+        "capacity": FILE_CAPACITY
+    }]
+    config = yaml.dump(yml)
 
-#     SetConfig(i, config)
-#     StateTransition(i, "Init", "Standby")
-#     StateTransition(i, "Enable", "Idle")
-#     StateTransition(i, "Run", "Running")
+    SetConfig(i, config)
+    StateTransition(i, "Init", "Standby")
+    StateTransition(i, "Enable", "Idle")
+    StateTransition(i, "Run", "Running")
     
-#     # create file w/ name of upcoming datafile-2
-#     sessionDir = os.listdir(root)[0]
-#     file2 = pathlib.Path(f"{root}/{sessionDir}/{shmName}_2.fits")
-#     file2.touch(exist_ok=False)
+    # create file w/ name of upcoming datafile-2
+    sessionDir = os.listdir(root)[0]
+    file2 = pathlib.Path(f"{root}/{sessionDir}/{shmName}_2.fits")
+    file2.touch(exist_ok=False)
     
-#     # write frames
-#     for _ in range(FILE_CAPACITY):
-#         data = np.random.rand(1,1)
-#         shm.set_data(data)
-#         sleep(0.5)
+    # write frames
+    for _ in range(FILE_CAPACITY):
+        data = np.random.rand(1,1)
+        shm.set_data(data)
+        sleep(0.5)
 
-#     AssertState(i, "Error")
+    AssertState(i, "Error")
 
 # @pytest.mark.parametrize("dtype", [
 #     np.int8, np.int16, np.int32, np.int64,
