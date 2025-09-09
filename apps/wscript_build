@@ -324,15 +324,18 @@ daoApplyGain = bld.program(
 	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
-daoTelemetry = bld.program(
-	source = 'daoTelemetry.cpp',
-	target = 'daoTelemetry',
-	includes = '../include '+os.getenv('DAOROOT')+'/include/',
-	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-ldaoNuma', '-ldaoProto', '-lzmq', '-lprotobuf', '-lyaml-cpp', '-lcfitsio', '-lstdc++fs'] + my_ld_flags,
-	use= 'daoTools',
-	cxxflags = ['-O3', '-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto', '-std=c++17']
-)
+if bld.env.HAVE_CLI11:
+	daoTelemetry = bld.program(
+		source = 'daoTelemetry.cpp',
+		target = 'daoTelemetry',
+		includes = '../include '+os.getenv('DAOROOT')+'/include/',
+		linkflags = my_link_flags,
+		ldflags = ['-ldao' , '-lpthread', '-ldaoNuma', '-ldaoProto', '-lzmq', '-lprotobuf', '-lyaml-cpp', '-lcfitsio', '-lstdc++fs'] + my_ld_flags,
+		use= 'daoTools CLI11',
+		cxxflags = ['-O3', '-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto', '-std=c++17']
+	)
+else:
+    print("Skipping daoTelemetry build (CLI11 not available).")
 
 if bld.env.BLAS_AVAILABLE:
 	daoMvM = bld.program(

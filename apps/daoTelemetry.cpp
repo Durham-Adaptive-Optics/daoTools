@@ -17,7 +17,7 @@
 #include <daoLog.hpp>
 #include <filesystem>
 #include <sys/stat.h>
-#include <CLI11.hpp>
+#include <CLI/CLI.hpp>
 #include <algorithm>
 #include <stdint.h>
 #include <fitsio.h>

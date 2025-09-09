@@ -36,6 +36,22 @@ def configure(conf):
 	conf.env.CFLAGS += ['-DZMQ_BUILD_DRAFT_API']
 	conf.env.CXXFLAGS += ['-DZMQ_BUILD_DRAFT_API']
 
+	# --- CLI11 (header-only) ---
+	conf.env.HAVE_CLI11 = False
+	# Try pkg-config if the distro provides it (some do)
+	try:
+		conf.check_cfg(package='CLI11', args='--cflags --libs', uselib_store='CLI11')
+		conf.env.HAVE_CLI11 = True
+	except:
+  		# Fallback: just verify the header exists from libcli11-dev
+  		if conf.check_cxx(header_name='CLI11.hpp', mandatory=False):
+  			conf.env.HAVE_CLI11 = True
+  		elif conf.check_cxx(header_name='CLI/CLI.hpp', mandatory=False):
+  			conf.env.HAVE_CLI11 = True
+  		else:
+  			conf.fatal('CLI11 not found. Install libcli11-dev or provide CLI11.hpp')
+
+
 	# Check for CUDA
 	conf.env.CUDA_AVAILABLE = False  # Default to False
 	try:
