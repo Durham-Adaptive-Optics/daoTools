@@ -5,32 +5,17 @@ Useful tools using daoBase
 ## daoBase
 daoBase should be installed. See https://github.com/Durham-Adaptive-Optics/daoBase
 
-## cblas
-daoTools provides basic MVM tools using CBLAS. On Ubuntu
+## System Packages
 ````
-sudo apt install libblas-dev libopenblas-dev
-````
-
-## ncurses
-on centos:
-````
-sudo yum install ncurses-devel
+xargs -a ./sys-packages.txt sudo apt install
 ````
 
-## CLI11
+## Python Packages
 ````
-sudo apt install libcli11-dev
-````
-
-## cfitsio
-````
-sudo apt install libcfitsio-dev
+pip install -r ./py-packages.txt
 ````
 
-## pyqtgraph
-````
-pip3 install pyqtgraph
-````
+### MagicPlot
 We recommand to use magicPlot
 ```
 git clone https://github.com/ojdf/magicplot.git
