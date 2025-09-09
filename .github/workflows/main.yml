@@ -16,7 +16,8 @@ jobs:
 
     steps:
       #  -------------------------------------------------------------------------------------- #
-      - name: Setup dao Environment
+      - name: Configure dao Environment (Linux)
+        if: runner.os == 'Linux'
         run: |
           echo "DAOROOT=$HOME/DAOROOT" >> $GITHUB_ENV
           echo "DAODATA=$HOME/DAODATA" >> $GITHUB_ENV
@@ -24,8 +25,15 @@ jobs:
           echo "PATH=$PATH:$HOME/bin:$HOME/DAOROOT/bin" >> $GITHUB_ENV
           echo "PYTHONPATH=${PYTHONPATH:+$PYTHONPATH:}$HOME/DAOROOT/python" >> $GITHUB_ENV
           echo "PKG_CONFIG_PATH=${PKG_CONFIG_PATH:+$PKG_CONFIG_PATH:}$HOME/DAOROOT/lib/pkgconfig" >> $GITHUB_ENV
-          mkdir -p "$DAOROOT"
-          mkdir -p "$DAODATA"
+      #  -------------------------------------------------------------------------------------- #
+
+      #  -------------------------------------------------------------------------------------- #
+      - name: Create dao Enviroment (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir $DAOROOT
+          mkdir $DAODATA
+
       #  -------------------------------------------------------------------------------------- #
 
       #  -------------------------------------------------------------------------------------- #
