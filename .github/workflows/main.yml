@@ -96,7 +96,7 @@ jobs:
           key: ${{ runner.os }}-WAF-${{env.WAF_SRC}}
 
       - name: Install WAF Executable (Linux) 
-        if: runner.os == 'Linux' && steps.waf-cache.outputs.cache-hit == 'false'
+        if: runner.os == 'Linux' && steps.waf-cache.outputs.cache-hit != 'true'
         run: |
           curl -o ~/bin/waf ${{env.WAF_SRC}}
           chmod +x ~/bin/waf
