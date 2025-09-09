@@ -8,3 +8,4 @@ redis
 sphinx
 screeninfo
 pytest
+pyqtgraph

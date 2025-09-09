@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     
     env:
-      SYSDEPS_FILE: "./daoTools/.github/workflows/sys-deps.txt"
+      SYSDEPS_FILE: "./daoTools/sys-packages.txt"
       WAF_SRC: "https://waf.io/waf-2.0.24"
 
     steps:
@@ -81,12 +81,12 @@ jobs:
         with: 
           python-version: "3.10"
           cache: 'pip' # Enables automatic package caching.
-          cache-dependency-path: daoTools/pyrequirements.txt
+          cache-dependency-path: daoTools/py-packages.txt
 
       - name: Install Python Packages
         run: |
           python -m pip install --upgrade pip
-          pip install -r ./daoTools/pyrequirements.txt
+          pip install -r ./daoTools/py-packages.txt
       #  -------------------------------------------------------------------------------------- #
 
       #  -------------------------------------------------------------------------------------- #

@@ -16,3 +16,5 @@ libnuma-dev
 libyaml-cpp-dev
 libcfitsio-dev
 libcli11-dev
+libblas-dev 
+libopenblas-dev
