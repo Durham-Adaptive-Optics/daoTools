@@ -1,9 +1,12 @@
-name: daoTools 
+name: CI Pipeline
 
 on:
   push:
     branches:
-      - CI-Workflow
+      - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -127,18 +130,3 @@ jobs:
           cd ./daoTools/tests
           pytest -v
       #  -------------------------------------------------------------------------------------- #
-
-      #  -------------------------------------------------------------------------------------- #
-      # - name: Download CLI11
-      #   uses: dsaltares/fetch-gh-release-asset@master
-      #   with:
-      #     repo: CLIUtils/CLI11
-      #     file: CLI11.hpp
-
-      # - name: Install CLI11
-      #   run: |
-      #     mv ./CLI11.hpp $DAOROOT/include
-      #  -------------------------------------------------------------------------------------- #
-          
-
-      
