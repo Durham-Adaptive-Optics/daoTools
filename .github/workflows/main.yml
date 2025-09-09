@@ -10,8 +10,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     
+    env:
+      SYSDEPS_FILE: "./daoTools/.github/workflows/sys-deps.txt"
+      WAF_SRC: "https://waf.io/waf-2.0.24"
+
     steps:
-      - name: Set environment variables
+      #  -------------------------------------------------------------------------------------- #
+      - name: Setup dao Environment
         run: |
           echo "DAOROOT=$HOME/DAOROOT" >> $GITHUB_ENV
           echo "DAODATA=$HOME/DAODATA" >> $GITHUB_ENV
@@ -19,70 +24,112 @@ jobs:
           echo "PATH=$PATH:$HOME/bin:$HOME/DAOROOT/bin" >> $GITHUB_ENV
           echo "PYTHONPATH=${PYTHONPATH:+$PYTHONPATH:}$HOME/DAOROOT/python" >> $GITHUB_ENV
           echo "PKG_CONFIG_PATH=${PKG_CONFIG_PATH:+$PKG_CONFIG_PATH:}$HOME/DAOROOT/lib/pkgconfig" >> $GITHUB_ENV
-          mkdir -p "$HOME/DAOROOT"
-    
-      - name: Install System Dependencies (Ubuntu)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt update
-          sudo apt install -y libtool pkg-config build-essential autoconf automake \
-            libssl-dev libncurses5-dev libncursesw5-dev redis libgtest-dev libgsl-dev libzmq3-dev \
-            protobuf-compiler numactl libnuma-dev libyaml-cpp-dev libcfitsio-dev
+          mkdir -p "$DAOROOT"
+          mkdir -p "$DAODATA"
+      #  -------------------------------------------------------------------------------------- #
 
-      - name: Install WAF Build System
-        run: |
-          mkdir -p ~/.local/bin
-          curl -o ~/.local/bin/waf https://waf.io/waf-2.0.24
-          chmod +x ~/.local/bin/waf
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-
-      - name: Install Python (v3.10)
-        uses: actions/setup-python@v4
-        with: 
-          python-version: "3.10"
-
-      - name: Install Python Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install posix_ipc zmq protobuf==3.20.0 astropy python-statemachine statemachine redis sphinx screeninfo pytest
-
+      #  -------------------------------------------------------------------------------------- #
       - name: Checkout daoBase
         uses: actions/checkout@v4
         with:
           repository: Durham-Adaptive-Optics/daoBase
           path: daoBase
           token: ${{ secrets.CI_CLONE_ACCESS_TOKEN }}
+      #  -------------------------------------------------------------------------------------- #
 
+      #  -------------------------------------------------------------------------------------- #
+      - name: Checkout daoTools
+        uses: actions/checkout@v4
+        with:
+          path: daoTools
+      #  -------------------------------------------------------------------------------------- #
+
+      #  -------------------------------------------------------------------------------------- #
+      - name: Cache System Dependencies (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/cache@v4
+        with:
+          path: |
+            /var/cache/apt/archives
+            /var/lib/apt/lists
+          key: ${{ runner.os }}-apt-${{ hashFiles(env.SYSDEPS_FILE) }}
+          restore-keys: |
+            ${{ runner.os }}-apt-
+
+      - name: Install System Dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt update
+          xargs -a ${{env.SYSDEPS_FILE}} sudo apt install -y
+      #  -------------------------------------------------------------------------------------- #
+
+      #  -------------------------------------------------------------------------------------- #
+      - name: Install Python (v3.10)
+        uses: actions/setup-python@v4
+        with: 
+          python-version: "3.10"
+          cache: 'pip' # Enables automatic package caching.
+          cache-dependency-path: daoTools/pyrequirements.txt
+
+      - name: Install Python Packages
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r ./daoTools/pyrequirements.txt
+      #  -------------------------------------------------------------------------------------- #
+
+      #  -------------------------------------------------------------------------------------- #
+      - name: Cache WAF Executable (Linux)
+        id: waf-cache
+        if: runner.os == 'Linux'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/bin/waf
+          key: ${{ runner.os }}-WAF-${{env.WAF_SRC}}
+
+      - name: Install WAF Executable (Linux) 
+        if: runner.os == 'Linux' && steps.waf-cache.outputs.cache-hit == 'false'
+        run: |
+          curl -o ~/bin/waf ${{env.WAF_SRC}}
+          chmod +x ~/bin/waf
+      #  -------------------------------------------------------------------------------------- #
+
+      #  -------------------------------------------------------------------------------------- #
       - name: Build daoBase
         run: |
           cd ./daoBase 
           waf configure --prefix=$DAOROOT
           waf -v
           waf install
+      #  -------------------------------------------------------------------------------------- #
 
-      - name: Checkout daoTools
-        uses: actions/checkout@v4
-        with:
-          path: daoTools
-
-      - name: Download CLI11
-        uses: dsaltares/fetch-gh-release-asset@master
-        with:
-          repo: CLIUtils/CLI11
-          file: CLI11.hpp
-
-      - name: Install CLI11
-        run: |
-          mv ./CLI11.hpp $DAOROOT/include
-          
+      #  -------------------------------------------------------------------------------------- #
       - name: Build daoTools
         run: |
           cd ./daoTools
           waf configure --prefix=$DAOROOT
           waf -v
           waf install
+      #  -------------------------------------------------------------------------------------- #
 
-      - name: Run daoTools Test Suite
+      #  -------------------------------------------------------------------------------------- #
+      - name: Test Suite
         run: |
           cd ./daoTools/tests
           pytest -v
+      #  -------------------------------------------------------------------------------------- #
+
+      #  -------------------------------------------------------------------------------------- #
+      # - name: Download CLI11
+      #   uses: dsaltares/fetch-gh-release-asset@master
+      #   with:
+      #     repo: CLIUtils/CLI11
+      #     file: CLI11.hpp
+
+      # - name: Install CLI11
+      #   run: |
+      #     mv ./CLI11.hpp $DAOROOT/include
+      #  -------------------------------------------------------------------------------------- #
+          
+
+      

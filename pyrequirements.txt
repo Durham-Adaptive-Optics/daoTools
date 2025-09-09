@@ -1,0 +1,10 @@
+posix_ipc
+zmq
+protobuf==3.20.0
+astropy
+python-statemachine
+statemachine
+redis
+sphinx
+screeninfo
+pytest
