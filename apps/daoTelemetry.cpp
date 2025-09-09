@@ -14,10 +14,10 @@
 #include <yaml-cpp/yaml.h>
 #include <daoThread.hpp>
 #include <sys/types.h>
-#include <CLI/CLI.hpp>
 #include <daoLog.hpp>
 #include <filesystem>
 #include <sys/stat.h>
+#include <CLI/CLI.hpp>
 #include <algorithm>
 #include <stdint.h>
 #include <fitsio.h>

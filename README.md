@@ -17,6 +17,16 @@ on centos:
 sudo yum install ncurses-devel
 ````
 
+## CLI11
+````
+sudo apt install libcli11-dev
+````
+
+## cfitsio
+````
+sudo apt install libcfitsio-dev
+````
+
 ## pyqtgraph
 ````
 pip3 install pyqtgraph
