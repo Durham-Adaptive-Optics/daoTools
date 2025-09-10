@@ -27,6 +27,11 @@ sudo apt install libcli11-dev
 sudo apt install libcfitsio-dev
 ````
 
+##
+````
+sudo apt install libyaml-cpp-dev
+````
+
 ## pyqtgraph
 ````
 pip3 install pyqtgraph
