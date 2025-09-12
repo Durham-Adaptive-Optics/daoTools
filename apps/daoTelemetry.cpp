@@ -6,12 +6,13 @@
  * @ Description: Tool for recording dao shared memory frames to FITS data files.
  */
 
-/*--------------------------------------------------------------------------*/
+ /*--------------------------------------------------------------------------*/
 
-// todo support dao complex-float & complex-double datatypes (requires table hdu).
+ // todo support dao complex-float & complex-double datatypes (requires table hdu).
 
 #include <daoComponent.hpp>
 #include <yaml-cpp/yaml.h>
+#include <daoProfile.hpp>
 #include <unordered_map>
 #include <daoThread.hpp>
 #include <sys/types.h>
@@ -59,56 +60,12 @@ struct telemetry_t {
 
 /*--------------------------------------------------------------------------*/
 
-struct Profile {
-    using TimePoint = std::chrono::high_resolution_clock::time_point;
-
-    void begin_FileRetire() { begin(m_FileRetire0); }
-    void begin_DataCopy() { begin(m_DataCopy0); }
-    void begin_FileCreate() { begin(m_FileCreate0); }
-    void begin_DataExport() { begin(m_DataExport0); }
-
-    void end_FileRetire() { end(m_FileRetire, m_FileRetire0); }
-    void end_DataCopy() { end(m_DataCopy, m_DataCopy0); }
-    void end_FileCreate() { end(m_FileCreate, m_FileCreate0); }
-    void end_DataExport() { end(m_DataExport, m_DataExport0); }
-
-    void view() {
-        printf("Profile timings (microseconds):\n");
-        printf("  FileRetire:  %lld\n", m_FileRetire);
-        printf("  DataCopy:    %lld\n", m_DataCopy);
-        printf("  FileCreate:  %lld\n", m_FileCreate);
-        printf("  DataExport:  %lld\n", m_DataExport);
-    }
-
-    int64_t m_FileRetire = 0;
-    int64_t m_DataCopy = 0;
-    int64_t m_FileCreate = 0;
-    int64_t m_DataExport = 0;
-
-    private:
-    void begin(TimePoint& t0) { t0 = std::chrono::high_resolution_clock::now(); } 
-    void end(int64_t &dur, const TimePoint &t0) {  
-        const auto t1 = std::chrono::high_resolution_clock::now();
-        dur = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
-    }
-
-    TimePoint m_FileRetire0;
-    TimePoint m_DataCopy0;
-    TimePoint m_FileCreate0;
-    TimePoint m_DataExport0;
-};
-
-std::vector<Profile> g_Profiles;
-
-/*--------------------------------------------------------------------------*/
-
 class collector_t : public Dao::Thread {
 public:
     collector_t(Dao::Log::Logger &logger, const telemetry_t &t, volatile bool &agent_err_flag)
         : Thread(t.target, logger, t.core), m_telemetry(t), m_logger(logger),
         m_sifce(logger), m_shmname(t.target), m_nfiles(0), m_currfile_sz(0),
-        m_agent_err_flag(agent_err_flag), m_fits(nullptr), m_total_frames(0)
-    {
+        m_agent_err_flag(agent_err_flag), m_fits(nullptr), m_total_frames(0) {
         // open shared memory..
         if (daoShmShm2Img(t.target.c_str(), &m_shm) != DAO_SUCCESS) {
             throw std::runtime_error("collector failed to open shared memory");
@@ -143,6 +100,14 @@ public:
         if (!m_databuffer) {
             throw std::runtime_error("collector buffer allocation failed");
         }
+    }
+
+    ~collector_t() {
+        m_sifce.CloseShm();
+        free(m_mdbuffer);
+        free(m_databuffer);
+
+        DAO_PROFILE_EXPORT(m_profile)
     }
 
     void set_fsroot(const std::string &fsroot) { m_fsroot = fsroot; }
@@ -204,63 +169,56 @@ private:
         telemetry collection loop.
     */
     void RestartableThread() override {
-        Profile profile;
-
         // stop collection (if needed)..
         if (m_agent_err_flag || (m_telemetry.limit && m_total_frames >= m_telemetry.limit)) {
             Exit();
             return;
         }
 
-        // retire fits file if reached capacity..
-        profile.begin_FileRetire();
-        if (m_fits && m_telemetry.capacity && m_currfile_sz >= m_telemetry.capacity) {
-            m_log.Debug("datafile for %s has reached capacity", m_telemetry.target.c_str());
-            if (!close_fits()) {
-                m_agent_err_flag = true;
-                return;
-            }
-        }
-        profile.end_FileRetire();
-
         // collect next telemetry frame (or first, if we've only just started)
         const uint64_t cnt0_ = m_shm_md->cnt0;
         if (cnt0_ > m_cnt0 || !m_total_frames) {
+            DAO_PROFILE_NEW_FRAME(m_profile)
+
+            DAO_PROFILE_START(m_profile, "Copy");
             m_cnt0 = cnt0_;
-            
-            profile.begin_DataCopy();
             memcpy(m_mdbuffer, m_shm.md, sizeof(IMAGE_METADATA)); // copy out metadata to prevent overwrite corruption.
             memcpy(m_databuffer, m_shm.array.V, m_databuffer_sz); // copy out data to prevent overwrite corruption.
-            profile.end_DataCopy();
-            
             if (m_shm_md->cnt0 > m_cnt0) return; // drop frame, could be corrupted.
+            DAO_PROFILE_STOP(m_profile, "Copy");
+
+            // retire fits file if reached capacity..
+            DAO_PROFILE_START(m_profile, "FileChange");
+            if (m_fits && m_telemetry.capacity && m_currfile_sz >= m_telemetry.capacity) {
+                m_log.Debug("datafile for %s has reached capacity", m_telemetry.target.c_str());
+                if (!close_fits()) {
+                    m_agent_err_flag = true;
+                    return;
+                }
+            }
 
             // create fits file if we don't have one..
-            profile.begin_FileCreate();
             if (!m_fits && !new_fits()) {
                 m_agent_err_flag = true;
                 return;
             }
-            profile.end_FileCreate();
+            DAO_PROFILE_STOP(m_profile, "FileChange");
 
             // record frame..
             int status = 0;
-            profile.begin_DataExport();
-            FITS_CHECK( fits_create_img(m_fits, m_d2fd.at(m_mdbuffer->atype), m_mdbuffer->naxis, m_axes_sizes.data(), &status) );
-            FITS_CHECK( fits_write_key(m_fits, TBYTE, "atype", &m_mdbuffer->atype, nullptr, &status) );
-            FITS_CHECK( fits_write_key(m_fits, TLONGLONG, "atime", &m_mdbuffer->atime.tsfixed.secondlong, nullptr, &status) );
-            FITS_CHECK( fits_write_key(m_fits, TULONGLONG, "cnt0", &m_mdbuffer->cnt0, nullptr, &status) );
-            FITS_CHECK( fits_write_key(m_fits, TULONGLONG, "cnt1", &m_mdbuffer->cnt1, nullptr, &status) );
-            FITS_CHECK( fits_write_key(m_fits, TULONGLONG, "cnt2", &m_mdbuffer->cnt2, nullptr, &status) );
-            FITS_CHECK( fits_write_img(m_fits, m_d2fs.at(m_mdbuffer->atype), 1, m_mdbuffer->nelement, m_databuffer, &status) );
-            FITS_CHECK( fits_write_chksum(m_fits, &status) );
-            profile.end_DataExport();
+            DAO_PROFILE_START(m_profile, "Export");
+            FITS_CHECK(fits_create_img(m_fits, m_d2fd.at(m_mdbuffer->atype), m_mdbuffer->naxis, m_axes_sizes.data(), &status));
+            FITS_CHECK(fits_write_key(m_fits, TBYTE, "atype", &m_mdbuffer->atype, nullptr, &status));
+            FITS_CHECK(fits_write_key(m_fits, TLONGLONG, "atime", &m_mdbuffer->atime.tsfixed.secondlong, nullptr, &status));
+            FITS_CHECK(fits_write_key(m_fits, TULONGLONG, "cnt0", &m_mdbuffer->cnt0, nullptr, &status));
+            FITS_CHECK(fits_write_key(m_fits, TULONGLONG, "cnt1", &m_mdbuffer->cnt1, nullptr, &status));
+            FITS_CHECK(fits_write_key(m_fits, TULONGLONG, "cnt2", &m_mdbuffer->cnt2, nullptr, &status));
+            FITS_CHECK(fits_write_img(m_fits, m_d2fs.at(m_mdbuffer->atype), 1, m_mdbuffer->nelement, m_databuffer, &status));
+            DAO_PROFILE_STOP(m_profile, "Export");
 
             ++m_currfile_sz;
             ++m_total_frames;
         }
-
-        g_Profiles.push_back(profile);
     }
 
     const std::unordered_map<uint8_t, uint8_t> m_dt2s{ // lookup table from dao types to byte sizes.
@@ -302,7 +260,8 @@ private:
         {_DATATYPE_DOUBLE, TDOUBLE}
     };
 
-    volatile IMAGE_METADATA *m_shm_md;
+    DAO_PROFILE(m_profile, std::chrono::microseconds, "Copy", "FileChange", "Export")
+    volatile IMAGE_METADATA * m_shm_md;
     volatile bool &m_agent_err_flag;
     const telemetry_t &m_telemetry;
     Dao::ShmIfce<uint8_t> m_sifce;
@@ -328,8 +287,7 @@ public:
     telemetry_agent_t(Dao::Log::Logger &logger, const std::string &ip, size_t port, const std::string &config_file = "")
         :
         Component("telemetry", logger, ip, port),
-        m_logger(logger), m_config_string(""), m_err_flag(false) 
-    {
+        m_logger(logger), m_config_string(""), m_err_flag(false) {
         if (config_file.length()) {
             std::ifstream file(config_file);
             if (file) {
@@ -432,7 +390,7 @@ private:
     void clear_config() {
         m_telemetry_list.clear();
     }
-    
+
     void alloc_recording_resources() {
         for (telemetry_t &t : m_telemetry_list) {
             m_logger.Debug("allocating telemetry collector for %s..", t.target.c_str());
@@ -479,7 +437,7 @@ private:
             t.collector->set_fsroot(session_dir);
             t.collector->Start();
         }
-        
+
         m_logger.Info("telemetry session started");
     }
 
@@ -489,26 +447,11 @@ private:
             t.collector->Stop();
         }
         m_logger.Info("telemetry session ended");
-    
-        // output profiles to csv
-        std::ofstream csv("profile.csv");
-        csv << "FileRetire" << ",";
-        csv << "DataCopy" << ",";
-        csv << "FileCreate" << ",";
-        csv << "DataExport" << "\n";
-        for(const Profile &p : g_Profiles) {
-            csv << p.m_FileRetire << ",";
-            csv << p.m_DataCopy << ",";
-            csv << p.m_FileCreate << ",";
-            csv << p.m_DataExport << "\n";
-        }
-        csv.close();
-        m_logger.Debug("Profiles have been exported!");
     }
 
     void dealloc_recording_resources() {
         for (telemetry_t &t : m_telemetry_list) {
-            if(t.collector) {
+            if (t.collector) {
                 t.collector->Exit();
                 t.collector->Join();
                 delete t.collector;
