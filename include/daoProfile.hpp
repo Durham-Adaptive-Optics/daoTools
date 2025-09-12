@@ -27,8 +27,6 @@ int main() {
         DAO_PROFILE_START(prof, "block2")
         for(int x = 0; x < 100000; x++) continue;
         DAO_PROFILE_STOP(prof, "block2")
-    
-        DAO_PROFILE_EXPORT(prof)
     }
 
     DAO_PROFILE_EXPORT(prof)
