@@ -2,40 +2,334 @@
  * @ Author: Thomas N. Davies
  * @ Company: Centre for Advanced Instrumentation, Durham University
  * @ Contact: thomas.n.davies@durham.ac.uk
- * @ Create Time: 2025-09-01 13:06:33
+ * @ Create Time: 2025-09-12 16:02:50
  * @ Description: Tool for recording dao shared memory frames to FITS data files.
  */
 
- /*--------------------------------------------------------------------------*/
-
- // todo support dao complex-float & complex-double datatypes (requires table hdu).
-
+/* ==========================================================
+                        Includes                         
+   ========================================================== */
 #include <daoComponent.hpp>
 #include <yaml-cpp/yaml.h>
-#include <daoProfile.hpp>
-#include <unordered_map>
-#include <daoThread.hpp>
-#include <sys/types.h>
-#include <daoLog.hpp>
-#include <filesystem>
-#include <sys/stat.h>
 #include <CLI/CLI.hpp>
-#include <algorithm>
-#include <stdint.h>
-#include <fitsio.h>
-#include <assert.h>
-#include <fstream>
-#include <sstream>
-#include <vector>
-#include <atomic>
-#include <time.h>
+#include <daoLog.hpp>
 #include <string>
-#include <ctime>
-#include <dao.h>
-#include <chrono>
+/* ========================================================== */
 
-/*--------------------------------------------------------------------------*/
+/* ==========================================================
+                    Recording Interface                         
+   ========================================================== */
+class IRecorder
+{
+    public:
+    virtual void start(const std::string &sessionDirectory) = 0;
+    virtual void stop() = 0;
+};
 
+class ShmRecorder : public IRecorder
+{
+    public:
+    ShmRecorder() 
+    {
+
+    }
+
+    ~ShmRecorder()
+    {
+
+    }
+
+    void start(const std::string &sessionDirectory) override
+    {
+
+    }
+
+    void stop() override
+    {
+
+    }
+};
+
+/* ==========================================================
+                    AppComponent Class                         
+   ========================================================== */
+struct TargetConfiguration
+{
+    IRecorder *recorder;
+    std::string name;
+    size_t capacity;
+    size_t limit;
+    int16_t core;
+
+    enum class Type : std::uint8_t
+    {
+        UNKNOWN = 0,
+        SHARED_MEMORY,
+        FILE
+    } type = Type::SHARED_MEMORY;
+};
+
+class AppComponent : public Dao::Component
+{
+    public:
+    AppComponent(Dao::Log::Logger &logger, const std::string &ip, size_t port, const std::string &configFile = "")
+        :
+        Component("daoTelemetry", logger, ip, port),
+        mConfigString(""),
+        mLogger(logger),
+        mErrFlag(false)
+    {
+        mLogger.Info("App interface is now available");
+
+        if (configFile.length()) { // pull initial configuration from a file at startup.
+            configFromFile(configFile);
+        }
+    }
+
+    ~AppComponent()
+    {
+        //
+    }
+
+    void manage()
+    {
+        mLogger.Debug("State machine monitoring now running");
+
+        //? can we make daoComponentStateMachine nicer for doing this kind of stuff.
+        while (true) {
+            if (mErrFlag) {
+                while (GetStateText() != "Error") OnFailure();
+            }
+            else if (GetStateText() == "Running") {
+                size_t nExited = 0;
+                for (const TargetConfiguration &t : mTelemetryList) {
+                    assert(false);
+                    //! if (!t.collector->isRunning()) ++nExited;
+                }
+                if (nExited == mTelemetryList.size()) {
+                    mLogger.Debug("Auto resetting state");
+                    while (GetStateText() == "Running") Idle();
+                    while (GetStateText() == "Idle") Disable();
+                    while (GetStateText() == "Standby") Stop();
+                }
+            }
+            sleep(1);
+        }
+    }
+
+    private:
+    /* CONFIGURATION */
+    void setConfig(const std::string &configStr)
+    {
+        mConfigString = configStr;
+        mLogger.Debug("Configuration set");
+    }
+
+    void configFromFile(const std::string &filePath)
+    {
+        std::ifstream file(filePath);
+        if (!file) {
+            mLogger.Warning("Configuration file failed to load (%s)", filePath.c_str());
+            return;
+        }
+
+        std::ostringstream ss;
+        ss << file.rdbuf();
+        setConfig(ss.str());
+    }
+
+    void configuration()
+    {
+        if (!mConfigString.length()) {
+            throw std::invalid_argument("configuration error: no telemetry session configuration");
+        }
+        mLogger.Debug("configuring telemetry session..");
+
+        const YAML::Node &config = YAML::Load(mConfigString);
+        mLogger.Debug("parsed configuration string");
+
+        if (!config["telemetry_root"]) {
+            throw std::invalid_argument("configuration error: no data telemetry directory was specified");
+        }
+        mTelemetryRoot = config["telemetry_root"].as<std::string>();
+        mLogger.Info("root directory for telemetry sessions is %s", mTelemetryRoot.c_str());
+
+        const int16_t nominalCore = config["nominal_core"] ? config["nominal_core"].as<int16_t>() : -1;
+        mLogger.Info("telemetry will be collected on core %d by default", nominalCore);
+
+        if (config["telemetry"]) {
+            TargetConfiguration telemetryItem;
+            for (const YAML::Node &tc : config["telemetry"]) {
+                const size_t telemetryNum = mTelemetryList.size();
+                mLogger.Debug("configuring telemetry-%zu..", telemetryNum);
+
+                if (tc["target"]) {
+                    telemetryItem.name = tc["target"].as<std::string>();
+                    mLogger.Debug("telemetry target: %s", telemetryItem.name.c_str());
+                }
+                else {
+                    throw std::invalid_argument("configuration error: no telemetry target specified");
+                }
+
+                telemetryItem.capacity = tc["capacity"] ? tc["capacity"].as<size_t>() : 0;
+                mLogger.Debug("telemetry capacity: %zu", telemetryItem.capacity);
+
+                telemetryItem.limit = tc["limit"] ? tc["limit"].as<size_t>() : 0;
+                mLogger.Debug("telemetry limit: %zu", telemetryItem.limit);
+
+                telemetryItem.core = tc["core"] ? tc["core"].as<int16_t>() : nominalCore;
+                mLogger.Debug("telemetry core: %d", telemetryItem.core);
+
+                mTelemetryList.push_back(telemetryItem);
+
+                mLogger.Debug("configured telemetry-%zu (%s)..", telemetryNum, telemetryItem.name.c_str());
+            }
+        }
+        else {
+            throw std::invalid_argument("configuration error: no telemetry specified");
+        }
+
+        if (config["files"]) {
+            for (const YAML::Node &fc : config["files"]) {
+                const std::string filePath = fc.as<std::string>();
+                mFilesList.push_back(filePath);
+                mLogger.Info("configured %s to be copied when telemetry session starts", filePath.c_str());
+            }
+        }
+
+        mLogger.Debug("configuration applied");
+    }
+
+    void clearConfiguration()
+    {
+        mTelemetryList.clear();
+    }
+
+    /* RECORDING RESOURCE MANAGEMENT */
+    void allocateResources()
+    {
+        for (TargetConfiguration &t : mTelemetryList) {
+            mLogger.Debug("allocating telemetry collector for %s..", t.name.c_str());
+            t.recorder = new ShmRecorder();
+        }
+        mLogger.Info("recording resources allocated");
+    }
+
+    void deallocateResources()
+    {
+        for (TargetConfiguration &t : mTelemetryList) {
+            delete t.recorder;
+        }
+        mLogger.Info("collectors resources freed");
+    }
+
+    /* SESSION MANAGEMENT */
+    void beginSession()
+    {
+        char timestamp[16];
+        time_t t = time(nullptr);
+        tm *td = localtime(&t);
+        strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", td);
+        const std::string sessionDir = mTelemetryRoot + "/" + timestamp;
+        mLogger.Info("creating session directory: %s", sessionDir.c_str());
+        if (mkdir(sessionDir.c_str(), 0755)) {
+            printf("session dir creation error: %s\n", strerror(errno));
+            throw std::runtime_error("failed to create session directory");
+        }
+
+        for (const std::string &path : mFilesList) {
+            std::string filename = path;
+            auto x = path.find_last_of("/");
+            if (x != std::string::npos) {
+                filename = path.substr(x + 1);
+            }
+
+            const std::string dst = sessionDir + "/" + filename;
+            if (!std::filesystem::copy_file(path, dst)) {
+                mLogger.Error("failed to copy %s to telemetry session directory", path.c_str());
+                throw std::runtime_error("failed to copy file");
+            }
+
+            mLogger.Debug("successfully copied file %s to %s", path.c_str(), dst.c_str());
+        }
+
+        for (TargetConfiguration &t : mTelemetryList) {
+            mLogger.Debug("starting telemetry collector for %s..", t.name.c_str());
+            t.recorder->start(sessionDir);
+        }
+
+        mLogger.Info("telemetry session started");
+    }
+
+    void endSession()
+    {
+        for (TargetConfiguration &t : mTelemetryList) {
+            mLogger.Debug("stopping telemetry collector for %s..", t.name.c_str());
+            t.recorder->stop();
+        }
+        mLogger.Info("telemetry session ended");
+    }
+
+    /* COMPONENT API OVERLOADS */
+    void PROCESS_OTHER(std::string payload) override { setConfig(payload); }
+    void transition_Off_Standby() override { configuration(); }
+    void transition_Standby_Idle() override { allocateResources(); }
+    void transition_Idle_Running() override { beginSession(); }
+    void transition_Running_Idle() override { endSession(); }
+    void transition_Idle_Standby() override { deallocateResources(); }
+    void transition_Standby_Off() override { clearConfiguration(); }
+
+    void transition_Error_Idle()
+    {
+        deallocateResources();
+        mErrFlag = false;
+        configuration();
+        allocateResources();
+    }
+
+    /* MEMBER VARIABLES */
+    std::vector<TargetConfiguration> mTelemetryList;
+    std::vector<std::string> mFilesList;
+    std::string mTelemetryRoot;
+    std::string mConfigString;
+    Dao::Log::Logger &mLogger;
+    volatile bool mErrFlag;
+};
+
+/* ==========================================================
+                        App Entry Point                         
+   ========================================================== */
+struct CliArguments {
+    std::string ip = "127.0.0.1";
+    std::string logfile = "";
+    std::string configFile;
+    bool autorun = false;
+    size_t port;
+};
+
+int main(int argc, char *argv[]) {
+    CliArguments args;
+    CLI::App app("DAO Telemetry");
+    app.add_option("port", args.port, "Telemetry tool interface port")->required();
+    app.add_option("--ip", args.ip, "Telemetry agent ip address");
+    app.add_option("-c,--config", args.configFile, "Telemetry session configuration file");
+    app.add_option("-l,--logfile", args.logfile, "Log file");
+    CLI11_PARSE(app, argc, argv);
+
+    Dao::Log::Logger logger(
+        "daoTelemetry",
+        args.logfile.length() ? Dao::Log::Logger::DESTINATION::FILE : Dao::Log::Logger::DESTINATION::SCREEN,
+        args.logfile
+    );
+    logger.SetLevel(Dao::Log::LEVEL::DEBUG);
+
+    AppComponent appInterface(logger, args.ip, args.port, args.configFile);
+    appInterface.manage();
+}
+/* ========================================================== */
+
+
+/*
 struct collector_t;
 
 struct telemetry_t {
@@ -46,8 +340,6 @@ struct telemetry_t {
     int16_t core;
 };
 
-/*--------------------------------------------------------------------------*/
-
 #define FITS_CHECK(expr) \
         (expr); \
         if (status) { \
@@ -57,8 +349,6 @@ struct telemetry_t {
             m_agent_err_flag = true; \
             return; \
         }
-
-/*--------------------------------------------------------------------------*/
 
 class collector_t : public Dao::Thread {
 public:
@@ -165,9 +455,6 @@ private:
 
     void OnceOnExit() override { m_logger.Debug("%s collector has exited", m_telemetry.target.c_str()); }
 
-    /*
-        telemetry collection loop.
-    */
     void RestartableThread() override {
         // stop collection (if needed)..
         if (m_agent_err_flag || (m_telemetry.limit && m_total_frames >= m_telemetry.limit)) {
@@ -279,252 +566,5 @@ private:
     size_t m_nfiles;
     IMAGE m_shm;
 };
+*/
 
-/*--------------------------------------------------------------------------*/
-
-class telemetry_agent_t : public Dao::Component {
-public:
-    telemetry_agent_t(Dao::Log::Logger &logger, const std::string &ip, size_t port, const std::string &config_file = "")
-        :
-        Component("telemetry", logger, ip, port),
-        m_logger(logger), m_config_string(""), m_err_flag(false) {
-        if (config_file.length()) {
-            std::ifstream file(config_file);
-            if (file) {
-                std::ostringstream ss;
-                ss << file.rdbuf();
-                set_config(ss.str());
-            }
-            else {
-                m_log.Warning("configuration file could not be loaded (%s)", config_file.c_str());
-            }
-        }
-    }
-
-    // Updates agent state.
-    void activate() {
-        m_logger.Info("telemetry agent active");
-        while (true) {
-            if (m_err_flag) {
-                while (GetStateText() != "Error") OnFailure();
-            }
-            else if (GetStateText() == "Running") {
-                size_t n_exited = 0;
-                for (const telemetry_t &t : m_telemetry_list) {
-                    if (!t.collector->isRunning()) ++n_exited;
-                }
-                if (n_exited == m_telemetry_list.size()) {
-                    m_logger.Debug("Auto resetting state");
-                    while (GetStateText() == "Running") Idle();
-                    // todo: just goto idle here to end session?
-                    while (GetStateText() == "Idle") Disable();
-                    while (GetStateText() == "Standby") Stop();
-                }
-            }
-            sleep(1);
-        }
-    }
-
-private:
-    void configure() {
-        if (!m_config_string.length()) {
-            throw std::invalid_argument("configuration error: no telemetry session configuration");
-        }
-        m_logger.Debug("configuring telemetry session..");
-
-        const YAML::Node &config = YAML::Load(m_config_string);
-        m_logger.Debug("parsed configuration string");
-
-        if (!config["telemetry_root"]) {
-            throw std::invalid_argument("configuration error: no data telemetry directory was specified");
-        }
-        m_telemetry_root = config["telemetry_root"].as<std::string>();
-        m_logger.Info("root directory for telemetry sessions is %s", m_telemetry_root.c_str());
-
-        const int16_t nominal_core = config["nominal_core"] ? config["nominal_core"].as<int16_t>() : -1;
-        m_logger.Info("telemetry will be collected on core %d by default", nominal_core);
-
-        if (config["telemetry"]) {
-            telemetry_t ti;
-            for (const YAML::Node &tc : config["telemetry"]) {
-                const size_t telnum = m_telemetry_list.size();
-                m_logger.Debug("configuring telemetry-%zu..", telnum);
-
-                if (tc["target"]) {
-                    ti.target = tc["target"].as<std::string>();
-                    m_logger.Debug("telemetry target: %s", ti.target.c_str());
-                }
-                else {
-                    throw std::invalid_argument("configuration error: no telemetry target specified");
-                }
-
-                ti.capacity = tc["capacity"] ? tc["capacity"].as<size_t>() : 0;
-                m_logger.Debug("telemetry capacity: %zu", ti.capacity);
-
-                ti.limit = tc["limit"] ? tc["limit"].as<size_t>() : 0;
-                m_logger.Debug("telemetry limit: %zu", ti.limit);
-
-                ti.core = tc["core"] ? tc["core"].as<int16_t>() : nominal_core;
-                m_logger.Debug("telemetry core: %d", ti.core);
-
-                m_telemetry_list.push_back(ti);
-
-                m_logger.Debug("configured telemetry-%zu (%s)..", telnum, ti.target.c_str());
-            }
-        }
-        else {
-            throw std::invalid_argument("configuration error: no telemetry specified");
-        }
-
-        if (config["files"]) {
-            for (const YAML::Node &fc : config["files"]) {
-                const std::string file_path = fc.as<std::string>();
-                m_files_list.push_back(file_path);
-                m_log.Info("configured %s to be copied when telemetry session starts", file_path.c_str());
-            }
-        }
-
-        m_logger.Debug("configuration applied");
-    }
-
-    void clear_config() {
-        m_telemetry_list.clear();
-    }
-
-    void alloc_recording_resources() {
-        for (telemetry_t &t : m_telemetry_list) {
-            m_logger.Debug("allocating telemetry collector for %s..", t.target.c_str());
-            t.collector = new collector_t(m_logger, t, m_err_flag);
-            t.collector->Spawn();
-        }
-        m_log.Info("recording resources allocated");
-    }
-
-    void start_session() {
-        // create session dir..
-        char timestamp[16];
-        time_t t = time(nullptr);
-        tm *td = localtime(&t);
-        strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", td);
-        const std::string session_dir = m_telemetry_root + "/" + timestamp;
-        m_log.Info("creating session directory: %s", session_dir.c_str());
-        if (mkdir(session_dir.c_str(), 0755)) {
-            printf("session dir creation error: %s\n", strerror(errno));
-            throw std::runtime_error("failed to create session directory");
-        }
-
-        // copy over desired files..
-        for (const std::string &path : m_files_list) {
-            // get file name from path..
-            std::string filename = path;
-            auto x = path.find_last_of("/");
-            if (x != std::string::npos) {
-                filename = path.substr(x + 1);
-            }
-
-            const std::string dst = session_dir + "/" + filename;
-            if (!std::filesystem::copy_file(path, dst)) {
-                m_log.Error("failed to copy %s to telemetry session directory", path.c_str());
-                throw std::runtime_error("failed to copy file");
-            }
-
-            m_log.Debug("successfully copied file %s to %s", path.c_str(), dst.c_str());
-        }
-
-        // start collector threads..
-        for (telemetry_t &t : m_telemetry_list) {
-            m_logger.Debug("starting telemetry collector for %s..", t.target.c_str());
-            t.collector->set_fsroot(session_dir);
-            t.collector->Start();
-        }
-
-        m_logger.Info("telemetry session started");
-    }
-
-    void end_session() {
-        for (telemetry_t &t : m_telemetry_list) {
-            m_logger.Debug("stopping telemetry collector for %s..", t.target.c_str());
-            t.collector->Stop();
-        }
-        m_logger.Info("telemetry session ended");
-    }
-
-    void dealloc_recording_resources() {
-        for (telemetry_t &t : m_telemetry_list) {
-            if (t.collector) {
-                t.collector->Exit();
-                t.collector->Join();
-                delete t.collector;
-            }
-        }
-        m_log.Info("collectors resources freed");
-    }
-
-    /* -------------------------------------------------------------------------------------------- */
-
-    // set configuration string
-    void set_config(const std::string &configstr) {
-        m_config_string = configstr;
-        m_logger.Info("configuration loaded");
-    }
-
-    // Receive configuration string
-    void PROCESS_OTHER(std::string payload) override { set_config(payload); }
-
-    // Off -> Running
-    void transition_Off_Standby() override { configure(); }
-    void transition_Standby_Idle() override { alloc_recording_resources(); }
-    void transition_Idle_Running() override { start_session(); }
-
-    // Running -> Off
-    void transition_Running_Idle() override { end_session(); }
-    void transition_Idle_Standby() override { dealloc_recording_resources(); }
-    void transition_Standby_Off() override { clear_config(); }
-
-    // Error recovery
-    void transition_Error_Idle() override {
-        dealloc_recording_resources();
-        m_err_flag = false;
-        configure();
-        alloc_recording_resources();
-    }
-
-    /* -------------------------------------------------------------------------------------------- */
-
-    std::vector<telemetry_t> m_telemetry_list;
-    std::vector<std::string> m_files_list;
-    std::string m_telemetry_root;
-    std::string m_config_string;
-    Dao::Log::Logger &m_logger;
-    volatile bool m_err_flag;
-};
-
-/*--------------------------------------------------------------------------*/
-
-struct context_t {
-    std::string ip = "127.0.0.1";
-    std::string logfile = "";
-    std::string configFile;
-    bool autorun = false;
-    size_t port;
-};
-
-int main(int argc, char *argv[]) {
-    context_t cxt;
-    CLI::App app("DAO Telemetry");
-    app.add_option("port", cxt.port, "Telemetry tool interface port")->required();
-    app.add_option("--ip", cxt.ip, "Telemetry agent ip address");
-    app.add_option("-c,--config", cxt.configFile, "Telemetry session configuration file");
-    app.add_option("-l,--logfile", cxt.logfile, "Log file");
-    CLI11_PARSE(app, argc, argv);
-
-    Dao::Log::Logger logger(
-        "telemetry-agent",
-        cxt.logfile.length() ? Dao::Log::Logger::DESTINATION::FILE : Dao::Log::Logger::DESTINATION::SCREEN,
-        cxt.logfile
-    );
-    logger.SetLevel(Dao::Log::LEVEL::DEBUG);
-
-    telemetry_agent_t agent(logger, cxt.ip, cxt.port, cxt.configFile);
-    agent.activate();
-}
