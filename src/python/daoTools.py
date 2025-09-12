@@ -355,8 +355,8 @@ class ShackHartmannWFS:
         self.num_subapertures_x = num_subapertures_x
         self.num_subapertures_y = num_subapertures_y
         self.subaperture_size = subaperture_size
-        self.subapertures = np.zeros((num_subapertures_x, num_subapertures_y, subaperture_size, subaperture_size))
-        x, y = np.meshgrid(np.arange(self.subapertures.shape[2]), np.arange(self.subapertures.shape[3]))
+        self.subapertures = np.zeros((num_subapertures_x, num_subapertures_y, int(subaperture_size), int(subaperture_size)))
+        x, y = np.meshgrid(np.arange(int(self.subapertures.shape[2])), np.arange(int(self.subapertures.shape[3])))
         self.x = x
         self.y = y
         self.image_size = subaperture_size * num_subapertures_x
