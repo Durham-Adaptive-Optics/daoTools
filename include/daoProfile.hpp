@@ -50,13 +50,13 @@ int main() {
 /* ------------------------------------------------------------------------------- */
 
 #ifdef DAO_PROFILE_ENABLED
-#define DAO_PROFILE(cxtSymbol, chronoUnit,...) daoProfile<chronoUnit> cxtSymbol(#cxtSymbol ".csv", {__VA_ARGS__});
+#define DAO_PROFILE(cxtSymbol, chronoUnit,...) daoProfile<chronoUnit> cxtSymbol{#cxtSymbol ".csv", {__VA_ARGS__}};
 #define DAO_PROFILE_NEW_FRAME(cxt) cxt.newFrame();
 #define DAO_PROFILE_START(cxt, blkName) cxt.start(blkName);
 #define DAO_PROFILE_STOP(cxt, blkName) cxt.stop(blkName);
 #define DAO_PROFILE_EXPORT(cxt) cxt.save();
 #else
-#define DAO_PROFILE(cxtSymbol, fileName, ...)
+#define DAO_PROFILE(cxtSymbol, chronoUnit,...)
 #define DAO_PROFILE_NEW_FRAME(cxt)
 #define DAO_PROFILE_START(cxt, blkName)
 #define DAO_PROFILE_STOP(cxt, blkName)
@@ -114,7 +114,7 @@ class daoProfile {
                 csv << ",";
             }
         }
-        csv << " # Units.\n";
+        csv << ",# Units\n";
 
         // write out frame results.
         for(const auto &frame : m_frames) {
