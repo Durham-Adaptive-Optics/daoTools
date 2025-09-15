@@ -9,54 +9,31 @@
 /* ==========================================================
                         Includes                         
    ========================================================== */
+#include <daoThreadSafeQueue.hpp>
 #include <daoComponent.hpp>
 #include <yaml-cpp/yaml.h>
 #include <CLI/CLI.hpp>
 #include <daoLog.hpp>
+#include <fitsio.h>
 #include <string>
 /* ========================================================== */
 
 /* ==========================================================
                     Recording Interface                         
    ========================================================== */
-class IRecorder
+class Recorder
 {
     public:
-    virtual void start(const std::string &sessionDirectory) = 0;
-    virtual void stop() = 0;
+    virtual ~Recorder() = default;
+    virtual void Start(const std::string &sessionDirectory) = 0;
+    virtual bool IsFinished() = 0;
+    virtual void Stop() = 0;
 };
 
-class ShmRecorder : public IRecorder
+struct Target
 {
-    public:
-    ShmRecorder() 
-    {
-
-    }
-
-    ~ShmRecorder()
-    {
-
-    }
-
-    void start(const std::string &sessionDirectory) override
-    {
-
-    }
-
-    void stop() override
-    {
-
-    }
-};
-
-/* ==========================================================
-                    AppComponent Class                         
-   ========================================================== */
-struct TargetConfiguration
-{
-    IRecorder *recorder;
-    std::string name;
+    Recorder *recorder;
+    std::string path;
     size_t capacity;
     size_t limit;
     int16_t core;
@@ -69,6 +46,368 @@ struct TargetConfiguration
     } type = Type::SHARED_MEMORY;
 };
 
+struct Frame
+{
+    // static per shm
+    std::vector<long> size;
+    uint64_t nElements;
+    uint8_t atype;
+
+    // change per frame
+    int64_t atime;
+    uint64_t cnt0;
+    uint64_t cnt1;
+    uint64_t cnt2;
+    int8_t *data;
+};
+
+std::string daoShmLocalName(const std::string &shmPath) // todo port to C and put in daoTools.
+{
+    std::string localName = shmPath;
+    auto x = shmPath.find_last_of('/');
+    if (x != std::string::npos) localName = shmPath.substr(x + 1);
+
+    auto y = shmPath.find('.');
+    if (y != std::string::npos) localName = shmPath.substr(0, y);
+
+    return localName;
+}
+
+/* ==========================================================
+                    Shared Memory Recorder                         
+   ========================================================== */
+
+#define FITS_CHECK(expr)                                                                            \
+        (expr);                                                                                     \
+        if (fitsError) {                                                                            \
+            char err_msg[FLEN_ERRMSG];                                                              \
+            fits_get_errstatus(fitsError, err_msg);                                                 \
+            m_log.Error("failed to export data (%s): %s", m_thread_name.c_str(), err_msg);          \
+            TriggerError();                                                                         \
+            return;                                                                                 \
+        }
+
+class SharedMemoryPoller : public Dao::Thread
+{
+    public:
+    SharedMemoryPoller(
+        Dao::ThreadSafeQueue<Frame> &frameQueue, 
+        Dao::Log::Logger &logger,
+        std::string shmPath, 
+        int core
+    )
+        :
+        Dao::Thread(daoShmLocalName(shmPath) + "_Poll", logger, core),
+        mFrameQueue(frameQueue)
+    {
+        LoadSharedMemory(shmPath);
+        Spawn();
+    }
+
+    ~SharedMemoryPoller()
+    {
+        UnloadSharedMemory();
+        Exit();
+    }
+
+    void OnceOnStart() override
+    {
+        mInitialGrab = true;
+    }
+
+    private:
+    void LoadSharedMemory(const std::string &shmName)
+    {
+        // open shared memory.
+        if (daoShmShm2Img(shmName.c_str(), &mImage) != DAO_SUCCESS) {
+            throw std::runtime_error("Failed to open shared memory");
+        }
+        
+        // re-interpret metadata pointer as volatile.
+        mMetadata = (volatile IMAGE_METADATA *)mImage.md;
+
+        // extract frame data type.
+        mFrameDatatype = mMetadata->atype;
+
+        // extract element count.
+        mFrameElementCount = mMetadata->nelement;
+
+        // extract frame dimensions (revsered order for FITS).
+        mFrameSize.resize(mMetadata->naxis);
+        for(size_t i = 0; i < mMetadata->naxis; ++i)
+            mFrameSize[mMetadata->naxis - 1 - i] = (long)mMetadata->size[i]; // cast uint32_t -> long for cfitsio.
+
+        // calculate memory footprint of frame data.
+        mFrameFootprint = mDaoTypeSizes.at(mFrameDatatype) * mFrameElementCount;
+    }
+
+    void UnloadSharedMemory()
+    {
+        daoShmCloseShm(&mImage);
+    }
+
+    void RestartableThread() override 
+    {
+        const uint64_t cnt0 = mMetadata->cnt0;
+        if (mInitialGrab || cnt0 > mCnt0) {
+            //
+            mInitialGrab = false;
+            mCnt0 = cnt0;
+            
+            // Copy frame data out of shared memory.
+            Frame frame;
+            frame.size = mFrameSize;
+            frame.atype = mFrameDatatype;
+            frame.cnt0 = mMetadata->cnt0;
+            frame.cnt1 = mMetadata->cnt1;
+            frame.cnt2 = mMetadata->cnt2;
+            frame.nElements = mFrameElementCount;
+            frame.atime = mMetadata->atime.tsfixed.secondlong;
+            frame.data = (int8_t*) malloc(mFrameFootprint);
+            if(frame.data) memcpy(frame.data, mImage.array.V, mFrameFootprint);
+
+            // if we cannot allocate memory to store the frame data,
+            // or if the frame itself was potentially written to
+            // as we were copying it out, then drop the frame.
+            // todo add check for write flag back in once John patches daoBase.
+            if(!frame.data || mMetadata->cnt0 > mCnt0)
+                return;
+                
+            // Queue the frame.
+            mFrameQueue.push(frame);
+        }
+    }
+
+    Dao::ThreadSafeQueue<Frame> &mFrameQueue;
+    volatile IMAGE_METADATA *mMetadata;
+    std::vector<long> mFrameSize;
+    size_t mFrameElementCount;
+    size_t mFrameFootprint;
+    uint8_t mFrameDatatype;
+    bool mInitialGrab;
+    uint64_t mCnt0;
+    IMAGE mImage;
+
+    const std::unordered_map<uint8_t, uint8_t> mDaoTypeSizes{ // lookup table from dao types to byte sizes.
+        {_DATATYPE_UINT8, SIZEOF_DATATYPE_UINT8},
+        {_DATATYPE_INT8, SIZEOF_DATATYPE_INT8},
+        {_DATATYPE_UINT16, SIZEOF_DATATYPE_UINT16},
+        {_DATATYPE_INT16, SIZEOF_DATATYPE_INT16},
+        {_DATATYPE_UINT32, SIZEOF_DATATYPE_UINT32},
+        {_DATATYPE_INT32, SIZEOF_DATATYPE_INT32},
+        {_DATATYPE_UINT64, SIZEOF_DATATYPE_UINT64},
+        {_DATATYPE_INT64, SIZEOF_DATATYPE_INT64},
+        {_DATATYPE_FLOAT, SIZEOF_DATATYPE_FLOAT},
+        {_DATATYPE_DOUBLE, SIZEOF_DATATYPE_DOUBLE}
+    };
+};
+
+class SharedMemoryExporter : public Dao::Thread
+{
+    public:
+    SharedMemoryExporter(
+        Dao::ThreadSafeQueue<Frame> &frameQueue, 
+        Dao::Log::Logger &logger,
+        std::string shmPath,
+        size_t datafileCapacity,
+        size_t exportLimit,
+        volatile bool &errorFlag
+    )
+        :
+        Dao::Thread(daoShmLocalName(shmPath) + "_Export", logger),
+        mShmLocalName(daoShmLocalName(shmPath)),
+        mDatafileCapacity(datafileCapacity),
+        mFrameQueue(frameQueue),
+        mStorageDirectory(""),
+        mExportLimit(exportLimit),
+        mErrorFlag(errorFlag),
+        mLogger(logger)
+    {
+        Spawn();
+    }
+
+    ~SharedMemoryExporter()
+    {
+        Exit();
+    }
+
+    void SetStorageDirectory(const std::string &directory)
+    {
+        mStorageDirectory = directory;
+    }
+
+    private:
+    void TriggerError()
+    {
+        mErrorFlag = true;
+        Stop();
+    }
+
+    bool CloseDatafile()
+    {
+        int error = 0;
+        fits_close_file(mDatafile, &error);
+        mDatafile = nullptr;
+        if (error) {
+            char err_msg[FLEN_ERRMSG];
+            fits_get_errstatus(error, err_msg);
+            mLogger.Error("failed to close fits datafile (%s): %s", m_thread_name.c_str(), err_msg);
+        }
+        return !error;
+    }
+
+    void OnceOnStart() override
+    {
+        mLogger.Debug("%s started", m_thread_name.c_str());
+
+        assert(mStorageDirectory != "");
+        mDatafile = nullptr;
+        mExportedFrames = 0;
+        mDatafileCount = 0;
+        mDatafileSize = 0;
+    }
+
+    void OnceOnStop() override
+    {
+        mLogger.Debug("%s stopped", m_thread_name.c_str());
+
+        if(!CloseDatafile()) 
+            TriggerError();
+    }
+
+    void RestartableThread() override
+    {
+        // Automatically stop once we have exported the desired number of frames (if applicable).
+        if(mExportLimit && mExportedFrames == mExportLimit) {
+            mLogger.Debug("%s reached export limit", m_thread_name.c_str());
+            Stop();
+            return;
+        }
+
+        // Close the current datafile if it's full.
+        if(mDatafile && mDatafileSize == mDatafileCapacity) {
+            if(!CloseDatafile()) {
+                TriggerError();
+                return;
+            }
+        }
+
+        // Create datafile if we haven't got one.
+        if(!mDatafile) {
+            int status = 0;
+            std::string fileName = mShmLocalName + "_" + std::to_string(mDatafileCount + 1);
+            std::string filePath = mStorageDirectory + "/" + fileName + ".fits";
+            mLogger.Debug("creating fits datafile %s (%s)", filePath.c_str(), m_thread_name.c_str());
+            fits_create_file(&mDatafile, filePath.c_str(), &status);
+            
+            if (status) {
+                char err_msg[FLEN_ERRMSG];
+                fits_get_errstatus(status, err_msg);
+                mLogger.Error("failed to create fits datafile (%s): %s", m_thread_name.c_str(), err_msg);
+                TriggerError();
+                return;
+            }
+
+            mDatafileSize = 0;
+            ++mDatafileCount;
+        }
+
+        // Export frame from queue.
+        if(mFrameQueue.size()) {
+            int fitsError = 0;
+            Frame frame = mFrameQueue.pop();
+            FITS_CHECK( fits_create_img(mDatafile, mDaoToFitsDest.at(frame.atype), frame.size.size(), frame.size.data(), &fitsError) );
+            FITS_CHECK( fits_write_key(mDatafile, TBYTE, "atype", &frame.atype, nullptr, &fitsError) );
+            FITS_CHECK( fits_write_key(mDatafile, TLONGLONG, "atime", &frame.atime, nullptr, &fitsError) );
+            FITS_CHECK( fits_write_key(mDatafile, TULONGLONG, "cnt0", &frame.cnt0, nullptr, &fitsError) );
+            FITS_CHECK( fits_write_key(mDatafile, TULONGLONG, "cnt1", &frame.cnt1, nullptr, &fitsError) );
+            FITS_CHECK( fits_write_key(mDatafile, TULONGLONG, "cnt2", &frame.cnt2, nullptr, &fitsError) );
+            FITS_CHECK( fits_write_img(mDatafile, mDaoToFitsSrc.at(frame.atype), 1, frame.nElements, frame.data, &fitsError) );
+            mExportedFrames++;
+            mDatafileSize++;
+        }
+    }
+
+    std::string mShmLocalName;
+    Dao::ThreadSafeQueue<Frame> &mFrameQueue;
+    std::string mStorageDirectory;
+    volatile bool &mErrorFlag;
+    Dao::Log::Logger &mLogger;
+    size_t mDatafileCapacity;
+    size_t mExportedFrames;
+    size_t mDatafileCount;
+    size_t mDatafileSize;
+    size_t mExportLimit;
+    fitsfile *mDatafile;
+
+    const std::unordered_map<uint8_t, int> mDaoToFitsDest{
+        {_DATATYPE_UINT8, BYTE_IMG},
+        {_DATATYPE_INT8, SBYTE_IMG},
+        {_DATATYPE_UINT16, USHORT_IMG},
+        {_DATATYPE_INT16, SHORT_IMG},
+        {_DATATYPE_UINT32, ULONG_IMG},
+        {_DATATYPE_INT32, LONG_IMG},
+        {_DATATYPE_UINT64, ULONGLONG_IMG},
+        {_DATATYPE_INT64, LONGLONG_IMG},
+        {_DATATYPE_FLOAT, FLOAT_IMG},
+        {_DATATYPE_DOUBLE, DOUBLE_IMG}
+    };
+
+    const std::unordered_map<uint8_t, int> mDaoToFitsSrc{
+        {_DATATYPE_UINT8, TBYTE},
+        {_DATATYPE_INT8, TSBYTE},
+        {_DATATYPE_UINT16, TUSHORT},
+        {_DATATYPE_INT16, TSHORT},
+        {_DATATYPE_UINT32, TUINT},
+        {_DATATYPE_INT32, TINT},
+        {_DATATYPE_UINT64, TULONGLONG},
+        {_DATATYPE_INT64, TLONGLONG},
+        {_DATATYPE_FLOAT, TFLOAT},
+        {_DATATYPE_DOUBLE, TDOUBLE}
+    };
+};
+
+class SharedMemoryRecorder : public Recorder
+{
+    public:
+    SharedMemoryRecorder(const Target &target, Dao::Log::Logger &logger, volatile bool &errorFlag)
+        :
+        mExporter(mFrameQueue, logger, target.path, target.capacity, target.limit, errorFlag),
+        mPoller(mFrameQueue, logger, target.path, target.core)
+    {
+    }
+    
+    ~SharedMemoryRecorder()
+    {
+    }
+
+    void Start(const std::string &sessionDirectory) override
+    {
+        mExporter.SetStorageDirectory(sessionDirectory);
+        mExporter.Start();
+        mPoller.Start();
+    }
+
+    void Stop() override
+    {
+        mExporter.Stop();
+        mPoller.Stop();
+    }
+
+    bool IsFinished() override
+    {
+        return mExporter.isRunning();
+    }
+
+    private:
+    Dao::ThreadSafeQueue<Frame> mFrameQueue;
+    SharedMemoryExporter mExporter;
+    SharedMemoryPoller mPoller;
+};
+
+/* ==========================================================
+                    AppComponent Class                         
+   ========================================================== */
 class AppComponent : public Dao::Component
 {
     public:
@@ -77,12 +416,12 @@ class AppComponent : public Dao::Component
         Component("daoTelemetry", logger, ip, port),
         mConfigString(""),
         mLogger(logger),
-        mErrFlag(false)
+        mErrorFlag(false)
     {
         mLogger.Info("App interface is now available");
 
         if (configFile.length()) { // pull initial configuration from a file at startup.
-            configFromFile(configFile);
+            ConfigFromFile(configFile);
         }
     }
 
@@ -91,41 +430,42 @@ class AppComponent : public Dao::Component
         //
     }
 
-    void manage()
+    void Manage()
     {
         mLogger.Debug("State machine monitoring now running");
 
         //? can we make daoComponentStateMachine nicer for doing this kind of stuff.
         while (true) {
-            if (mErrFlag) {
+            if (mErrorFlag) {
                 while (GetStateText() != "Error") OnFailure();
             }
             else if (GetStateText() == "Running") {
-                size_t nExited = 0;
-                for (const TargetConfiguration &t : mTelemetryList) {
-                    assert(false);
-                    //! if (!t.collector->isRunning()) ++nExited;
+                // count how many targets have finished recording (if any).
+                size_t nFinished = 0;
+                for(const Target &target : mTargets) {
+                    if(target.recorder->IsFinished()) nFinished++;
                 }
-                if (nExited == mTelemetryList.size()) {
-                    mLogger.Debug("Auto resetting state");
+
+                // if all targets have finished recording then change state to reflect this.
+                if(nFinished == mTargets.size()) {
+                    mLogger.Info("All targets finished recording");
                     while (GetStateText() == "Running") Idle();
-                    while (GetStateText() == "Idle") Disable();
-                    while (GetStateText() == "Standby") Stop();
                 }
             }
+
             sleep(1);
         }
     }
 
     private:
     /* CONFIGURATION */
-    void setConfig(const std::string &configStr)
+    void SetConfig(const std::string &configStr)
     {
         mConfigString = configStr;
         mLogger.Debug("Configuration set");
     }
 
-    void configFromFile(const std::string &filePath)
+    void ConfigFromFile(const std::string &filePath)
     {
         std::ifstream file(filePath);
         if (!file) {
@@ -135,10 +475,10 @@ class AppComponent : public Dao::Component
 
         std::ostringstream ss;
         ss << file.rdbuf();
-        setConfig(ss.str());
+        SetConfig(ss.str());
     }
 
-    void configuration()
+    void Configure()
     {
         if (!mConfigString.length()) {
             throw std::invalid_argument("configuration error: no telemetry session configuration");
@@ -158,14 +498,14 @@ class AppComponent : public Dao::Component
         mLogger.Info("telemetry will be collected on core %d by default", nominalCore);
 
         if (config["telemetry"]) {
-            TargetConfiguration telemetryItem;
+            Target telemetryItem;
             for (const YAML::Node &tc : config["telemetry"]) {
-                const size_t telemetryNum = mTelemetryList.size();
+                const size_t telemetryNum = mTargets.size();
                 mLogger.Debug("configuring telemetry-%zu..", telemetryNum);
 
                 if (tc["target"]) {
-                    telemetryItem.name = tc["target"].as<std::string>();
-                    mLogger.Debug("telemetry target: %s", telemetryItem.name.c_str());
+                    telemetryItem.path = tc["target"].as<std::string>();
+                    mLogger.Debug("telemetry target: %s", telemetryItem.path.c_str());
                 }
                 else {
                     throw std::invalid_argument("configuration error: no telemetry target specified");
@@ -180,9 +520,9 @@ class AppComponent : public Dao::Component
                 telemetryItem.core = tc["core"] ? tc["core"].as<int16_t>() : nominalCore;
                 mLogger.Debug("telemetry core: %d", telemetryItem.core);
 
-                mTelemetryList.push_back(telemetryItem);
+                mTargets.push_back(telemetryItem);
 
-                mLogger.Debug("configured telemetry-%zu (%s)..", telemetryNum, telemetryItem.name.c_str());
+                mLogger.Debug("configured telemetry-%zu (%s)..", telemetryNum, telemetryItem.path.c_str());
             }
         }
         else {
@@ -200,31 +540,31 @@ class AppComponent : public Dao::Component
         mLogger.Debug("configuration applied");
     }
 
-    void clearConfiguration()
+    void ClearConfiguration()
     {
-        mTelemetryList.clear();
+        mTargets.clear();
     }
 
     /* RECORDING RESOURCE MANAGEMENT */
-    void allocateResources()
+    void AllocateResources()
     {
-        for (TargetConfiguration &t : mTelemetryList) {
-            mLogger.Debug("allocating telemetry collector for %s..", t.name.c_str());
-            t.recorder = new ShmRecorder();
+        for (Target &target : mTargets) {
+            mLogger.Debug("allocating recorder target %s", target.path.c_str());
+            target.recorder = new SharedMemoryRecorder(target, mLogger, mErrorFlag);
         }
         mLogger.Info("recording resources allocated");
     }
 
-    void deallocateResources()
+    void DeallocateResources()
     {
-        for (TargetConfiguration &t : mTelemetryList) {
+        for (Target &t : mTargets) {
             delete t.recorder;
         }
         mLogger.Info("collectors resources freed");
     }
 
     /* SESSION MANAGEMENT */
-    void beginSession()
+    void BeginSession()
     {
         char timestamp[16];
         time_t t = time(nullptr);
@@ -253,47 +593,56 @@ class AppComponent : public Dao::Component
             mLogger.Debug("successfully copied file %s to %s", path.c_str(), dst.c_str());
         }
 
-        for (TargetConfiguration &t : mTelemetryList) {
-            mLogger.Debug("starting telemetry collector for %s..", t.name.c_str());
-            t.recorder->start(sessionDir);
+        for (Target &t : mTargets) {
+            mLogger.Debug("starting telemetry collector for %s..", t.path.c_str());
+            t.recorder->Start(sessionDir);
         }
 
         mLogger.Info("telemetry session started");
     }
 
-    void endSession()
+    void EndSession()
     {
-        for (TargetConfiguration &t : mTelemetryList) {
-            mLogger.Debug("stopping telemetry collector for %s..", t.name.c_str());
-            t.recorder->stop();
+        for (Target &t : mTargets) {
+            mLogger.Debug("stopping telemetry collector for %s..", t.path.c_str());
+            t.recorder->Stop();
         }
         mLogger.Info("telemetry session ended");
     }
 
     /* COMPONENT API OVERLOADS */
-    void PROCESS_OTHER(std::string payload) override { setConfig(payload); }
-    void transition_Off_Standby() override { configuration(); }
-    void transition_Standby_Idle() override { allocateResources(); }
-    void transition_Idle_Running() override { beginSession(); }
-    void transition_Running_Idle() override { endSession(); }
-    void transition_Idle_Standby() override { deallocateResources(); }
-    void transition_Standby_Off() override { clearConfiguration(); }
+    void PROCESS_OTHER(std::string payload) override { SetConfig(payload); }
+    void transition_Off_Standby() override { Configure(); }
+    void transition_Standby_Idle() override { AllocateResources(); }
+    void transition_Idle_Running() override { BeginSession(); }
+    void transition_Running_Idle() override { EndSession(); }
+    void transition_Idle_Standby() override { DeallocateResources(); }
+    void transition_Standby_Off() override { ClearConfiguration(); }
+
+    void transition_Running_Error()
+    {
+        // Recorder objects will set our mErrorFlag if they
+        // experience an issue. This will be detected in the
+        // 'manage' loop executed on the main thread and
+        // will trigger an error state transition (implemented here).
+
+        EndSession();
+        DeallocateResources();
+    }
 
     void transition_Error_Idle()
     {
-        deallocateResources();
-        mErrFlag = false;
-        configuration();
-        allocateResources();
+        mErrorFlag = false;
+        AllocateResources();
     }
 
     /* MEMBER VARIABLES */
-    std::vector<TargetConfiguration> mTelemetryList;
+    std::vector<Target> mTargets;
     std::vector<std::string> mFilesList;
     std::string mTelemetryRoot;
     std::string mConfigString;
     Dao::Log::Logger &mLogger;
-    volatile bool mErrFlag;
+    volatile bool mErrorFlag;
 };
 
 /* ==========================================================
@@ -324,247 +673,7 @@ int main(int argc, char *argv[]) {
     logger.SetLevel(Dao::Log::LEVEL::DEBUG);
 
     AppComponent appInterface(logger, args.ip, args.port, args.configFile);
-    appInterface.manage();
+    appInterface.Manage();
 }
 /* ========================================================== */
-
-
-/*
-struct collector_t;
-
-struct telemetry_t {
-    collector_t *collector = nullptr;     // object handling the collection of this telemetry.
-    std::string target;
-    size_t capacity;    // if zero all data goes into one file.
-    size_t limit;      // if zero we collect until stopped.
-    int16_t core;
-};
-
-#define FITS_CHECK(expr) \
-        (expr); \
-        if (status) { \
-            char err_msg[FLEN_ERRMSG]; \
-            fits_get_errstatus(status, err_msg); \
-            m_log.Error("collector for %s experienced an error when recording frame: %s", m_telemetry.target.c_str(), err_msg); \
-            m_agent_err_flag = true; \
-            return; \
-        }
-
-class collector_t : public Dao::Thread {
-public:
-    collector_t(Dao::Log::Logger &logger, const telemetry_t &t, volatile bool &agent_err_flag)
-        : Thread(t.target, logger, t.core), m_telemetry(t), m_logger(logger),
-        m_sifce(logger), m_shmname(t.target), m_nfiles(0), m_currfile_sz(0),
-        m_agent_err_flag(agent_err_flag), m_fits(nullptr), m_total_frames(0) {
-        // open shared memory..
-        if (daoShmShm2Img(t.target.c_str(), &m_shm) != DAO_SUCCESS) {
-            throw std::runtime_error("collector failed to open shared memory");
-        }
-        m_shm_md = (volatile IMAGE_METADATA *)m_shm.md;
-
-        // get shared memory name from path..
-        auto x = m_shmname.find_last_of('/');
-        if (x != std::string::npos) {
-            m_shmname = m_shmname.substr(x + 1);
-        }
-        auto y = m_shmname.find('.');
-        if (y != std::string::npos) {
-            m_shmname = m_shmname.substr(0, y);
-        }
-        m_log.Debug("target %s has name: %s", t.target.c_str(), m_shmname.c_str());
-
-        // get data shape..
-        for (size_t i = 0; i < m_shm_md->naxis; ++i) m_axes_sizes.push_back(m_shm_md->size[i]);
-        std::reverse(m_axes_sizes.begin(), m_axes_sizes.end()); // todo dont need this, do i=n etc 
-
-        // allocate internal data buffer..
-        const uint8_t atype = m_shm.md->atype;
-        if (m_dt2s.find(atype) == m_dt2s.end()) {
-            m_logger.Error("telemetry target %s has unknown data type %d", t.target.c_str(), atype);
-            throw std::runtime_error("telemetry target has unknown data-type");
-        }
-
-        m_databuffer_sz = m_dt2s.at(atype) * m_shm_md->nelement;
-        m_databuffer = malloc(m_databuffer_sz);
-        m_mdbuffer = (IMAGE_METADATA *)malloc(sizeof(IMAGE_METADATA));
-        if (!m_databuffer) {
-            throw std::runtime_error("collector buffer allocation failed");
-        }
-    }
-
-    ~collector_t() {
-        m_sifce.CloseShm();
-        free(m_mdbuffer);
-        free(m_databuffer);
-
-        DAO_PROFILE_EXPORT(m_profile)
-    }
-
-    void set_fsroot(const std::string &fsroot) { m_fsroot = fsroot; }
-
-private:
-    bool close_fits() {
-        int status = 0;
-        fits_close_file(m_fits, &status);
-        m_fits = nullptr;
-
-        if (status) {
-            char err_msg[FLEN_ERRMSG];
-            fits_get_errstatus(status, err_msg);
-            m_log.Error("collector for %s experienced an error when closing a datafile: %s", m_telemetry.target.c_str(), err_msg);
-        }
-
-        return !status;
-    }
-
-    bool new_fits() {
-        // figure out new file name..
-        const std::string name = m_shmname + "_" + std::to_string(m_nfiles + 1);
-
-        // create file..
-        int status = 0;
-        std::string fpath = m_fsroot + "/" + name + ".fits";
-        m_log.Debug("collector for %s creating new datafile: %s", m_telemetry.target.c_str(), fpath.c_str());
-
-        fits_create_file(&m_fits, fpath.c_str(), &status);
-        if (status) {
-            char err_msg[FLEN_ERRMSG];
-            fits_get_errstatus(status, err_msg);
-            m_log.Error("collector for %s experienced an error when creating a datafile: %s", m_telemetry.target.c_str(), err_msg);
-        }
-        else {
-            m_currfile_sz = 0;
-            ++m_nfiles;
-        }
-
-        return !status;
-    }
-
-    void OnceOnStart() override {
-        m_cnt0 = m_shm_md->cnt0;
-        m_currfile_sz = 0;
-        m_nfiles = 0;
-    }
-
-    void OnceOnStop() override {
-        if (m_fits && !close_fits()) {
-            m_agent_err_flag = true;
-            return;
-        }
-    }
-
-    void OnceOnExit() override { m_logger.Debug("%s collector has exited", m_telemetry.target.c_str()); }
-
-    void RestartableThread() override {
-        // stop collection (if needed)..
-        if (m_agent_err_flag || (m_telemetry.limit && m_total_frames >= m_telemetry.limit)) {
-            Exit();
-            return;
-        }
-
-        // collect next telemetry frame (or first, if we've only just started)
-        const uint64_t cnt0_ = m_shm_md->cnt0;
-        if (cnt0_ > m_cnt0 || !m_total_frames) {
-            DAO_PROFILE_NEW_FRAME(m_profile)
-
-            DAO_PROFILE_START(m_profile, "Copy");
-            m_cnt0 = cnt0_;
-            memcpy(m_mdbuffer, m_shm.md, sizeof(IMAGE_METADATA)); // copy out metadata to prevent overwrite corruption.
-            memcpy(m_databuffer, m_shm.array.V, m_databuffer_sz); // copy out data to prevent overwrite corruption.
-            if (m_shm_md->cnt0 > m_cnt0) return; // drop frame, could be corrupted.
-            DAO_PROFILE_STOP(m_profile, "Copy");
-
-            // retire fits file if reached capacity..
-            DAO_PROFILE_START(m_profile, "FileChange");
-            if (m_fits && m_telemetry.capacity && m_currfile_sz >= m_telemetry.capacity) {
-                m_log.Debug("datafile for %s has reached capacity", m_telemetry.target.c_str());
-                if (!close_fits()) {
-                    m_agent_err_flag = true;
-                    return;
-                }
-            }
-
-            // create fits file if we don't have one..
-            if (!m_fits && !new_fits()) {
-                m_agent_err_flag = true;
-                return;
-            }
-            DAO_PROFILE_STOP(m_profile, "FileChange");
-
-            // record frame..
-            int status = 0;
-            DAO_PROFILE_START(m_profile, "Export");
-            FITS_CHECK(fits_create_img(m_fits, m_d2fd.at(m_mdbuffer->atype), m_mdbuffer->naxis, m_axes_sizes.data(), &status));
-            FITS_CHECK(fits_write_key(m_fits, TBYTE, "atype", &m_mdbuffer->atype, nullptr, &status));
-            FITS_CHECK(fits_write_key(m_fits, TLONGLONG, "atime", &m_mdbuffer->atime.tsfixed.secondlong, nullptr, &status));
-            FITS_CHECK(fits_write_key(m_fits, TULONGLONG, "cnt0", &m_mdbuffer->cnt0, nullptr, &status));
-            FITS_CHECK(fits_write_key(m_fits, TULONGLONG, "cnt1", &m_mdbuffer->cnt1, nullptr, &status));
-            FITS_CHECK(fits_write_key(m_fits, TULONGLONG, "cnt2", &m_mdbuffer->cnt2, nullptr, &status));
-            FITS_CHECK(fits_write_img(m_fits, m_d2fs.at(m_mdbuffer->atype), 1, m_mdbuffer->nelement, m_databuffer, &status));
-            DAO_PROFILE_STOP(m_profile, "Export");
-
-            ++m_currfile_sz;
-            ++m_total_frames;
-        }
-    }
-
-    const std::unordered_map<uint8_t, uint8_t> m_dt2s{ // lookup table from dao types to byte sizes.
-        {_DATATYPE_UINT8, SIZEOF_DATATYPE_UINT8},
-        {_DATATYPE_INT8, SIZEOF_DATATYPE_INT8},
-        {_DATATYPE_UINT16, SIZEOF_DATATYPE_UINT16},
-        {_DATATYPE_INT16, SIZEOF_DATATYPE_INT16},
-        {_DATATYPE_UINT32, SIZEOF_DATATYPE_UINT32},
-        {_DATATYPE_INT32, SIZEOF_DATATYPE_INT32},
-        {_DATATYPE_UINT64, SIZEOF_DATATYPE_UINT64},
-        {_DATATYPE_INT64, SIZEOF_DATATYPE_INT64},
-        {_DATATYPE_FLOAT, SIZEOF_DATATYPE_FLOAT},
-        {_DATATYPE_DOUBLE, SIZEOF_DATATYPE_DOUBLE}
-    };
-
-    const std::unordered_map<uint8_t, int> m_d2fd{ // lookup table from dao to fits disk data types.
-        {_DATATYPE_UINT8, BYTE_IMG},
-        {_DATATYPE_INT8, SBYTE_IMG},
-        {_DATATYPE_UINT16, USHORT_IMG},
-        {_DATATYPE_INT16, SHORT_IMG},
-        {_DATATYPE_UINT32, ULONG_IMG},
-        {_DATATYPE_INT32, LONG_IMG},
-        {_DATATYPE_UINT64, ULONGLONG_IMG},
-        {_DATATYPE_INT64, LONGLONG_IMG},
-        {_DATATYPE_FLOAT, FLOAT_IMG},
-        {_DATATYPE_DOUBLE, DOUBLE_IMG}
-    };
-
-    const std::unordered_map<uint8_t, int> m_d2fs{ // lookup table from dao to fits source data types.
-        {_DATATYPE_UINT8, TBYTE},
-        {_DATATYPE_INT8, TSBYTE},
-        {_DATATYPE_UINT16, TUSHORT},
-        {_DATATYPE_INT16, TSHORT},
-        {_DATATYPE_UINT32, TUINT},
-        {_DATATYPE_INT32, TINT},
-        {_DATATYPE_UINT64, TULONGLONG},
-        {_DATATYPE_INT64, TLONGLONG},
-        {_DATATYPE_FLOAT, TFLOAT},
-        {_DATATYPE_DOUBLE, TDOUBLE}
-    };
-
-    DAO_PROFILE(m_profile, std::chrono::microseconds, "Copy", "FileChange", "Export")
-    volatile IMAGE_METADATA * m_shm_md;
-    volatile bool &m_agent_err_flag;
-    const telemetry_t &m_telemetry;
-    Dao::ShmIfce<uint8_t> m_sifce;
-    std::vector<long> m_axes_sizes;
-    Dao::Log::Logger &m_logger;
-    IMAGE_METADATA *m_mdbuffer;
-    size_t m_databuffer_sz;
-    std::string m_shmname;
-    size_t m_total_frames;
-    void *m_databuffer;
-    fitsfile *m_fits;
-    size_t m_currfile_sz;
-    std::string m_fsroot;
-    uint64_t m_cnt0;
-    size_t m_nfiles;
-    IMAGE m_shm;
-};
-*/
 
