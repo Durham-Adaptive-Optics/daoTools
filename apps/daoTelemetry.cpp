@@ -97,11 +97,10 @@ class SharedMemoryPoller : public Dao::Thread
         int core
     )
         :
-        Dao::Thread(daoShmLocalName(shmPath) + "_Poll", logger, core),
+        Dao::Thread(shmPath, logger, core), // todo give name: Poll_localName <- requires updating test_ThreadAffinity.
         mFrameQueue(frameQueue)
     {
         LoadSharedMemory(shmPath);
-        Spawn();
     }
 
     ~SharedMemoryPoller()
@@ -214,7 +213,7 @@ class SharedMemoryExporter : public Dao::Thread
         volatile bool &errorFlag
     )
         :
-        Dao::Thread(daoShmLocalName(shmPath) + "_Export", logger),
+        Dao::Thread("Export_" + daoShmLocalName(shmPath), logger),
         mShmLocalName(daoShmLocalName(shmPath)),
         mDatafileCapacity(datafileCapacity),
         mFrameQueue(frameQueue),
@@ -223,7 +222,6 @@ class SharedMemoryExporter : public Dao::Thread
         mErrorFlag(errorFlag),
         mLogger(logger)
     {
-        Spawn();
     }
 
     ~SharedMemoryExporter()
@@ -375,6 +373,8 @@ class SharedMemoryRecorder : public Recorder
         mExporter(mFrameQueue, logger, target.path, target.capacity, target.limit, errorFlag),
         mPoller(mFrameQueue, logger, target.path, target.core)
     {
+        mExporter.Spawn();
+        mPoller.Spawn();
     }
     
     ~SharedMemoryRecorder()
@@ -557,8 +557,8 @@ class AppComponent : public Dao::Component
 
     void DeallocateResources()
     {
-        for (Target &t : mTargets) {
-            delete t.recorder;
+        for (Target &target : mTargets) {
+            delete target.recorder;
         }
         mLogger.Info("collectors resources freed");
     }
@@ -621,18 +621,13 @@ class AppComponent : public Dao::Component
 
     void transition_Running_Error()
     {
-        // Recorder objects will set our mErrorFlag if they
-        // experience an issue. This will be detected in the
-        // 'manage' loop executed on the main thread and
-        // will trigger an error state transition (implemented here).
-
         EndSession();
-        DeallocateResources();
     }
-
+    
     void transition_Error_Idle()
     {
         mErrorFlag = false;
+        DeallocateResources();
         AllocateResources();
     }
 
