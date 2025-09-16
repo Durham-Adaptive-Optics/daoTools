@@ -291,8 +291,8 @@ class SharedMemoryExporter : public Dao::Thread
             return;
         }
 
-        // Close the current datafile if it's full.
-        if(mDatafile && mDatafileSize == mDatafileCapacity) {
+        // Close the current datafile if it has reach capacity (if applicable).
+        if(mDatafile && mDatafileCapacity && mDatafileSize == mDatafileCapacity) {
             if(!CloseDatafile()) {
                 TriggerError();
                 return;
@@ -333,7 +333,6 @@ class SharedMemoryExporter : public Dao::Thread
             free(frame.data);
             mExportedFrames++;
             mDatafileSize++;
-            mLogger.Debug("%s exported %d frames", m_thread_name.c_str(), mExportedFrames);
         }
     }
 
@@ -457,7 +456,6 @@ class AppComponent : public Dao::Component
                 // count how many targets have finished recording (if any).
                 size_t nFinished = 0;
                 for(const Target &target : mTargets) {
-                    mLogger.Debug("Target %s: %s", target.path.c_str(), target.recorder->IsRecording() ? "Recording" : "Done");
                     if(!target.recorder->IsRecording()) nFinished++;
                 }
 
