@@ -26,7 +26,7 @@ class Recorder
     public:
     virtual ~Recorder() = default;
     virtual void Start(const std::string &sessionDirectory) = 0;
-    virtual bool IsFinished() = 0;
+    virtual bool IsRecording() = 0;
     virtual void Stop() = 0;
 };
 
@@ -64,11 +64,12 @@ struct Frame
 std::string daoShmLocalName(const std::string &shmPath) // todo port to C and put in daoTools.
 {
     std::string localName = shmPath;
+    
     auto x = shmPath.find_last_of('/');
     if (x != std::string::npos) localName = shmPath.substr(x + 1);
 
-    auto y = shmPath.find('.');
-    if (y != std::string::npos) localName = shmPath.substr(0, y);
+    auto y = localName.find('.');
+    if (y != std::string::npos) localName = localName.substr(0, y);
 
     return localName;
 }
@@ -220,7 +221,8 @@ class SharedMemoryExporter : public Dao::Thread
         mStorageDirectory(""),
         mExportLimit(exportLimit),
         mErrorFlag(errorFlag),
-        mLogger(logger)
+        mLogger(logger),
+        mRecording(false)
     {
     }
 
@@ -234,6 +236,8 @@ class SharedMemoryExporter : public Dao::Thread
         mStorageDirectory = directory;
     }
 
+    bool IsRecording() const { return mRecording; }
+
     private:
     void TriggerError()
     {
@@ -243,14 +247,18 @@ class SharedMemoryExporter : public Dao::Thread
 
     bool CloseDatafile()
     {
+        mLogger.Debug("%s closing datafile", m_thread_name.c_str());
+
         int error = 0;
         fits_close_file(mDatafile, &error);
         mDatafile = nullptr;
+
         if (error) {
             char err_msg[FLEN_ERRMSG];
             fits_get_errstatus(error, err_msg);
             mLogger.Error("failed to close fits datafile (%s): %s", m_thread_name.c_str(), err_msg);
         }
+
         return !error;
     }
 
@@ -263,13 +271,14 @@ class SharedMemoryExporter : public Dao::Thread
         mExportedFrames = 0;
         mDatafileCount = 0;
         mDatafileSize = 0;
+        mRecording = true;
     }
 
     void OnceOnStop() override
     {
         mLogger.Debug("%s stopped", m_thread_name.c_str());
-
-        if(!CloseDatafile()) 
+        mRecording = false;
+        if(mDatafile && !CloseDatafile())
             TriggerError();
     }
 
@@ -321,8 +330,10 @@ class SharedMemoryExporter : public Dao::Thread
             FITS_CHECK( fits_write_key(mDatafile, TULONGLONG, "cnt1", &frame.cnt1, nullptr, &fitsError) );
             FITS_CHECK( fits_write_key(mDatafile, TULONGLONG, "cnt2", &frame.cnt2, nullptr, &fitsError) );
             FITS_CHECK( fits_write_img(mDatafile, mDaoToFitsSrc.at(frame.atype), 1, frame.nElements, frame.data, &fitsError) );
+            free(frame.data);
             mExportedFrames++;
             mDatafileSize++;
+            mLogger.Debug("%s exported %d frames", m_thread_name.c_str(), mExportedFrames);
         }
     }
 
@@ -337,6 +348,7 @@ class SharedMemoryExporter : public Dao::Thread
     size_t mDatafileSize;
     size_t mExportLimit;
     fitsfile *mDatafile;
+    bool mRecording;
 
     const std::unordered_map<uint8_t, int> mDaoToFitsDest{
         {_DATATYPE_UINT8, BYTE_IMG},
@@ -379,6 +391,8 @@ class SharedMemoryRecorder : public Recorder
     
     ~SharedMemoryRecorder()
     {
+        mExporter.Join();
+        mPoller.Join();
     }
 
     void Start(const std::string &sessionDirectory) override
@@ -394,9 +408,9 @@ class SharedMemoryRecorder : public Recorder
         mPoller.Stop();
     }
 
-    bool IsFinished() override
+    bool IsRecording() override
     {
-        return mExporter.isRunning();
+        return mExporter.IsRecording();
     }
 
     private:
@@ -443,7 +457,8 @@ class AppComponent : public Dao::Component
                 // count how many targets have finished recording (if any).
                 size_t nFinished = 0;
                 for(const Target &target : mTargets) {
-                    if(target.recorder->IsFinished()) nFinished++;
+                    mLogger.Debug("Target %s: %s", target.path.c_str(), target.recorder->IsRecording() ? "Recording" : "Done");
+                    if(!target.recorder->IsRecording()) nFinished++;
                 }
 
                 // if all targets have finished recording then change state to reflect this.
@@ -548,19 +563,19 @@ class AppComponent : public Dao::Component
     /* RECORDING RESOURCE MANAGEMENT */
     void AllocateResources()
     {
+        mLogger.Info("recording resources allocated");
         for (Target &target : mTargets) {
             mLogger.Debug("allocating recorder target %s", target.path.c_str());
             target.recorder = new SharedMemoryRecorder(target, mLogger, mErrorFlag);
         }
-        mLogger.Info("recording resources allocated");
     }
 
     void DeallocateResources()
     {
+        mLogger.Info("collectors resources freed");
         for (Target &target : mTargets) {
             delete target.recorder;
         }
-        mLogger.Info("collectors resources freed");
     }
 
     /* SESSION MANAGEMENT */
@@ -610,6 +625,14 @@ class AppComponent : public Dao::Component
         mLogger.Info("telemetry session ended");
     }
 
+    void RecoveryRoutine()
+    {
+        mLogger.Debug("Recovering to Idle..");
+        mErrorFlag = false; // put 1st so any recovery errors are raised correctly. 
+        DeallocateResources();
+        AllocateResources();
+    }
+
     /* COMPONENT API OVERLOADS */
     void PROCESS_OTHER(std::string payload) override { SetConfig(payload); }
     void transition_Off_Standby() override { Configure(); }
@@ -618,18 +641,8 @@ class AppComponent : public Dao::Component
     void transition_Running_Idle() override { EndSession(); }
     void transition_Idle_Standby() override { DeallocateResources(); }
     void transition_Standby_Off() override { ClearConfiguration(); }
-
-    void transition_Running_Error()
-    {
-        EndSession();
-    }
-    
-    void transition_Error_Idle()
-    {
-        mErrorFlag = false;
-        DeallocateResources();
-        AllocateResources();
-    }
+    void transition_Running_Error() { EndSession(); }
+    void transition_Error_Idle() { RecoveryRoutine(); }
 
     /* MEMBER VARIABLES */
     std::vector<Target> mTargets;
