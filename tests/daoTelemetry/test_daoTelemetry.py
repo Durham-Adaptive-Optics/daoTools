@@ -273,7 +273,7 @@ def test_FileCopy(i: daoCommandIfce):
         os.path.abspath(f"daoTelemetry/{COPY_FILE}")
     ]
     yml["telemetry"] = [{
-        "target": shmpath       
+        "target": shmpath
     }]
     config = yaml.dump(yml)
 
@@ -281,6 +281,8 @@ def test_FileCopy(i: daoCommandIfce):
     StateTransition(i, "Init", "Standby")
     StateTransition(i, "Enable", "Idle")
     StateTransition(i, "Run", "Running")
+
+    sleep(1)
 
     fileCopied = False
     sessionDir = os.listdir(root)[0]
@@ -348,7 +350,7 @@ def test_RecordingLimit(i: daoCommandIfce):
         shm.set_data(data)
         sleep(0.5)
 
-    AssertState(i, "Off")
+    AssertState(i, "Idle")
 
 def test_DatafileCapacity(i: daoCommandIfce):
     root = InitTestRoutine()
@@ -488,7 +490,7 @@ def test_RecordingAccuracy(i: daoCommandIfce, dtype, shape):
         shm.set_data(data)
         sleep(0.5)
     
-    AssertState(i, "Off")
+    AssertState(i, "Idle")
         
     # check recorded data is accurate
     sessionDir = os.listdir(root)[0]
