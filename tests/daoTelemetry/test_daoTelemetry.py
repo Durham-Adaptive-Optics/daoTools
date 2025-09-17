@@ -27,6 +27,7 @@ import pathlib
 # DEFINES
 # ========================================================================================== #
 
+APP = "../build/apps/daoTelemetry"
 TEST_DIRECTORY = "/tmp/daoTelemetry_"
 TEST_CONFIGFILE = "daoTelemetry/config.yaml"
 
@@ -89,7 +90,7 @@ def i():
     port = 15000
     os.mkdir(TEST_DIRECTORY)
     try:
-        daoTelemetry = subprocess.Popen(['daoTelemetry', f"{port}"])
+        daoTelemetry = subprocess.Popen([APP, f"{port}"])
         sleep(0.5)
         ifce = daoCommandIfce("127.0.0.1", port)
         yield ifce
@@ -106,7 +107,7 @@ def i2():
     port = 15000
     os.mkdir(TEST_DIRECTORY)
     try:
-        daoTelemetry = subprocess.Popen(['daoTelemetry', f"{port}", f"-c{TEST_CONFIGFILE}"])
+        daoTelemetry = subprocess.Popen([APP, f"{port}", f"-c{TEST_CONFIGFILE}"])
         sleep(0.5)
         ifce = daoCommandIfce("127.0.0.1", port)
         yield ifce
