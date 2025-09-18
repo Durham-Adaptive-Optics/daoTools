@@ -79,7 +79,7 @@ std::string daoShmLocalName(const std::string &shmPath) // todo port to C and pu
         if (fitsError) {                                                                            \
             char err_msg[FLEN_ERRMSG];                                                              \
             fits_get_errstatus(fitsError, err_msg);                                                 \
-            m_log.Error("failed to export data (%s): %s", m_thread_name.c_str(), err_msg);          \
+            m_log.Error("%s failed to export data: %s", m_thread_name.c_str(), err_msg);          \
             TriggerError();                                                                         \
             return;                                                                                 \
         }
@@ -113,16 +113,19 @@ class SharedMemoryPoller : public Dao::Thread
      * @param logger Application logger.
      * @param shmPath Target shared memory path. 
      * @param core Desired core affinity for polling thread.
+     * @param errorFlag Application error flag.
      */
     SharedMemoryPoller(
         Dao::ThreadSafeQueue<SharedMemoryFrame> &frameQueue, 
         Dao::Log::Logger &logger,
         std::string shmPath, 
-        int core
+        int core,
+        volatile bool &errorFlag
     )
         :
         Dao::Thread(shmPath, logger, core), // todo give name: Poll_localName <- requires updating test_ThreadAffinity.
-        mFrameQueue(frameQueue)
+        mFrameQueue(frameQueue),
+        mErrorFlag(errorFlag)
     {
         LoadSharedMemory(shmPath);
     }
@@ -148,6 +151,17 @@ class SharedMemoryPoller : public Dao::Thread
     }
 
     private:
+    /**
+     * Sets the application error flag and ensures the export thread
+     * is stopped.
+     */
+    void TriggerError()
+    {
+        m_log.Info("%s triggered application error", m_thread_name.c_str());
+        mErrorFlag = true;
+        Stop();
+    }
+
     /**
      * Opens dao shared memory from path and stores required
      * information to be used when queuing frames.
@@ -218,7 +232,14 @@ class SharedMemoryPoller : public Dao::Thread
                 return;
                 
             // Queue the frame.
-            mFrameQueue.push(frame);
+            try {
+                mFrameQueue.push(frame);
+            }
+            catch(const std::exception &e) {
+                m_log.Error("%s failed to push onto queue because: %s", m_thread_name.c_str(), e.what());
+                TriggerError();
+                return;
+            }
         }
     }
 
@@ -228,6 +249,7 @@ class SharedMemoryPoller : public Dao::Thread
     Dao::ThreadSafeQueue<SharedMemoryFrame> &mFrameQueue;
     volatile IMAGE_METADATA *mMetadata;
     std::vector<long> mFrameSize;
+    volatile bool &mErrorFlag;
     size_t mFrameElementCount;
     size_t mFrameFootprint;
     uint8_t mFrameDatatype;
@@ -278,7 +300,6 @@ class SharedMemoryExporter : public Dao::Thread
         mStorageDirectory(""),
         mExportLimit(exportLimit),
         mErrorFlag(errorFlag),
-        mLogger(logger),
         mRecording(false)
     {
     }
@@ -315,7 +336,7 @@ class SharedMemoryExporter : public Dao::Thread
      */
     void TriggerError()
     {
-        mLogger.Info("%s triggered application error", m_thread_name.c_str());
+        m_log.Info("%s triggered application error", m_thread_name.c_str());
         mErrorFlag = true;
         Stop();
     }
@@ -325,7 +346,7 @@ class SharedMemoryExporter : public Dao::Thread
      */
     bool CloseDatafile()
     {
-        mLogger.Debug("%s closing datafile", m_thread_name.c_str());
+        m_log.Debug("%s closing datafile", m_thread_name.c_str());
 
         int error = 0;
         fits_close_file(mDatafile, &error);
@@ -334,7 +355,7 @@ class SharedMemoryExporter : public Dao::Thread
         if (error) {
             char err_msg[FLEN_ERRMSG];
             fits_get_errstatus(error, err_msg);
-            mLogger.Error("failed to close fits datafile (%s): %s", m_thread_name.c_str(), err_msg);
+            m_log.Error("Failed to close fits datafile (%s): %s", m_thread_name.c_str(), err_msg);
         }
 
         return !error;
@@ -372,14 +393,14 @@ class SharedMemoryExporter : public Dao::Thread
     {
         // Automatically stop once we have exported the desired number of frames (if applicable).
         if(mExportLimit && mExportedFrames == mExportLimit) {
-            mLogger.Debug("%s reached export limit", m_thread_name.c_str());
+            m_log.Debug("%s reached export limit", m_thread_name.c_str());
             Stop();
             return;
         }
 
         // Close the current datafile if it has reach capacity (if applicable).
         if(mDatafile && mDatafileCapacity && mDatafileSize == mDatafileCapacity) {
-            mLogger.Debug("%s datafile reached capacity (%d/%d)", m_thread_name.c_str(), mDatafileSize, mDatafileCapacity);
+            m_log.Debug("%s datafile reached capacity (%d/%d)", m_thread_name.c_str(), mDatafileSize, mDatafileCapacity);
             if(!CloseDatafile()) {
                 TriggerError();
                 return;
@@ -391,13 +412,13 @@ class SharedMemoryExporter : public Dao::Thread
             int status = 0;
             std::string fileName = mShmLocalName + "_" + std::to_string(mDatafileCount + 1);
             std::string filePath = mStorageDirectory + "/" + fileName + ".fits";
-            mLogger.Debug("Creating datafile %s [%s]", filePath.c_str(), m_thread_name.c_str());
+            m_log.Debug("Creating datafile %s [%s]", filePath.c_str(), m_thread_name.c_str());
             fits_create_file(&mDatafile, filePath.c_str(), &status);
             
             if (status) {
                 char err_msg[FLEN_ERRMSG];
                 fits_get_errstatus(status, err_msg);
-                mLogger.Error("Failed to create datafile because: %s [%s]", err_msg, m_thread_name.c_str());
+                m_log.Error("Failed to create datafile because: %s [%s]", err_msg, m_thread_name.c_str());
                 TriggerError();
                 return;
             }
@@ -430,7 +451,6 @@ class SharedMemoryExporter : public Dao::Thread
     Dao::ThreadSafeQueue<SharedMemoryFrame> &mFrameQueue;
     std::string mStorageDirectory;
     volatile bool &mErrorFlag;
-    Dao::Log::Logger &mLogger;
     size_t mDatafileCapacity;
     size_t mExportedFrames;
     size_t mDatafileCount;
@@ -479,7 +499,7 @@ class SharedMemoryRecorder : public Recorder
     SharedMemoryRecorder(const Target &target, Dao::Log::Logger &logger, volatile bool &errorFlag)
         :
         mExporter(mFrameQueue, logger, target.path, target.capacity, target.limit, errorFlag),
-        mPoller(mFrameQueue, logger, target.path, target.core)
+        mPoller(mFrameQueue, logger, target.path, target.core, errorFlag)
     {
         mExporter.Spawn();
         mPoller.Spawn();
