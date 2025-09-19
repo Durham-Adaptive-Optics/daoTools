@@ -12,6 +12,7 @@
 #include <daoThreadSafeQueue.hpp>
 #include <daoComponent.hpp>
 #include <yaml-cpp/yaml.h>
+#include <daoProfile.hpp>
 #include <CLI/CLI.hpp>
 #include <daoLog.hpp>
 #include <fitsio.h>
@@ -27,9 +28,9 @@ class Recorder
 {
     public:
     virtual ~Recorder() = default;
-    virtual void Start(const std::string &sessionDirectory) = 0;
+    virtual void Start(const std::string &sessionDirectory) {};
+    virtual void Stop() {};
     virtual bool IsRecording() = 0;
-    virtual void Stop() = 0;
 };
 
 /* ==========================================================
@@ -41,18 +42,23 @@ class Recorder
  */
 struct Target
 {
+    // Common target parameters
     Recorder *recorder;
-    std::string path;
-    size_t capacity;
-    size_t limit;
-    int16_t core;
+    std::string source;
 
     enum class Type : std::uint8_t
     {
-        UNKNOWN = 0,
         SHARED_MEMORY,
         FILE
-    } type = Type::SHARED_MEMORY;
+    } type;
+
+    // Shared memory specific parameters
+    size_t fileLimit;
+    size_t bufferLimit;
+    size_t recordingLimit;
+    int16_t pollingCore;
+
+    // File specific parameters
 };
 
 std::string daoShmLocalName(const std::string &shmPath) // todo port to C and put in daoTools.
@@ -67,6 +73,86 @@ std::string daoShmLocalName(const std::string &shmPath) // todo port to C and pu
 
     return localName;
 }
+
+/* ==========================================================
+                    File Recorder                         
+   ========================================================== */
+class FileRecorder : public Recorder 
+{
+    public:
+    /**
+     * Constructs FileRecorder.
+     * @param logger Application logger.
+     * @param filePath Target file path. 
+     * @param errorFlag Application error flag.
+     */
+    FileRecorder(
+        Dao::Log::Logger &logger,
+        std::string filePath, 
+        volatile bool &errorFlag
+    )
+        :
+        mErrorFlag(errorFlag),
+        mFilePath(filePath),
+        mLogger(logger),
+        mCopying(false)
+    {
+    }
+
+    /**
+     * Destructs FileRecorder.
+     */
+    ~FileRecorder()
+    {
+    }
+
+    /**
+     * Copies target file to the specified session directory.
+     * @param sessionDirectory Directory path for where the file should be copied to.
+     */
+    void Start(const std::string &sessionDirectory) override
+    {
+        mCopying = true;
+        
+        // construct destination path. 
+        std::string filename = mFilePath;
+        auto x = mFilePath.find_last_of("/");
+        if (x != std::string::npos) filename = mFilePath.substr(x + 1);
+        std::string destPath = sessionDirectory + "/" + filename;
+
+        // copy file to destination.
+        mLogger.Debug("Copying file '%s' to '%s'", mFilePath.c_str(), destPath.c_str());
+
+        try {
+            std::filesystem::copy_file(mFilePath, destPath);
+            mCopying = false;
+        }
+        catch(const std::exception &e) {
+            mLogger.Error("Failed to copy file '%s' because: %s", mFilePath.c_str(), e.what());
+            mErrorFlag = true;
+            return;
+        }
+
+        mLogger.Info("Copied file '%s'", mFilePath.c_str());
+    }
+
+    /**
+     * Provides a method for querying if the file copy is in-progress.
+     */
+    bool IsRecording() override
+    {
+        return mCopying;
+    }
+
+    private:
+    /**
+      * Member Variables
+    */
+    Dao::Log::Logger &mLogger;
+    volatile bool &mErrorFlag;
+    std::string mFilePath;
+    bool mCopying;
+};
 
 /* ==========================================================
                     Shared Memory Recorder                         
@@ -114,18 +200,19 @@ class SharedMemoryPoller : public Dao::Thread
      * @param shmPath Target shared memory path. 
      * @param core Desired core affinity for polling thread.
      * @param errorFlag Application error flag.
+     * @param bufferLimit Max capacity (in frames) of the frame queue (if zero then queue can grow unbounded).
      */
     SharedMemoryPoller(
         Dao::ThreadSafeQueue<SharedMemoryFrame> &frameQueue, 
         Dao::Log::Logger &logger,
         std::string shmPath, 
         int core,
-        volatile bool &errorFlag
+        size_t bufferLimit
     )
         :
-        Dao::Thread(shmPath, logger, core), // todo give name: Poll_localName <- requires updating test_ThreadAffinity.
+        Dao::Thread("Poll_" + daoShmLocalName(shmPath), logger, core),
         mFrameQueue(frameQueue),
-        mErrorFlag(errorFlag)
+        mBufferLimit(bufferLimit)
     {
         LoadSharedMemory(shmPath);
     }
@@ -137,6 +224,7 @@ class SharedMemoryPoller : public Dao::Thread
      */
     ~SharedMemoryPoller()
     {
+        DAO_PROFILE_EXPORT(mProfile);
         UnloadSharedMemory();
         Exit();
     }
@@ -151,17 +239,6 @@ class SharedMemoryPoller : public Dao::Thread
     }
 
     private:
-    /**
-     * Sets the application error flag and ensures the export thread
-     * is stopped.
-     */
-    void TriggerError()
-    {
-        m_log.Info("%s triggered application error", m_thread_name.c_str());
-        mErrorFlag = true;
-        Stop();
-    }
-
     /**
      * Opens dao shared memory from path and stores required
      * information to be used when queuing frames.
@@ -201,6 +278,36 @@ class SharedMemoryPoller : public Dao::Thread
     }
 
     /**
+     * Checks if the frame data is safe to record, if not
+     * then it returns false and logs the reason.
+     * @param arrayBuffer Pointer to allocated frame array buffer
+     * @return True if frame can be recorded, False is not.
+     */
+    inline
+    bool TrustedFrame(void *arrayBuffer)
+    {
+        bool recordFrame = true;
+
+        if(!arrayBuffer) {
+            m_log.Warning("%s dropped frame because: failed to allocate array buffer", m_thread_name.c_str());
+            recordFrame = false;
+        }
+
+        if(mMetadata->write == 1 || mMetadata->cnt0 > mCnt0) {
+            m_log.Warning("%s dropped frame because: shared memory written to during copy", m_thread_name.c_str());
+            recordFrame = false;
+        }
+
+
+        if(mBufferLimit && mFrameQueue.size() == mBufferLimit) {
+            m_log.Warning("%s dropped frame because: frame queue is at capacity (%d)", m_thread_name.c_str(), mBufferLimit);
+            recordFrame = false;
+        }
+
+        return recordFrame;
+    }
+
+    /**
      * Core polling thread loop. Awaits a frame to be written
      * into the shared memory and then queues its data for recording.
      */
@@ -209,10 +316,12 @@ class SharedMemoryPoller : public Dao::Thread
         const uint64_t cnt0 = mMetadata->cnt0;
         if (mInitialGrab || cnt0 > mCnt0) {
             //
+            DAO_PROFILE_NEW_FRAME(mProfile);
             mInitialGrab = false;
             mCnt0 = cnt0;
             
             // Copy frame data out of shared memory.
+            DAO_PROFILE_START(mProfile, "Metadata-Copy")
             SharedMemoryFrame frame;
             frame.size = mFrameSize;
             frame.atype = mFrameDatatype;
@@ -221,38 +330,32 @@ class SharedMemoryPoller : public Dao::Thread
             frame.cnt2 = mMetadata->cnt2;
             frame.nElements = mFrameElementCount;
             frame.atime = mMetadata->atime.tsfixed.secondlong;
+            DAO_PROFILE_STOP(mProfile, "Metadata-Copy")
+
+            DAO_PROFILE_START(mProfile, "Array-Copy")
             frame.data = (int8_t*) malloc(mFrameFootprint);
             if(frame.data) memcpy(frame.data, mImage.array.V, mFrameFootprint);
+            DAO_PROFILE_STOP(mProfile, "Array-Copy")
 
-            // if we cannot allocate memory to store the frame data,
-            // or if the frame itself was potentially written to
-            // as we were copying it out, then drop the frame.
-            // todo add check for write flag back in once John patches daoBase.
-            if(!frame.data || mMetadata->cnt0 > mCnt0)
-                return;
-                
-            // Queue the frame.
-            try {
+            // Validate frame and push onto queue.
+            DAO_PROFILE_START(mProfile, "Enqueue")
+            if(TrustedFrame(frame.data))
                 mFrameQueue.push(frame);
-            }
-            catch(const std::exception &e) {
-                m_log.Error("%s failed to push onto queue because: %s", m_thread_name.c_str(), e.what());
-                TriggerError();
-                return;
-            }
+            DAO_PROFILE_STOP(mProfile, "Enqueue")
         }
     }
 
     /**
       * Member Variables
     */
+   DAO_PROFILE(mProfile, std::chrono::nanoseconds, "Metadata-Copy", "Array-Copy", "Enqueue");
     Dao::ThreadSafeQueue<SharedMemoryFrame> &mFrameQueue;
     volatile IMAGE_METADATA *mMetadata;
     std::vector<long> mFrameSize;
-    volatile bool &mErrorFlag;
     size_t mFrameElementCount;
     size_t mFrameFootprint;
     uint8_t mFrameDatatype;
+    size_t mBufferLimit;
     bool mInitialGrab;
     uint64_t mCnt0;
     IMAGE mImage;
@@ -498,8 +601,8 @@ class SharedMemoryRecorder : public Recorder
      */
     SharedMemoryRecorder(const Target &target, Dao::Log::Logger &logger, volatile bool &errorFlag)
         :
-        mExporter(mFrameQueue, logger, target.path, target.capacity, target.limit, errorFlag),
-        mPoller(mFrameQueue, logger, target.path, target.core, errorFlag)
+        mExporter(mFrameQueue, logger, target.source, target.fileLimit, target.recordingLimit, errorFlag),
+        mPoller(mFrameQueue, logger, target.source, target.pollingCore, target.bufferLimit)
     {
         mExporter.Spawn();
         mPoller.Spawn();
@@ -571,10 +674,9 @@ class AppComponent : public Dao::Component
         :
         Component("daoTelemetry", logger, ip, port),
         mConfigString(""),
-        mLogger(logger),
         mErrorFlag(false)
     {
-        mLogger.Info("App interface is now available");
+        m_log.Info("App interface is now available");
 
         if (configFile.length()) { // pull initial configuration from a file at startup.
             ConfigFromFile(configFile);
@@ -594,7 +696,7 @@ class AppComponent : public Dao::Component
      */
     void Manage()
     {
-        mLogger.Info("State monitoring active");
+        m_log.Info("State monitoring active");
 
         while (true) {
             if (GetStateText() == "Running") {
@@ -612,7 +714,7 @@ class AppComponent : public Dao::Component
 
                 // if all targets have finished recording then change state to reflect this.
                 if(nFinished == mTargets.size()) {
-                    mLogger.Info("All targets finished recording");
+                    m_log.Info("All targets finished recording");
                     while (GetStateText() == "Running") Idle();
                 }
             }
@@ -629,7 +731,7 @@ class AppComponent : public Dao::Component
     void SetConfig(const std::string &configStr)
     {
         mConfigString = configStr;
-        mLogger.Debug("Configuration set");
+        m_log.Debug("Configuration set");
     }
 
     /**
@@ -641,7 +743,7 @@ class AppComponent : public Dao::Component
     {
         std::ifstream file(filePath);
         if (!file) {
-            mLogger.Warning("Configuration file failed to load (%s)", filePath.c_str());
+            m_log.Warning("Configuration file failed to load (%s)", filePath.c_str());
             return;
         }
 
@@ -657,67 +759,65 @@ class AppComponent : public Dao::Component
      */
     void Configure()
     {
-        mLogger.Debug("Configuring session..");
-        if (!mConfigString.length()) {
-            throw std::invalid_argument("No session configuration present");
-        }
+        m_log.Debug("Configuring session..");
+        if (!mConfigString.length()) throw std::invalid_argument("No session configuration present");
 
+        // parse yaml string
         const YAML::Node &config = YAML::Load(mConfigString);
-        mLogger.Debug("Configuration parsed");
+        m_log.Debug("YAML string parsed");
 
-        if (!config["telemetry_root"]) {
-            throw std::invalid_argument("No telemetry root specified");
-        }
-        mTelemetryRoot = config["telemetry_root"].as<std::string>();
-        mLogger.Debug("Telemetry root: %s", mTelemetryRoot.c_str());
+        // get data root directory
+        if (!config["data-root"]) throw std::invalid_argument("No telemetry root specified");
+        mDataRoot = config["data-root"].as<std::string>();
+        m_log.Debug("Data root: %s", mDataRoot.c_str());
 
-        int16_t nominalCore = config["nominal_core"] ? config["nominal_core"].as<int16_t>() : -1;
-        mLogger.Debug("Nominal polling core: %d", nominalCore);
+        // parse each target in the config and add to the
+        // list of session targets.
+        if (!config["targets"]) throw std::invalid_argument("No targets list");
+        for (const YAML::Node &targetConfig : config["targets"]) {
+            Target target;
 
-        // construct a Target struct for each telemetry target in the config
-        // and add to the list of session targets. 
-        if (config["telemetry"]) {
-            for (const YAML::Node &tc : config["telemetry"]) {
-                Target target;
+            // ensure target has a source specified, and only one specified.
+            if(!targetConfig["shared-memory"] && !targetConfig["file"]) throw std::invalid_argument("Target has no source");
+            if(targetConfig["shared-memory"] && targetConfig["file"]) throw std::invalid_argument("Target has ambiguous source");
 
-                // get target source path.
-                if (tc["target"]) target.path = tc["target"].as<std::string>();
-                else throw std::invalid_argument("Telemetry item has no source specified");
-
-                // get target datafile capacity.
-                target.capacity = tc["capacity"] ? tc["capacity"].as<size_t>() : 0;
-                mLogger.Debug("telemetry capacity: %zu", target.capacity);
-
-                // get target recording limit.
-                target.limit = tc["limit"] ? tc["limit"].as<size_t>() : 0;
-                mLogger.Debug("telemetry limit: %zu", target.limit);
-
-                // get target polling core.
-                target.core = tc["core"] ? tc["core"].as<int16_t>() : nominalCore;
-                mLogger.Debug("telemetry core: %d", target.core);
-
-                // add to list of session targets.
-                mTargets.push_back(target);
-                mLogger.Debug("Configured target '%s' (type=shared-memory, capacity=%d,limit=%d,core=%d)", 
-                    target.path.c_str(), target.capacity, target.limit, target.core
-                );
+            // infer target source type
+            if(targetConfig["shared-memory"]) {
+                target.type = Target::Type::SHARED_MEMORY;
             }
-        }
-        else {
-            throw std::invalid_argument("No telemetry targets specified");
-        }
-
-        // add the filepath for each file listed in the config, these
-        // will be copied to the session directory when recording begins.
-        if (config["files"]) {
-            for (const YAML::Node &fc : config["files"]) {
-                const std::string filePath = fc.as<std::string>();
-                mFilesList.push_back(filePath);
-                mLogger.Debug("Configured target '%s' (type=file)", filePath.c_str());
+            else if(targetConfig["file"]) {
+                target.type = Target::Type::FILE;
             }
+
+            // get relevant target parameters
+            switch(target.type) {
+                case Target::Type::SHARED_MEMORY:
+                    target.source = targetConfig["shared-memory"].as<std::string>();
+                    target.fileLimit = targetConfig["file-limit"] ? targetConfig["file-limit"].as<size_t>() : 0;
+                    target.bufferLimit = targetConfig["buffer-limit"] ? targetConfig["buffer-limit"].as<size_t>() : 0; 
+                    target.pollingCore = targetConfig["polling-core"] ? targetConfig["polling-core"].as<int16_t>() : -1;
+                    target.recordingLimit = targetConfig["recording-limit"] ? targetConfig["recording-limit"].as<size_t>() : 0;
+
+                    m_log.Debug("Configured shared-memory target '%s' (file-limit=%d,recording-limit=%d,polling-core=%d)", 
+                        target.source.c_str(), target.fileLimit, target.recordingLimit, target.pollingCore
+                    );
+                    
+                    break;
+
+                case Target::Type::FILE:
+                    target.source = targetConfig["file"].as<std::string>();
+                    m_log.Debug("Configured file target '%s'", target.source.c_str());
+                    break;
+
+                default:
+                    m_log.Critical("Unknown target type");
+                    break;
+            }
+
+            mTargets.push_back(target);
         }
 
-        mLogger.Info("Session configured");
+        m_log.Info("Session configured (%d targets)", mTargets.size());
     }
 
     /**
@@ -725,9 +825,9 @@ class AppComponent : public Dao::Component
      */
     void ClearConfiguration()
     {
-        mLogger.Debug("Clearing session configuration..");
+        m_log.Debug("Clearing session configuration..");
         mTargets.clear();
-        mLogger.Info("Session configuration cleared");
+        m_log.Info("Session configuration cleared");
     }
 
     /**
@@ -736,10 +836,25 @@ class AppComponent : public Dao::Component
      */
     void CreateRecordingResources()
     {
-        mLogger.Debug("Allocating session resources..");
-        for (Target &target : mTargets) 
-            target.recorder = new SharedMemoryRecorder(target, mLogger, mErrorFlag);
-        mLogger.Info("Session resources allocated");
+        m_log.Debug("Allocating session resources..");
+        for (Target &target : mTargets) {
+            switch(target.type) {
+                case Target::Type::SHARED_MEMORY:
+                    target.recorder = new SharedMemoryRecorder(target, m_log, mErrorFlag);
+                    break;
+
+            case Target::Type::FILE:
+                target.recorder = new FileRecorder(m_log, target.source, mErrorFlag);
+                break;
+
+            default:
+                m_log.Critical("Target '%s' has unknown source type", target.source.c_str());
+                assert(false);
+                break;
+            }
+        }
+
+        m_log.Info("Session resources allocated");
     }
 
     /**
@@ -748,10 +863,10 @@ class AppComponent : public Dao::Component
      */
     void DestoryRecordingResources()
     {
-        mLogger.Debug("Freeing session resources..");
+        m_log.Debug("Freeing session resources..");
         for (Target &target : mTargets) 
             delete target.recorder;
-        mLogger.Info("Session resources freed");
+        m_log.Info("Session resources freed");
     }
 
     /**
@@ -765,7 +880,7 @@ class AppComponent : public Dao::Component
     void PrepareRecordingSession()
     {
         //
-        mLogger.Debug("Starting session..");
+        m_log.Debug("Starting session..");
 
         // Create dedicated session directory under the configured root directory
         // to house the session data files that are produced by the recorders.
@@ -773,39 +888,25 @@ class AppComponent : public Dao::Component
         time_t t = time(nullptr);
         tm *td = localtime(&t);
         strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", td);
-        const std::string sessionDir = mTelemetryRoot + "/" + timestamp;
+        const std::string sessionDir = mDataRoot + "/" + timestamp;
         
-        mLogger.Debug("Creating session directory: %s", sessionDir.c_str());
+        m_log.Debug("Creating session directory: %s", sessionDir.c_str());
         if (mkdir(sessionDir.c_str(), 0755)) {
-            mLogger.Error("Failed to create session directory because: %s\n", strerror(errno));
+            m_log.Error("Failed to create session directory because: %s\n", strerror(errno));
             throw std::runtime_error("Failed to create session directory");
         }
-        mLogger.Info("Created session directory: %s", sessionDir.c_str());
+        m_log.Info("Created session directory: %s", sessionDir.c_str());
 
-        // Copy over each file target into the session directory. 
-        for (const std::string &path : mFilesList) {
-            // construct file's full destination path. 
-            std::string filename = path;
-            auto x = path.find_last_of("/");
-            if (x != std::string::npos) {
-                filename = path.substr(x + 1);
-            }
-            const std::string destPath = sessionDir + "/" + filename;
-
-            // copy file to destination.
-            mLogger.Debug("Copying file target %s to %s", path.c_str(), destPath.c_str());
-            std::filesystem::copy_file(path, destPath); // throws if the copy fails.
-            mLogger.Info("Copied file target %s to %s", path.c_str(), destPath.c_str());
-        }
+        
 
         // Start recorder for each target.
-        mLogger.Debug("Starting recorders..");
+        m_log.Debug("Starting recorders..");
         for (Target &t : mTargets) 
             t.recorder->Start(sessionDir);
-        mLogger.Info("Started recorders");
+        m_log.Info("Started recorders");
 
         //
-        mLogger.Info("Session started");
+        m_log.Info("Session started");
     }
 
     /**
@@ -816,15 +917,15 @@ class AppComponent : public Dao::Component
     void EndRecordingSession()
     {
         //
-        mLogger.Debug("Ending session..");
+        m_log.Debug("Ending session..");
 
-        mLogger.Debug("Stopping recorders..");
+        m_log.Debug("Stopping recorders..");
         for (Target &t : mTargets) 
             t.recorder->Stop();
-        mLogger.Info("Stopped recorders");
+        m_log.Info("Stopped recorders");
 
         //
-        mLogger.Info("Session ended");
+        m_log.Info("Session ended");
     }
 
     /**
@@ -836,14 +937,14 @@ class AppComponent : public Dao::Component
     void RecoveryRoutine()
     {
         //
-        mLogger.Debug("Recovering..");
+        m_log.Debug("Recovering..");
         
         mErrorFlag = false; // put 1st so any recovery errors are raised correctly. 
         DestoryRecordingResources();
         CreateRecordingResources();
 
         //
-        mLogger.Info("Recovered");
+        m_log.Info("Recovered");
     }
 
     /**
@@ -865,9 +966,8 @@ class AppComponent : public Dao::Component
      */
     std::vector<Target> mTargets;
     std::vector<std::string> mFilesList;
-    std::string mTelemetryRoot;
+    std::string mDataRoot;
     std::string mConfigString;
-    Dao::Log::Logger &mLogger;
     volatile bool mErrorFlag;
 };
 
