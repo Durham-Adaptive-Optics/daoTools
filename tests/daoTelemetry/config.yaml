@@ -1,18 +1,27 @@
-files:
-- /home/daousr/DKIST/config/simconfig_26_fov.yaml
-nominal_core: 0
-telemetry:
-- capacity: 500
-  target: /tmp/daoTelemetry_/covmaps.im.shm
-- target: /tmp/daoTelemetry_/preproc.im.shm
-- target: /tmp/daoTelemetry_/profile.im.shm
-- capacity: 100
-  target: /tmp/daoTelemetry_/ref_img.im.shm
-- capacity: 25000
-  core: 1
-  target: /tmp/daoTelemetry_/slopes.im.shm
-- target: /tmp/daoTelemetry_/subap_map.im.shm
-- target: /tmp/daoTelemetry_/sub_sample.im.shm
-- capacity: 100
-  target: /tmp/daoTelemetry_/xcorr.im.shm
-telemetry_root: /tmp/daoTelemetry_/
+targets:
+  - file: /home/daousr/DKIST/config/simconfig_26_fov.yaml
+
+  - file-limit: 500
+    buffer-limit: 10
+    recording-limit: 90
+    shared-memory: /tmp/daoTelemetry_/covmaps.im.shm
+
+  - shared-memory: /tmp/daoTelemetry_/preproc.im.shm
+
+  - shared-memory: /tmp/daoTelemetry_/profile.im.shm
+
+  - file-limit: 100
+    shared-memory: /tmp/daoTelemetry_/ref_img.im.shm
+
+  - file-limit: 25000
+    polling-core: 1
+    shared-memory: /tmp/daoTelemetry_/slopes.im.shm
+
+  - shared-memory: /tmp/daoTelemetry_/subap_map.im.shm
+
+  - shared-memory: /tmp/daoTelemetry_/sub_sample.im.shm
+
+  - file-limit: 100
+    shared-memory: /tmp/daoTelemetry_/xcorr.im.shm
+
+data-root: /tmp/daoTelemetry_/
