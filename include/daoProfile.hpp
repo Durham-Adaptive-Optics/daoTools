@@ -112,7 +112,7 @@ class daoProfile {
                 csv << ",";
             }
         }
-        csv << ",# Units\n";
+        csv << " # Units\n";
 
         // write out frame results.
         for(const auto &frame : m_frames) {
