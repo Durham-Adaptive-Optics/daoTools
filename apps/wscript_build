@@ -333,6 +333,16 @@ if bld.env.HAVE_CLI11:
 		use= 'daoTools CLI11',
 		cxxflags = ['-O3', '-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto', '-std=c++17']
 	)
+
+	daoDownsample = bld.program(
+		source = 'daoDownsample.cpp',
+		target = 'daoDownsample',
+		includes = '../include '+os.getenv('DAOROOT')+'/include/',
+		linkflags = my_link_flags,
+		ldflags = ['-ldao' , '-lpthread', '-ldaoNuma', '-ldaoProto', '-lzmq', '-lprotobuf'] + my_ld_flags,
+		use= 'daoTools CLI11',
+		cxxflags = ['-O3', '-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto', '-std=c++17']
+	)
 else:
     print("Skipping daoTelemetry build (CLI11 not available).")
 
