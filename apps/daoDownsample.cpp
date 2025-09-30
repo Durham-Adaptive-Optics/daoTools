@@ -44,23 +44,24 @@ downsample(
     const size_t gridNPixels = gridWidth * gridHeight;
     
     // Loop over each pixel in the output image
-    for(size_t sy = 0; sy < outHeight; ++sy) {
-        for(size_t sx = 0; sx < outWidth; ++sx) {
-            // Find origin pixel (top left) of the source pixel grid.
-            size_t go[2] {gridWidth * sx, gridHeight * sy};
+    for(size_t dy = 0; dy < outHeight; ++dy) {
+        for(size_t dx = 0; dx < outWidth; ++dx) {
+            // Find top-left origin pixel for this pixel's source grid.
+            size_t go_x = gridWidth * dx;
+            size_t go_y = gridHeight * dy;
 
-            // Sum pixels in the src grid.
+            // Sum pixels in the grid.
             size_t pixelSum = 0;
-            for(size_t dy = go[1]; dy < go[1] + gridHeight; ++dy) {
-                for(size_t dx = go[0]; dx < go[0] + gridWidth; ++dx) {
-                    uint16_t *srcPixel = srcImage + dy * srcWidth + dx;
+            for(size_t sy = go_y; sy < go_y + gridHeight; ++sy) {
+                for(size_t sx = go_x; sx < go_x + gridWidth; ++sx) {
+                    uint16_t *srcPixel = srcImage + sy * srcWidth + sx;
                     pixelSum += *srcPixel;
                 }
             }
 
-            // Store pixel value to the output image, rounding to the
-            // nearest integer if doing an average.
-            *(outImage + sy * outWidth + sx) = sumMode ? pixelSum : (pixelSum + (gridNPixels / 2)) / gridNPixels;
+            // Store pixel value to the output image, rounding
+            // to the nearest integer if doing an average.
+            *(outImage + dy * outWidth + dx) = sumMode ? pixelSum : (pixelSum + (gridNPixels / 2)) / gridNPixels;
         }
     }
 }
@@ -117,8 +118,8 @@ int main(int argc, char *argv[])
     }
 
     // Infer downsampling grid.
-    const size_t gridWidth = sourceShm.md->size[0] / outShm.md->size[0];
-    const size_t gridHeight = sourceShm.md->size[1] / outShm.md->size[1];
+    const size_t gridHeight = sourceShm.md->size[0] / outShm.md->size[0];
+    const size_t gridWidth = sourceShm.md->size[1] / outShm.md->size[1];
 
     // Allocate memory for downsampled image
     uint16_t *outImage = (uint16_t*)malloc(outShm.md->size[0] * outShm.md->size[1] * sizeof(uint16_t));
@@ -147,10 +148,10 @@ int main(int argc, char *argv[])
             cnt0 = cnt0_;
             downsample(
                 sourceShm.array.UI16,
-                sourceShm.md->size[0],
+                sourceShm.md->size[1],
                 outImage,
-                outShm.md->size[0],
                 outShm.md->size[1],
+                outShm.md->size[0],
                 gridWidth,
                 gridHeight,
                 args.summationMode
