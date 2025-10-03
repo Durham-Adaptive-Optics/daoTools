@@ -1,0 +1,26 @@
+#!/bin/bash
+# daoTmux.sh
+# Usage: ./daoTmux.sh <tmux_session_name> "<command>"
+
+if [ $# -lt 2 ]; then
+    echo "Usage: $0 <tmux_session_name> \"<command>\""
+    exit 1
+fi
+
+tmuxname="$1"
+shift
+cmd="$*"
+
+# Kill existing process in tmux session if it exists
+tmux send-keys -t "$tmuxname" C-c 2>/dev/null
+sleep 0.1
+
+echo "Executing \"$cmd\" in tmux session \"$tmuxname\""
+
+# Create session if it doesn’t exist
+if ! tmux has-session -t "$tmuxname" 2>/dev/null; then
+    tmux new -d -s "$tmuxname"
+fi
+
+# Send command
+tmux send-keys -t "$tmuxname" "$cmd" C-M
