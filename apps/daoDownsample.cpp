@@ -16,7 +16,7 @@
 DAO_PROFILE(
     downsampleProfile, 
     std::chrono::microseconds, 
-    "Downsample"
+    "Processing", "Downsample"
 );
 
 struct CliArguments
@@ -143,9 +143,11 @@ int main(int argc, char *argv[])
         uint64_t cnt0_ = sourceMetadata->cnt0;
         if(cnt0_ > cnt0) {
             DAO_PROFILE_NEW_FRAME(downsampleProfile);
-            DAO_PROFILE_START(downsampleProfile, "Downsample");
-
+            DAO_PROFILE_START(downsampleProfile, "Processing");
+            
             cnt0 = cnt0_;
+
+            DAO_PROFILE_START(downsampleProfile, "Downsample");
             downsample(
                 sourceShm.array.UI16,
                 sourceShm.md->size[1],
@@ -156,9 +158,11 @@ int main(int argc, char *argv[])
                 gridHeight,
                 args.summationMode
             );
-            daoShmImage2Shm(outImage, outShm.md->size[0] * outShm.md->size[1], &outShm);
-
             DAO_PROFILE_STOP(downsampleProfile, "Downsample");
+
+            daoShmImage2Shm(outImage, outShm.md->size[0] * outShm.md->size[1], &outShm);
+            
+            DAO_PROFILE_STOP(downsampleProfile, "Processing");
         }
     }
 }
