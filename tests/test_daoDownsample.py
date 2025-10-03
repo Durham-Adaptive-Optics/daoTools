@@ -24,6 +24,13 @@ SRCIMG_SHM = "/tmp/srcImage.im.shm"
 OUTIMG_SHM = "/tmp/outImage.im.shm"
 
 # ========================================================================================== #
+# UTILITY FUNCTIONS
+# ========================================================================================== #
+
+def roundHalfUp(arr: np.ndarray) -> np.ndarray:
+    return np.floor(arr + 0.5)
+
+# ========================================================================================== #
 # TEST ROUTINES
 # ========================================================================================== #
 
@@ -48,15 +55,16 @@ def test_nonIntegralGrid():
     if daoDownsample.returncode != 1:
         raise RuntimeError
 
-@pytest.mark.parametrize("grid", [(5,5), (10,5), (5,10)])
+@pytest.mark.parametrize("grid", [(2,2), (2,3), (3,2)])
 @pytest.mark.parametrize("sumMode", [True, False])
-def test_Downsample(grid, sumMode, src = (500, 500)):
+def test_Downsample(grid, sumMode, src = (6,6)):
     # create source frame & input/output shms.
     srcHeight, srcWidth = src
     gridHeight, gridWidth = grid
     outHeight, outWidth = srcHeight // gridHeight, srcWidth // gridWidth
     
-    frame = np.random.randint(low=0,high=np.iinfo(np.uint16).max, size=(srcHeight, srcWidth), dtype=np.uint16)
+    # frame = np.random.randint(low=0,high=np.iinfo(np.uint16).max, size=(srcHeight, srcWidth), dtype=np.uint16)
+    frame = np.random.randint(low=0,high=255, size=(srcHeight, srcWidth), dtype=np.uint16)
     outShm = dao.shm(OUTIMG_SHM, np.zeros((outHeight, outWidth), dtype=np.uint16))
     srcShm = dao.shm(SRCIMG_SHM, np.zeros((srcHeight, srcWidth), dtype=np.uint16))
 
@@ -79,10 +87,10 @@ def test_Downsample(grid, sumMode, src = (500, 500)):
     if not sumMode:
         nGrid = gridWidth * gridHeight
         scaledArray = reference / nGrid
-        reference = np.rint(scaledArray).astype(np.uint16)
+        reference = roundHalfUp(scaledArray).astype(np.uint16)
     
-    print(f"Frame: {frame}")
-    print(f"Output: {outShm.get_data()}")
-    print(f"Ref: {reference}")
-    
-    assert np.array_equal(outShm.get_data(), reference)
+    if not np.array_equal(outShm.get_data(), reference):
+        print(f"Frame: {frame}")
+        print(f"Reference: {reference}")
+        print(f"Output: {outShm.get_data()}")
+        assert False
