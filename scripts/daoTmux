@@ -1,6 +1,6 @@
 #!/bin/bash
-# daoTmux.sh
-# Usage: ./daoTmux.sh <tmux_session_name> "<command>"
+# daoTmux
+# Usage: daoTmux <tmux_session_name> "<command>"
 
 if [ $# -lt 2 ]; then
     echo "Usage: $0 <tmux_session_name> \"<command>\""
