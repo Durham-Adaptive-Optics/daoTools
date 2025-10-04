@@ -10,6 +10,7 @@
 #include <CLI/CLI.hpp>
 #include <assert.h>
 #include <signal.h>
+#include <cstring>
 #include <string>
 #include <dao.h>
 
