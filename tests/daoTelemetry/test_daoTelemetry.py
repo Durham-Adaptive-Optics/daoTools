@@ -443,6 +443,35 @@ def test_RecordingError(i: daoCommandIfce):
 
     AwaitState(i, "Error")
 
+def test_RecordStaticSharedMemory(i: daoCommandIfce):
+    root = InitTestRoutine()
+    """
+        Checks that the initial frame of a shared memory
+        is recorded.
+    """
+    
+    # create shm
+    shmPath = f"/tmp/shm.im.shm"
+    _ = dao.shm(shmPath, np.zeros((1,1)))
+    
+    # create config
+    yml = {}
+    yml["data-root"] = root
+    yml["targets"] = [{
+        "shared-memory": shmPath,
+        "recording-limit": 1
+    }]
+    config = yaml.dump(yml)
+
+    # Record
+    SetConfig(i, config)
+    StateTransition(i, "Init", "Standby")
+    StateTransition(i, "Enable", "Idle")
+    StateTransition(i, "Run")
+    
+    # Wait for shm to be recorded
+    AwaitState(i, "Idle")
+
 @pytest.mark.parametrize("dtype", [
     np.int8, np.int16, np.int32, np.int64,
     np.uint8, np.uint16, np.uint32, np.uint64,
