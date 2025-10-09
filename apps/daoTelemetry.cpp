@@ -284,27 +284,26 @@ class SharedMemoryPoller : public Dao::Thread
      * @return True if frame can be recorded, False is not.
      */
     inline
-    bool TrustedFrame(void *arrayBuffer)
+    bool FrameGood(void *arrayBuffer)
     {
-        bool recordFrame = true;
+        bool good = true;
 
         if(!arrayBuffer) {
             m_log.Warning("%s dropped frame because: failed to allocate array buffer", m_thread_name.c_str());
-            recordFrame = false;
+            good = false;
         }
 
         if(mMetadata->write == 1 || mMetadata->cnt0 > mCnt0) {
             m_log.Warning("%s dropped frame because: shared memory written to during copy", m_thread_name.c_str());
-            recordFrame = false;
+            good = false;
         }
-
 
         if(mBufferLimit && mFrameQueue.size() == mBufferLimit) {
-            m_log.Warning("%s dropped frame because: frame queue is at capacity (%d)", m_thread_name.c_str(), mBufferLimit);
-            recordFrame = false;
+            m_log.Warning("%s dropped frame because: frame queue is at capacity (%d frames)", m_thread_name.c_str(), mBufferLimit);
+            good = false;
         }
 
-        return recordFrame;
+        return good;
     }
 
     /**
@@ -334,13 +333,19 @@ class SharedMemoryPoller : public Dao::Thread
 
             DAO_PROFILE_START(mProfile, "Array-Copy")
             frame.data = (int8_t*) malloc(mFrameFootprint);
-            if(frame.data) memcpy(frame.data, mImage.array.V, mFrameFootprint);
+            if(frame.data) {
+                memcpy(frame.data, mImage.array.V, mFrameFootprint);
+            }
             DAO_PROFILE_STOP(mProfile, "Array-Copy")
 
             // Validate frame and push onto queue.
             DAO_PROFILE_START(mProfile, "Enqueue")
-            if(TrustedFrame(frame.data))
+            if(FrameGood(frame.data)) {
                 mFrameQueue.push(frame);
+            } 
+            else if(frame.data) {
+                free(frame.data);
+            }
             DAO_PROFILE_STOP(mProfile, "Enqueue")
         }
     }
@@ -798,8 +803,8 @@ class AppComponent : public Dao::Component
                     target.pollingCore = targetConfig["polling-core"] ? targetConfig["polling-core"].as<int16_t>() : -1;
                     target.recordingLimit = targetConfig["recording-limit"] ? targetConfig["recording-limit"].as<size_t>() : 0;
 
-                    m_log.Debug("Configured shared-memory target '%s' (file-limit=%d,recording-limit=%d,polling-core=%d)", 
-                        target.source.c_str(), target.fileLimit, target.recordingLimit, target.pollingCore
+                    m_log.Debug("Configured shared memory target '%s' (file-limit=%d,recording-limit=%d,buffer-limit=%d,polling-core=%d)", 
+                        target.source.c_str(), target.fileLimit, target.recordingLimit, target.bufferLimit, target.pollingCore
                     );
                     
                     break;
