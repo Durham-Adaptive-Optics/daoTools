@@ -945,7 +945,11 @@ class AppComponent : public Dao::Component
         m_log.Debug("Recovering..");
         
         mErrorFlag = false; // put 1st so any recovery errors are raised correctly. 
+        
         DestoryRecordingResources();
+        ClearConfiguration();
+
+        Configure();
         CreateRecordingResources();
 
         //
