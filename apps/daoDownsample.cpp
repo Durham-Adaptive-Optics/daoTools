@@ -17,7 +17,7 @@
 DAO_PROFILE(
     downsampleProfile, 
     std::chrono::microseconds, 
-    "Processing", "Downsample"
+    "Downsample"
 );
 
 struct CliArguments
@@ -27,7 +27,7 @@ struct CliArguments
     bool summationMode = false;
 };
 
-void handleInterruptSignal(int signal)
+void handleInterruptSignal([[maybe_unused]] int signal)
 {
     DAO_PROFILE_EXPORT(downsampleProfile);
     printf("exiting..\n");
@@ -42,7 +42,7 @@ downsample(
     bool avgMode
 ) 
 {
-    const size_t gridNPixels = gridWidth * gridHeight;
+    const size_t gridArea = gridWidth * gridHeight;
     
     // Loop over each pixel in the output image
     for(size_t dy = 0; dy < outHeight; ++dy) {
@@ -52,45 +52,18 @@ downsample(
             size_t go_y = gridHeight * dy;
 
             // Sum pixels in the grid.
-            size_t pixelSum = 0;
+            size_t gridSum = 0;
             for(size_t sy = go_y; sy < go_y + gridHeight; ++sy) {
                 for(size_t sx = go_x; sx < go_x + gridWidth; ++sx) {
                     uint16_t *srcPixel = srcImage + sy * srcWidth + sx;
-                    pixelSum += *srcPixel;
+                    gridSum += *srcPixel;
                 }
             }
 
             // Store pixel value to the output image, rounding
             // to the nearest integer if doing an average.
-            *(outImage + dy * outWidth + dx) = avgMode ? pixelSum : (pixelSum + (gridNPixels / 2)) / gridNPixels;
-        }
-    }
-}
-
-void
-downsample_vCache(
-    uint16_t *srcImage, size_t srcWidth, size_t srcHeight, 
-    uint16_t *outImage, size_t outWidth, size_t outHeight,
-    size_t gridWidth, size_t gridHeight,
-    bool sumMode
-) 
-{
-    memset(outImage, 0, outWidth * outHeight * sizeof(uint16_t));
-
-    for(size_t sRow = 0; sRow < srcHeight; ++sRow) {
-        for(size_t sCol = 0; sCol < srcWidth; ++sCol) {
-            size_t dCol = sCol / gridWidth;
-            size_t dRow = sRow / gridHeight;
-            uint16_t *srcPixel = srcImage + sRow * srcWidth + sCol;
-            uint16_t *dstPixel = outImage + dRow * outWidth + dCol;
-            *dstPixel += *srcPixel;
-        }
-    }
-
-    if(!sumMode) {
-        size_t gridNPixels = gridWidth * gridHeight;
-        for(size_t i = 0; i < outWidth * outHeight; ++i) {
-            outImage[i] = (outImage[i] + (gridNPixels / 2)) / gridNPixels;
+            uint16_t *outPixel = outImage + dy * outWidth + dx;
+            *outPixel = avgMode ? gridSum : (gridSum + (gridArea / 2)) / gridArea;
         }
     }
 }
@@ -157,19 +130,17 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    // Info message
-    #if defined(CACHE_IMPL)
-        const char *implName = "vCache";
-    #else
-        const char *implName = "Normal";
-    #endif
-
-    printf("Downsampling.. (src=%dx%d, dst=%dx%d,mode=%s,grid=%ldx%ld) [%s]\n", 
+    //
+    printf(
+        "--- Image Downsample ---\n"
+        " Source:  (%u x %u)\n"
+        " Output:  (%u x %u)\n"
+        " Grid:    (%zu x %zu)\n"
+        " Mode:    %s\n",
         sourceShm.md->size[0], sourceShm.md->size[1],
         outShm.md->size[0], outShm.md->size[1],
-        args.summationMode ? "Summation" : "Averaging",
         gridHeight, gridWidth,
-        implName
+        args.summationMode ? "Sum" : "Average"
     );
 
     // Fetch source image, downsample, and output result.
@@ -179,25 +150,9 @@ int main(int argc, char *argv[])
         uint64_t cnt0_ = sourceMetadata->cnt0;
         if(cnt0_ > cnt0) {
             DAO_PROFILE_NEW_FRAME(downsampleProfile);
-            DAO_PROFILE_START(downsampleProfile, "Processing");
-            
             cnt0 = cnt0_;
 
             DAO_PROFILE_START(downsampleProfile, "Downsample");
-            
-            #if defined(CACHE_IMPL)
-            downsample_vCache(
-                sourceShm.array.UI16,
-                sourceShm.md->size[1],
-                sourceShm.md->size[0],
-                outImage,
-                outShm.md->size[1],
-                outShm.md->size[0],
-                gridWidth,
-                gridHeight,
-                args.summationMode
-            );
-            #else
             downsample(
                 sourceShm.array.UI16,
                 sourceShm.md->size[1],
@@ -208,13 +163,9 @@ int main(int argc, char *argv[])
                 gridHeight,
                 args.summationMode
             );
-            #endif
-
             DAO_PROFILE_STOP(downsampleProfile, "Downsample");
 
             daoShmImage2Shm(outImage, outShm.md->size[0] * outShm.md->size[1], &outShm);
-            
-            DAO_PROFILE_STOP(downsampleProfile, "Processing");
         }
     }
 }

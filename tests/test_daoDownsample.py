@@ -63,8 +63,7 @@ def test_Downsample(grid, sumMode, src = (6,6)):
     gridHeight, gridWidth = grid
     outHeight, outWidth = srcHeight // gridHeight, srcWidth // gridWidth
     
-    # frame = np.random.randint(low=0,high=np.iinfo(np.uint16).max, size=(srcHeight, srcWidth), dtype=np.uint16)
-    frame = np.random.randint(low=0,high=255, size=(srcHeight, srcWidth), dtype=np.uint16)
+    frame = np.random.randint(low=0,high=np.iinfo(np.uint8).max, size=(srcHeight, srcWidth), dtype=np.uint16)
     outShm = dao.shm(OUTIMG_SHM, np.zeros((outHeight, outWidth), dtype=np.uint16))
     srcShm = dao.shm(SRCIMG_SHM, np.zeros((srcHeight, srcWidth), dtype=np.uint16))
 
