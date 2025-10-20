@@ -17,30 +17,14 @@ on centos:
 sudo yum install ncurses-devel
 ````
 
-## CLI11
+## CLI11+cfitsio+libyamml+blas
 ````
-sudo apt install libcli11-dev
-````
-
-## cfitsio
-````
-sudo apt install libcfitsio-dev
+sudo apt install libcli11-dev libcfitsio-dev libyaml-cpp-dev libopenblas-dev
 ````
 
-##
-````
-sudo apt install libyaml-cpp-dev
-````
-
-## pyqtgraph
-````
-pip3 install pyqtgraph
-````
 We recommand to use magicPlot
 ```
-git clone https://github.com/ojdf/magicplot.git
-cd magicPlot
-pip install -e .
+pip install magicPlot
 ```
 
 # Build
