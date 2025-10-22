@@ -23,6 +23,16 @@ daoRandWriterSync = bld.program(
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
+daoRandImageU16Write = bld.program(
+	source = 'daoRandImageU16Write.c',
+	target = 'daoRandImageU16Write',
+	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+	linkflags = my_link_flags,
+	ldflags = ['-ldao', '-lpthread', '-lm'] + my_ld_flags,
+	use= 'daoTools',
+	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
+	)
+
 daoClock = bld.program(
 	source = 'daoClock.c',
 	target = 'daoClock',
