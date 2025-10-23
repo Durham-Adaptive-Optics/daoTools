@@ -14,6 +14,7 @@
 #include <yaml-cpp/yaml.h>
 #include <daoProfile.hpp>
 #include <CLI/CLI.hpp>
+#include <sys/stat.h>
 #include <daoLog.hpp>
 #include <fitsio.h>
 #include <string>
