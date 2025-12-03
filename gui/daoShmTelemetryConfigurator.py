@@ -42,16 +42,30 @@ def launch_senders(config_data):
         port = stream['port']
         subsample = stream['subsample']
         semaphore = stream['semaphore']
+        cpu_core = stream.get('cpu_core')
+        
+        # Convert cpu_core to string if it's an int, handle None
+        if cpu_core is None:
+            cpu_core = ''
+        else:
+            cpu_core = str(cpu_core).strip()
         
         # Extract base name for tmux session
         filename = os.path.basename(file_path)
         base_name = filename.replace('.im.shm', '')
         tmux_name = f"Telem_Send_{base_name}"
         
-        # Build command arguments
-        process_args = f"-L {file_path} {destination_ip} {port} {semaphore} -s {subsample}"
-        
-        print(f"  Launching {tmux_name}: daoMudpiSender {process_args}")
+        # Build command with optional taskset
+        if cpu_core:
+            # Use taskset to pin to specific CPU core
+            process_exe = 'taskset'
+            process_args = f"-c {cpu_core} daoMudpiSender -L {file_path} {destination_ip} {port} {semaphore} -s {subsample}"
+            print(f"  Launching {tmux_name}: taskset -c {cpu_core} daoMudpiSender -L {file_path} {destination_ip} {port} {semaphore} -s {subsample}")
+        else:
+            # No CPU affinity
+            process_exe = 'daoMudpiSender'
+            process_args = f"-L {file_path} {destination_ip} {port} {semaphore} -s {subsample}"
+            print(f"  Launching {tmux_name}: daoMudpiSender {process_args}")
         
         # Launch the sender process
         manage_process(
@@ -59,7 +73,7 @@ def launch_senders(config_data):
             tmuxname=tmux_name,
             user=None,
             machine=None,
-            processExe='daoMudpiSender',
+            processExe=process_exe,
             processArgs=process_args,
             workingDir='.'
         )
@@ -121,7 +135,7 @@ class daoShmTelemetryConfigurator(QMainWindow):
     def init_variables(self):
         """Initialize class variables."""
         self.next_port = 8000
-        self.selected_files = {}  # Dictionary to store {filename: {port: int, subsample: int, semaphore: int}}
+        self.selected_files = {}  # Dictionary to store {filename: {port: int, subsample: int, semaphore: int, cpu_core: str}}
         
         # Directory to monitor
         self.dir = QDir("/tmp")
@@ -196,15 +210,16 @@ class daoShmTelemetryConfigurator(QMainWindow):
         self.search_filter.textChanged.connect(self.filter_files)
         file_browser_layout.addWidget(self.search_filter)
         
-        # Create table widget with 5 columns: Select, Filename, Port, Subsample Rate, Semaphore
+        # Create table widget with 6 columns: Select, Filename, Port, Subsample Rate, Semaphore, CPU Core
         self.tableWidget = QTableWidget(self)
-        self.tableWidget.setColumnCount(5)
-        self.tableWidget.setHorizontalHeaderLabels(["Select", "Filename", "Port", "Subsample Rate", "Semaphore"])
+        self.tableWidget.setColumnCount(6)
+        self.tableWidget.setHorizontalHeaderLabels(["Select", "Filename", "Port", "Subsample Rate", "Semaphore", "CPU Core"])
         self.tableWidget.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.tableWidget.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.tableWidget.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
         self.tableWidget.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self.tableWidget.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        self.tableWidget.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeToContents)
         self.tableWidget.setSelectionBehavior(QTableWidget.SelectRows)
         
         # Add table to layout
@@ -291,12 +306,20 @@ class daoShmTelemetryConfigurator(QMainWindow):
                 semaphoreSpinBox.setValue(2)
             semaphoreSpinBox.valueChanged.connect(lambda value, r=row: self.on_semaphore_changed(r, value))
             
+            # Create CPU core line edit
+            cpuCoreEdit = QLineEdit(self)
+            cpuCoreEdit.setPlaceholderText("Optional")
+            if filename in self.selected_files:
+                cpuCoreEdit.setText(self.selected_files[filename].get('cpu_core', ''))
+            cpuCoreEdit.textChanged.connect(lambda text, r=row: self.on_cpu_core_changed(r, text))
+            
             # Add items to table
             self.tableWidget.setCellWidget(row, 0, checkBox)
             self.tableWidget.setItem(row, 1, filenameItem)
             self.tableWidget.setCellWidget(row, 2, portSpinBox)
             self.tableWidget.setCellWidget(row, 3, subsampleSpinBox)
             self.tableWidget.setCellWidget(row, 4, semaphoreSpinBox)
+            self.tableWidget.setCellWidget(row, 5, cpuCoreEdit)
         
         # Apply current search filter
         self.filter_files()
@@ -320,23 +343,28 @@ class daoShmTelemetryConfigurator(QMainWindow):
             subsample = subsampleSpinBox.value() if filename in self.selected_files else 1
             semaphoreSpinBox = self.tableWidget.cellWidget(row, 4)
             semaphore = semaphoreSpinBox.value() if filename in self.selected_files else 2
+            cpuCoreEdit = self.tableWidget.cellWidget(row, 5)
+            cpu_core = cpuCoreEdit.text().strip() if cpuCoreEdit else ''  # Always read current text from widget
             
             self.selected_files[filename] = {
                 'port': port,
                 'subsample': subsample,
-                'semaphore': semaphore
+                'semaphore': semaphore,
+                'cpu_core': cpu_core
             }
             
             # Update spinboxes to show assigned values
             portSpinBox.setValue(port)
             subsampleSpinBox.setValue(subsample)
             semaphoreSpinBox.setValue(semaphore)
+            cpuCoreEdit.setText(cpu_core)
             
             # Increment next port for next selection
             if filename not in self.selected_files or port == self.next_port:
                 self.next_port = port + 1
                 
-            self.statusBar.showMessage(f"Selected {filename} on port {port} with subsample rate {subsample} and semaphore {semaphore}")
+            cpu_msg = f" on CPU {cpu_core}" if cpu_core else ""
+            self.statusBar.showMessage(f"Selected {filename} on port {port} with subsample rate {subsample} and semaphore {semaphore}{cpu_msg}")
         else:
             # File was deselected
             if filename in self.selected_files:
@@ -388,6 +416,21 @@ class daoShmTelemetryConfigurator(QMainWindow):
             if filename in self.selected_files:
                 self.selected_files[filename]['semaphore'] = value
                 self.statusBar.showMessage(f"Updated semaphore for {filename} to {value}")
+
+    def on_cpu_core_changed(self, row, text):
+        """Handle CPU core change."""
+        filenameItem = self.tableWidget.item(row, 1)
+        if not filenameItem:
+            return
+            
+        filename = filenameItem.text()
+        checkBox = self.tableWidget.cellWidget(row, 0)
+        
+        if checkBox and checkBox.isChecked():
+            if filename in self.selected_files:
+                self.selected_files[filename]['cpu_core'] = text.strip()
+                cpu_msg = f" (CPU {text.strip()})" if text.strip() else " (no CPU affinity)"
+                self.statusBar.showMessage(f"Updated CPU core for {filename}{cpu_msg}")
 
     def filter_files(self):
         """Filter the file table based on search text."""
@@ -525,6 +568,7 @@ class daoShmTelemetryConfigurator(QMainWindow):
                         portSpinBox = self.tableWidget.cellWidget(row, 2)
                         subsampleSpinBox = self.tableWidget.cellWidget(row, 3)
                         semaphoreSpinBox = self.tableWidget.cellWidget(row, 4)
+                        cpuCoreEdit = self.tableWidget.cellWidget(row, 5)
                         
                         if portSpinBox:
                             portSpinBox.setValue(port)
@@ -532,6 +576,14 @@ class daoShmTelemetryConfigurator(QMainWindow):
                             subsampleSpinBox.setValue(subsample)
                         if semaphoreSpinBox:
                             semaphoreSpinBox.setValue(semaphore)
+                        if cpuCoreEdit:
+                            cpu_core = stream.get('cpu_core', '')
+                            # Convert to string for display (handle int, None, or string)
+                            if cpu_core is None:
+                                cpu_core = ''
+                            else:
+                                cpu_core = str(cpu_core)
+                            cpuCoreEdit.setText(cpu_core)
                         
                         # Check the box last (this will trigger on_checkbox_changed)
                         if checkBox:
@@ -640,11 +692,19 @@ class daoShmTelemetryConfigurator(QMainWindow):
         }
         
         for filename, config in self.selected_files.items():
+            # Convert cpu_core to int if it's a number, otherwise keep as string (for ranges like "0-3")
+            cpu_core = config.get('cpu_core', '')
+            if cpu_core and cpu_core.isdigit():
+                cpu_core = int(cpu_core)
+            elif not cpu_core:
+                cpu_core = None  # Use None instead of empty string for cleaner YAML
+            
             stream_entry = {
                 'file': self.file_location_prefix + filename,
                 'port': config['port'],
                 'subsample': config['subsample'],
-                'semaphore': config['semaphore']
+                'semaphore': config['semaphore'],
+                'cpu_core': cpu_core
             }
             config_data['streams'].append(stream_entry)
         
@@ -819,11 +879,19 @@ if __name__ == "__main__":
         }
         
         for filename, config in self.selected_files.items():
+            # Convert cpu_core to int if it's a number, otherwise keep as string (for ranges like "0-3")
+            cpu_core = config.get('cpu_core', '')
+            if cpu_core and cpu_core.isdigit():
+                cpu_core = int(cpu_core)
+            elif not cpu_core:
+                cpu_core = None
+            
             stream_entry = {
                 'file': self.file_location_prefix + filename,
                 'port': config['port'],
                 'subsample': config['subsample'],
-                'semaphore': config['semaphore']
+                'semaphore': config['semaphore'],
+                'cpu_core': cpu_core
             }
             config_data['streams'].append(stream_entry)
         
@@ -840,7 +908,8 @@ if __name__ == "__main__":
             for filename, config in self.selected_files.items():
                 base_name = filename.replace('.im.shm', '')
                 tmux_name = f"Telem_Send_{base_name}"
-                print(f"  - {tmux_name}: {filename} -> {destination_ip}:{config['port']} (subsample={config['subsample']}, semaphore={config['semaphore']})")
+                cpu_msg = f" on CPU {config['cpu_core']}" if config.get('cpu_core') else ""
+                print(f"  - {tmux_name}: {filename} -> {destination_ip}:{config['port']} (subsample={config['subsample']}, semaphore={config['semaphore']}){cpu_msg}")
         except Exception as e:
             self.statusBar.showMessage(f"Error launching senders: {e}")
             print(f"Error: {e}")
