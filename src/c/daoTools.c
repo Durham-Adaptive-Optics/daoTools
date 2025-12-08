@@ -1290,6 +1290,39 @@ int_fast8_t daoDmCombine(IMAGE **imageCube, IMAGE *image, int nbChannel, int nbV
     return DAO_SUCCESS;
 }
 
+
+int_fast8_t daoShmCopyToPosition(IMAGE *imageIn, IMAGE *imageOut, int nbVal, int position, int finalize)
+{
+    daoTrace("\n");
+    int pp;
+    imageOut->md[0].write = 1;
+    
+    if (imageIn->md[0].atype == _DATATYPE_FLOAT)
+    {
+        for (pp=0; pp<nbVal; pp++)
+        {   
+            imageOut[0].array.F[pp+position] = 0;
+            imageOut[0].array.F[pp+position] = imageIn[0].array.F[pp];
+        }
+    }
+    else if (imageIn->md[0].atype == _DATATYPE_DOUBLE)
+    {
+        for (pp=0; pp<nbVal; pp++)
+        {   
+            imageOut[0].array.D[pp+position] = 0;
+            imageOut[0].array.D[pp+position] = imageIn[0].array.D[pp];
+        }
+    }
+    imageOut->md[0].write = 0;
+	
+    if (finalize == 1)
+    {
+        daoShmImagePart2ShmFinalize(imageOut);
+    }
+
+    return DAO_SUCCESS;
+}
+
 #ifdef __APPLE__
 
 #include <errno.h>

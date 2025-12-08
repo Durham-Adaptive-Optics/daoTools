@@ -60,15 +60,16 @@ if __name__ == '__main__':
     oShm = dao.shm(oShmName)
     
     t0 = time.time()
+    nV = int(m.shape[1])
     while 1:
         if gpu:
             v = cp.array(vShm.get_data(check=True, semNb=semNb))
             t0 = time.time()
-            oShm.set_data(cp.asnumpy(cp.matmul(m, v)))
+            oShm.set_data(cp.asnumpy(cp.matmul(m, v[:nV])))
         else:
-            v = vShm.get_data(check=True, semNb=semNb)
+            v = vShm.get_data(check=True, semNb=semNb)[:]
             t0 = time.time()
-            oShm.set_data(np.matmul(m, v))
+            oShm.set_data(np.matmul(m, v[:nV]))
         t1 = time.time()
         sys.stdout.write(f"\rCM({mCounter}) MvM in {t1-t0}")
         sys.stdout.flush()

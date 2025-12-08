@@ -136,6 +136,7 @@ int_fast8_t daoToolsHighPassFilterDouble(double *H,
                                          int size);
 
 int_fast8_t daoDmCombine(IMAGE **imageCube, IMAGE *image, int nbChannel, int nbVal, int removePiston, double clipping);
+int_fast8_t daoShmCopyToPosition(IMAGE *imageIn, IMAGE *imageOut, int nbVal, int position, int finalize);
 
 #ifdef __APPLE__
 

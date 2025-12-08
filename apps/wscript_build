@@ -382,3 +382,13 @@ if bld.env.CUDA_AVAILABLE:
 		)
 else:
     print("Skipping daoMvMGPU build (CUDA not available).")
+
+daoShmConcatenate = bld.program(
+	source = 'daoShmConcatenate.c',
+	target = 'daoShmConcatenate',
+	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+	linkflags = my_link_flags,
+	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	use= 'daoTools',
+	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
+	)
