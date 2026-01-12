@@ -28,6 +28,11 @@ jobs:
           echo "PATH=$PATH:$HOME/bin:$HOME/DAOROOT/bin" >> $GITHUB_ENV
           echo "PYTHONPATH=${PYTHONPATH:+$PYTHONPATH:}$HOME/DAOROOT/python" >> $GITHUB_ENV
           echo "PKG_CONFIG_PATH=${PKG_CONFIG_PATH:+$PKG_CONFIG_PATH:}$HOME/DAOROOT/lib/pkgconfig" >> $GITHUB_ENV
+
+      #  -------------------------------------------------------------------------------------- #
+      - name: Remove Azure CLI apt repo
+        if: runner.os == 'Linux'
+        run: sudo rm -f /etc/apt/sources.list.d/azure-cli.list
       #  -------------------------------------------------------------------------------------- #
 
       #  -------------------------------------------------------------------------------------- #
