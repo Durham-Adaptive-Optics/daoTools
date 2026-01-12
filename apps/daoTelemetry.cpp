@@ -12,11 +12,11 @@
 #include <daoThreadSafeQueue.hpp>
 #include <daoComponent.hpp>
 #include <yaml-cpp/yaml.h>
+#include <cfitsio/fitsio.h>
 #include <daoProfile.hpp>
 #include <CLI/CLI.hpp>
 #include <sys/stat.h>
 #include <daoLog.hpp>
-#include <fitsio.h>
 #include <string>
 
 /* ==========================================================
@@ -364,7 +364,7 @@ class SharedMemoryPoller : public Dao::Thread
     size_t mBufferLimit;
     bool mInitialGrab;
     uint64_t mCnt0;
-    IMAGE mImage;
+    IMAGE mImage {};
 
     const std::unordered_map<uint8_t, uint8_t> mDaoTypeSizes{ // lookup table from dao types to byte sizes.
         {_DATATYPE_UINT8, SIZEOF_DATATYPE_UINT8},
