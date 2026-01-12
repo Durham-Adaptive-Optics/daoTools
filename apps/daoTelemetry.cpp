@@ -12,7 +12,7 @@
 #include <daoThreadSafeQueue.hpp>
 #include <daoComponent.hpp>
 #include <yaml-cpp/yaml.h>
-#include <cfitsio/fitsio.h>
+#include <fitsio.h>
 #include <daoProfile.hpp>
 #include <CLI/CLI.hpp>
 #include <sys/stat.h>
