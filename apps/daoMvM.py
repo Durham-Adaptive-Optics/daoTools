@@ -63,14 +63,14 @@ if __name__ == '__main__':
     nV = int(m.shape[1])
     while 1:
         v=vShm.get_data(check=True, semNb=semNb)
+        v=v[:nV]
         if gpu:
-            v = cp.array(np.concatenate((v[0::4], v[1::4])))
+            v = cp.array(v)
             t0 = time.time()
             oShm.set_data(cp.asnumpy(cp.matmul(m, v[:nV])))
         else:
-            v = vShm.get_data(check=True, semNb=semNb)[:]
             t0 = time.time()
-            oShm.set_data(np.matmul(m, np.concatenate((v[0::4], v[1::4]))))
+            oShm.set_data(np.matmul(m, v))
         t1 = time.time()
         sys.stdout.write(f"\rCM({mCounter}) MvM in {t1-t0}")
         sys.stdout.flush()

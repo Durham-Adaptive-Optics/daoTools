@@ -41,6 +41,8 @@ if __name__ == '__main__':
     shmpup = dao.shm(shmpupName)
     pup=    shmpup.get_data()
     intMap=np.zeros(pup.shape)
+    cent = shmcent.get_data()
+    nCent =cent.shape[0]//4
 
     plt.ion()
     fig, ax = plt.subplots(1,2)
@@ -48,10 +50,9 @@ if __name__ == '__main__':
     iref=ax[0].imshow(im, cmap='gray')
     tref=ax[0].set_title(str(im.max()))
     cref=shmref.get_data()
-    crefh,=ax[0].plot(cref[0::2,:],cref[1::2,:],'+g')
-    cent = shmcent.get_data()
-    centh,=ax[0].plot(cref[0::2,:] + cent[0::4,:], cref[1::2,:] + cent[1::4,:],'.r')
-    intVect = cent[2::4,0]
+    crefh,=ax[0].plot(cref[:nCent,:],cref[nCent:2*nCent,:],'+g')
+    centh,=ax[0].plot(cref[:nCent,:] + cent[:nCent,:], cref[nCent:2*nCent,:] + cent[nCent:2*nCent,:],'.r')
+    intVect = cent[2*nCent:3*nCent,0]
     intMap[pup==1]=intVect
     intref=ax[1].imshow(intMap, cmap='gray')
     
@@ -61,9 +62,9 @@ if __name__ == '__main__':
         im=shmim.get_data()
         iref.set_data(im)
         tref.set_text(str(im.max()))
-        crefh.set_data(cref[0::2,:], cref[1::2,:])
-        centh.set_data(cref[0::2,:] + cent[0::4,:], cref[1::2,:] + cent[1::4,:])
-        intVect = cent[2::4,0]
+        crefh.set_data(cref[:nCent,:], cref[nCent:2*nCent,:])
+        centh.set_data(cref[:nCent,:] + cent[:nCent,:], cref[nCent:2*nCent,:] + cent[nCent:2*nCent,:])
+        intVect = cent[2*nCent:3*nCent,0]
         intMap[pup==1]=intVect
         intref.set_data(intMap)
         fig.canvas.draw()

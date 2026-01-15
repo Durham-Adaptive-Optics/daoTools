@@ -589,7 +589,7 @@ int_fast8_t daoToolsLeakyModalIntegrator(float *command, int nbVal, float *leaky
 /*
  * Apply Integrator to modes double precision
  */
- int_fast8_t daoToolsLeakyModalIntegratorDouble(double *command, int nbVal, double *leaky, double *gain, double *commandOffset, double *filteredCommand)
+int_fast8_t daoToolsLeakyModalIntegratorDouble(double *command, int nbVal, double *leaky, double *gain, double *commandOffset, double *filteredCommand)
  {
      daoTrace("\n");
      // 
@@ -611,183 +611,279 @@ int_fast8_t daoToolsLeakyModalIntegrator(float *command, int nbVal, float *leaky
      return DAO_SUCCESS;
  }
 
-
-
-int_fast8_t daoCentroidSpots(float * image,
-                             int imageSize,
-                             float * ref,
-                             int boxSize,
-                             int nSuba,
-                             float threshold,
-                             float * cent)
-{ 
+/**
+ * @brief Compute spot centroids using center-of-mass with thresholding.
+ *
+ * This function computes relative centroids for multiple subapertures
+ * in a square image. For each subaperture, a square box centered on the
+ * reference position is extracted and a center-of-mass is computed
+ * after discarding pixels below a fixed threshold.
+ *
+ * Reference positions and output centroids use a Structure-of-Arrays
+ * (SoA) layout for improved cache locality and easier interoperability
+ * with vectorized and GPU-based pipelines.
+ *
+ * ### Reference layout (SoA)
+ * The reference array @p ref must contain `2 * nSuba` elements arranged as:
+ *
+ * - `ref[0 .. nSuba-1]`         : Reference X positions
+ * - `ref[nSuba .. 2*nSuba-1]`   : Reference Y positions
+ *
+ * ### Output layout (SoA)
+ * The output array @p cent must contain at least `3 * nSuba` elements:
+ *
+ * - `cent[0 .. nSuba-1]`           : X centroids (cx), relative to ref X
+ * - `cent[nSuba .. 2*nSuba-1]`     : Y centroids (cy), relative to ref Y
+ * - `cent[2*nSuba .. 3*nSuba-1]`   : Total flux (denominator after thresholding)
+ *
+ * ### Notes
+ * - Pixel coordinates are treated as integer indices.
+ * - Subaperture bounds are closed intervals `[x1..x2]` and `[y1..y2]`.
+ * - If the flux in a subaperture is zero, the centroid is set to `(0, 0)`.
+ * - No bounds checking is performed on image edges.
+ *
+ * @param[in]  image      Pointer to the input image (row-major, float)
+ * @param[in]  imageSize  Width and height of the square image (pixels)
+ * @param[in]  ref        Reference positions in SoA layout (size `2*nSuba`)
+ * @param[in]  boxSize    Size of the square subaperture (pixels)
+ * @param[in]  nSuba      Number of subapertures
+ * @param[in]  threshold  Absolute pixel intensity threshold
+ * @param[out] cent       Output centroid array (size >= `3*nSuba`)
+ *
+ * @return DAO_SUCCESS on success
+ */
+int_fast8_t daoCentroidSpots(float *image,
+                              int imageSize,
+                              float *ref,
+                              int boxSize,
+                              int nSuba,
+                              float threshold,
+                              float *cent)
+{
     daoTrace("\n");
 
-    // ASSUME centroid organized as follow XYXYXYXY.... (not XXXX...YYYY....)
-    // variables to hold counters and start/end
-    // coordinates for x and y
-    int x, y, x1, x2, y1, y2;
-    
-    // variables to accumulate moment (numerators) and
-    // total energy (denominator)
-    float xNumerator, yNumerator, denominator, pixel;
-    int n=0;
-    int count=0;
-    // iterate through the search boxes
-    for (n = 0; n < 2*nSuba; n += 2)
+    /* Loop indices and subaperture bounds */
+    int x, y;
+    int x1, x2, y1, y2;
+
+    /* Accumulators for center-of-mass computation */
+    float xNumerator;
+    float yNumerator;
+    float denominator;
+    float pixel;
+
+    /* Reference arrays (SoA layout) */
+    float *refX = ref;
+    float *refY = ref + nSuba;
+
+    /* Output centroid arrays (SoA layout) */
+    float *cxOut = cent;
+    float *cyOut = cent + nSuba;
+    float *denOut = cent + 2 * nSuba;
+
+    /* Iterate over all subapertures */
+    for (int s = 0; s < nSuba; ++s)
     {
-        //printf("Search box %d computed in thread number %d\n",n,omp_get_thread_num());
-        // floating point accumulators for coordinate*intensity
-        // (x_ and yNumerator) and intensity (denominator)
-        xNumerator = 0.0;
-        yNumerator = 0.0;
-        denominator = 0.0;
+        const float rx = refX[s];
+        const float ry = refY[s];
 
-        // [x1,x2] and [y1,y2] are closed intervals for
-        // computing center of mass (that is, x2 and y2
-        // are included in the computation; use <= in
-        // associated for loops
-        // 
-        x1 = (unsigned int)round(ref[n]) - boxSize/2; // truncate to int
-        x2 = (unsigned int)round(ref[n]) + boxSize/2;
-        y1 = (unsigned int)round(ref[n+1]) - boxSize/2;
-        y2 = (unsigned int)round(ref[n+1]) + boxSize/2;
+        /* Reset accumulators */
+        xNumerator = 0.0f;
+        yNumerator = 0.0f;
+        denominator = 0.0f;
 
-        //printf("%d:%d , %d,%d,%d, %d\n", (unsigned int)round(ref[n]), (unsigned int)round(ref[n+1]), x1,x2,y1,y2);
+        /* Compute subaperture bounds around reference position */
+        x1 = (unsigned int)roundf(rx) - boxSize / 2;
+        x2 = (unsigned int)roundf(rx) + boxSize / 2;
+        y1 = (unsigned int)roundf(ry) - boxSize / 2;
+        y2 = (unsigned int)roundf(ry) + boxSize / 2;
+
+        /* Accumulate pixel intensities and first moments */
         for (x = x1; x <= x2; x++)
         {
             for (y = y1; y <= y2; y++)
             {
                 pixel = (float)image[y * imageSize + x];
+
+                /* Apply absolute threshold */
                 if (pixel < threshold)
                 {
-                    pixel = 0;
+                    pixel = 0.0f;
                 }
-                //printf("%f\n", pixel);
+
                 denominator += pixel;
-                xNumerator += pixel*(float)x;
-                yNumerator += pixel*(float)y;
+                xNumerator += pixel * (float)x;
+                yNumerator += pixel * (float)y;
             }
         }
-        if (denominator!=0)
+
+        /* Compute relative centroid if flux is non-zero */
+        if (denominator != 0.0f)
         {
-            cent[n+count] = xNumerator/denominator - ref[n];
-            cent[n+count+1] = yNumerator/denominator - ref[n+1];
+            cxOut[s] = xNumerator / denominator - rx;
+            cyOut[s] = yNumerator / denominator - ry;
         }
         else
         {
-            cent[n+count] = 0;
-            cent[n+count+1] = 0;
+            cxOut[s] = 0.0f;
+            cyOut[s] = 0.0f;
         }
-        cent[n+count+2] = denominator;
-        count+=1;
+
+        /* Store flux */
+        denOut[s] = denominator;
     }
+
     return DAO_SUCCESS;
 }
 
 /**
- * @brief 
- * 
- * @param image 
- * @param imageSize 
- * @param ref 
- * @param boxSize 
- * @param nSuba 
- * @param threshold 
- * @param cent 
- * @return int_fast8_t 
+ * @brief Compute centroids relative to reference positions using a *relative* threshold.
+ *
+ * For each subaperture, this function:
+ * 1) extracts a square box centered on the reference position,
+ * 2) finds the local maximum within that box,
+ * 3) builds a relative threshold = (threshold * localMax),
+ * 4) subtracts that threshold from pixels above it (zeros pixels below),
+ * 5) computes a center-of-mass from the thresholded pixels,
+ * 6) returns centroid values *relative* to the reference positions.
+ *
+ * Both reference positions and outputs use Structure-of-Arrays (SoA) layout.
+ *
+ * ### Reference layout (SoA)
+ * The reference array @p ref must contain `2 * nSuba` elements arranged as:
+ * - `ref[0 .. nSuba-1]`         : Reference X positions
+ * - `ref[nSuba .. 2*nSuba-1]`   : Reference Y positions
+ *
+ * ### Output layout (SoA)
+ * The output array @p cent must contain at least `4 * nSuba` elements arranged as:
+ * - `cent[0 .. nSuba-1]`           : X centroids (cx), relative to ref X
+ * - `cent[nSuba .. 2*nSuba-1]`     : Y centroids (cy), relative to ref Y
+ * - `cent[2*nSuba .. 3*nSuba-1]`   : Flux = sum of raw pixels (no threshold)
+ * - `cent[3*nSuba .. 4*nSuba-1]`   : Weight = sum of thresholded pixels (after subtraction)
+ *
+ * ### Notes
+ * - Subaperture bounds are closed intervals `[x1..x2]` and `[y1..y2]`.
+ * - If the thresholded weight is zero, the centroid is set to `(0, 0)`.
+ * - No bounds checking is performed on image edges.
+ *
+ * @param[in]  image      Pointer to the input image (row-major, float)
+ * @param[in]  imageSize  Width and height of the square image (pixels)
+ * @param[in]  ref        Reference positions in SoA layout (size `2*nSuba`)
+ * @param[in]  boxSize    Size of the square subaperture (pixels)
+ * @param[in]  nSuba      Number of subapertures
+ * @param[in]  threshold  Relative threshold factor in [0..1] typically (multiplied by local max)
+ * @param[out] cent       Output array (size >= `4*nSuba`, layout described above)
+ *
+ * @return DAO_SUCCESS on success
  */
-int_fast8_t daoCentroidSpotsRelative(float * image,
-                             int imageSize,
-                             float * ref,
-                             int boxSize,
-                             int nSuba,
-                             float threshold,
-                             float * cent)
-{ 
+int_fast8_t daoCentroidSpotsRelative(float *image,
+                                     int imageSize,
+                                     float *ref,
+                                     int boxSize,
+                                     int nSuba,
+                                     float threshold,
+                                     float *cent)
+{
     daoTrace("\n");
-    // ASSUME centroid organized as follow XYXYXYXY.... (not XXXX...YYYY....)
-    // variables to hold counters and start/end
-    // coordinates for x and y
+
     int x, y, x1, x2, y1, y2;
-    float localMax=0;
-    float relativeThreshold=0;
-    // variables to accumulate moment (numerators) and
-    // total energy (denominator)
+    float localMax = 0.0f;
+    float relativeThreshold = 0.0f;
+
     float xNumerator, yNumerator, denominator, pixel, flux, weight;
-    int n=0;
-    int count=0;
-    // iterate through the search boxes
-    for (n = 0; n < 2*nSuba; n += 2)
+
+    /* Reference arrays (SoA layout) */
+    float *refX = ref;
+    float *refY = ref + nSuba;
+
+    /* Output arrays (SoA layout) */
+    float *cxOut = cent;
+    float *cyOut = cent + nSuba;
+    float *fluxOut = cent + 2 * nSuba;
+    float *wOut = cent + 3 * nSuba;
+
+    for (int s = 0; s < nSuba; ++s)
     {
-        //printf("Search box %d computed in thread number %d\n",n,omp_get_thread_num());
-        // floating point accumulators for coordinate*intensity
-        // (x_ and yNumerator) and intensity (denominator)
-        xNumerator = 0.0;
-        yNumerator = 0.0;
-        denominator = 0.0;
-        flux = 0.0;
-        weight = 0.0;
-        localMax=0;
+        const float rx = refX[s];
+        const float ry = refY[s];
 
-        // [x1,x2] and [y1,y2] are closed intervals for
-        // computing center of mass (that is, x2 and y2
-        // are included in the computation; use <= in
-        // associated for loops
-        // 
-        x1 = (unsigned int)round(ref[n]) - boxSize/2; // truncate to int
-        x2 = (unsigned int)round(ref[n]) + boxSize/2;
-        y1 = (unsigned int)round(ref[n+1]) - boxSize/2;
-        y2 = (unsigned int)round(ref[n+1]) + boxSize/2;
+        /* Reset accumulators */
+        xNumerator = 0.0f;
+        yNumerator = 0.0f;
+        denominator = 0.0f;
+        flux = 0.0f;
+        weight = 0.0f;
+        localMax = 0.0f;
 
-        // Compute max value in teh subaperture
-        for (x = x1; x <= x2; x++)
-        {
-            for (y = y1; y <= y2; y++)
-            {
-                if ((float)image[y * imageSize + x] > localMax)
-                {
-                    localMax = (float)image[y * imageSize + x];
-                }
-            }
-        }
-        relativeThreshold = threshold * localMax;
-        //printf("%d:%d , %d,%d,%d, %d\n", (unsigned int)round(ref[n]), (unsigned int)round(ref[n+1]), x1,x2,y1,y2);
+        /* Compute subaperture bounds around reference position */
+        x1 = (unsigned int)roundf(rx) - boxSize / 2;
+        x2 = (unsigned int)roundf(rx) + boxSize / 2;
+        y1 = (unsigned int)roundf(ry) - boxSize / 2;
+        y2 = (unsigned int)roundf(ry) + boxSize / 2;
+
+        /* Compute local max in the subaperture (raw pixels) */
         for (x = x1; x <= x2; x++)
         {
             for (y = y1; y <= y2; y++)
             {
                 pixel = (float)image[y * imageSize + x];
+                if (pixel > localMax)
+                {
+                    localMax = pixel;
+                }
+            }
+        }
+
+        /* Relative threshold derived from the local maximum */
+        relativeThreshold = threshold * localMax;
+
+        /* Accumulate moments from thresholded/subtracted pixels */
+        for (x = x1; x <= x2; x++)
+        {
+            for (y = y1; y <= y2; y++)
+            {
+                pixel = (float)image[y * imageSize + x];
+
+                /* Raw flux always accumulates original pixel */
                 flux += pixel;
+
+                /* Apply relative threshold with subtraction */
                 if (pixel < relativeThreshold)
                 {
-                    pixel = 0;
+                    pixel = 0.0f;
                 }
                 else
                 {
                     pixel = pixel - relativeThreshold;
                 }
+
+                /* Weight/denominator accumulates thresholded pixels */
                 weight += pixel;
-                //printf("%f\n", pixel);
                 denominator += pixel;
-                xNumerator += pixel*(float)x;
-                yNumerator += pixel*(float)y;
+
+                /* First moments */
+                xNumerator += pixel * (float)x;
+                yNumerator += pixel * (float)y;
             }
         }
-        if (denominator!=0)
+
+        /* Compute relative centroid if weight is non-zero */
+        if (denominator != 0.0f)
         {
-            cent[n+count] = xNumerator/denominator - ref[n];
-            cent[n+count+1] = yNumerator/denominator - ref[n+1];
+            cxOut[s] = xNumerator / denominator - rx;
+            cyOut[s] = yNumerator / denominator - ry;
         }
         else
         {
-            cent[n+count] = 0;
-            cent[n+count+1] = 0;
+            cxOut[s] = 0.0f;
+            cyOut[s] = 0.0f;
         }
-        cent[n+count+2] = flux;//denominator;
-        cent[n+count+3] = weight;//denominator;
-        count+=2;
+
+        /* Store diagnostics */
+        fluxOut[s] = flux;
+        wOut[s] = weight;
     }
+
     return DAO_SUCCESS;
 }
 

@@ -140,41 +140,45 @@ void * finalizeRealTimeLoop(void *thread_data)
 {
     daoInfo("ThreadId=%p\n", thread_data);
     fflush(stdout);
-    struct timespec t[2];
-    clock_gettime(CLOCK_REALTIME, &t[1]);
-    int sum=0;
-    int k, j;
-    int cnt=0;
-    clock_gettime(CLOCK_REALTIME, &t[0]);
-    while (end==0) 
+    struct timespec tStart, tEnd;
+    clock_gettime(CLOCK_REALTIME, &tStart);
+    int sum = 0;
+    int k;
+    int cnt = 0; // Counter for the number of concatenations
+    double elapsedTimeMs, frequency;
+    while (end == 0) 
     {
-        for (k=0; k<nbShm; k++)
+        sum = 0; // Reset sum at the start of each iteration
+        for (k = 0; k < nbShm; k++)
         {
             if (updateCnt[k] == 1)
             {
-                sum+=1;
+                sum += 1; // Count SHMs that are updated
             }
             else if (updateCnt[k] > 1)
             {
-                daoWarning("overcount for shm%d (%d), resetting all\n", k+1, updateCnt[k]);
-                for(j=0; j<nbShm; j++)
-                {
-                    updateCnt[j]=0;
-                }
-                sum = 0;
+                daoWarning("overcount for shm%d (%d), resetting only this SHM\n", k + 1, updateCnt[k]);
+                updateCnt[k] = 0; // Reset only the overcounted SHM
             }
         }
-        if (sum == nbShm)
+        if (sum == nbShm) // Check if all SHMs are updated
         {
-            for (k=0; k<nbShm; k++)
+            for (k = 0; k < nbShm; k++)
             {
-                updateCnt[k] = 0;
-            } 
+                updateCnt[k] = 0; // Reset counters after finalizing
+            }
             daoShmImagePart2ShmFinalize(&shmOut[0]);
-            cnt++;
-            printf("\r concatenate finalized: %d", cnt);
+            cnt++; // Increment the counter
+
+            // Calculate time spent and frequency
+            clock_gettime(CLOCK_REALTIME, &tEnd);
+            elapsedTimeMs = ((tEnd.tv_sec - tStart.tv_sec) * 1000.0) + ((tEnd.tv_nsec - tStart.tv_nsec) / 1e6);
+            frequency = 1000.0 / elapsedTimeMs; // Frequency in Hz (1 / elapsed time in seconds)
+
+            printf("\r concatenate finalized: %d, time spent: %.3f ms, frequency: %.3f Hz", cnt, elapsedTimeMs, frequency);
             fflush(stdout);
-            sum=0;
+
+            clock_gettime(CLOCK_REALTIME, &tStart); // Reset start time for the next iteration
         }
     }
     daoInfo("EXITING Finalizer LOOP\n");
