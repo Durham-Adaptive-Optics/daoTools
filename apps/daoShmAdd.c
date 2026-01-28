@@ -2,19 +2,19 @@
   DAO project
   s.cetre
 
-  daoShmConcatenate2.c
-  Concatenate 2 input SHMs into one output SHM:
-      out = [in1][in2]  (flat concatenate)
+  daoShmAdd.c
+  Add 2 input SHMs into one output SHM:
+      out[i] = in1[i] + in2[i]
 
   Finalize policy:
     - default (no -m): finalize on ANY input update
-    - -m 1: finalize only when in1 updates
-    - -m 2: finalize only when in2 updates
+    - -m 1: finalize only when shm1 updates
+    - -m 2: finalize only when shm2 updates
 
   Usage:
-    daoShmConcatenate2 -S <outShm> <in1Shm> <in2Shm> -L
-    daoShmConcatenate2 -m 1 -S <outShm> <in1Shm> <in2Shm> -L
-    daoShmConcatenate2 -m 2 -S <outShm> <in1Shm> <in2Shm> -L
+    daoShmAdd -S <outShm> <in1Shm> <in2Shm> -L
+    daoShmAdd -m 1 -S <outShm> <in1Shm> <in2Shm> -L
+    daoShmAdd -m 2 -S <outShm> <in1Shm> <in2Shm> -L
  *****************************************************************************/
 
 /*==========================================================================*/
@@ -23,9 +23,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
-#include <math.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <signal.h>
 #include <time.h>
 #include <pthread.h>
@@ -45,8 +43,8 @@ typedef int bool_t;
 #endif
 
 /*==========================================================================*/
-static int  sExit = 0;          /* program exit code */
-static char *sArgv0 = NULL;     /* name of executable */
+static int   sExit  = 0;          /* program exit code */
+static char *sArgv0 = NULL;       /* name of executable */
 
 #define NB_SHM 2
 
@@ -58,12 +56,8 @@ static IMAGE *gShmIn[NB_SHM] = { NULL, NULL };
 static char gShmOutName[256];
 static char gShmInName[NB_SHM][256];
 
-static int  gMasterChannel = -1;     /* -1 => finalize on any input update, 1 => shm1, 2 => shm2 */
-
-static int  gNbValIn[NB_SHM] = { 0, 0 };
-static int  gOutExpectedNbVal = 0;
-
-static int  gPos[NB_SHM] = { 0, 0 }; /* flat positions in output */
+static int  gMasterChannel = -1;  /* -1 => finalize on any update, 1 => shm1, 2 => shm2 */
+static int  gNbVal = 0;
 
 static pthread_t gThread[NB_SHM];
 static pthread_mutex_t gOutMutex = PTHREAD_MUTEX_INITIALIZER;
@@ -100,11 +94,9 @@ static void ShowHelp(void)
 /*==========================================================================*/
 static int shouldFinalize(int shmId0based)
 {
-    /* shmId0based: 0=>in1, 1=>in2 */
     if (gMasterChannel == -1)
         return TRUE;
 
-    /* user passes -m 1 or -m 2 */
     if (gMasterChannel == (shmId0based + 1))
         return TRUE;
 
@@ -112,32 +104,33 @@ static int shouldFinalize(int shmId0based)
 }
 
 /*==========================================================================*/
-static int validateSizesAndPositions(void)
+static int validateSizesAndTypes(void)
 {
-    int outNbVal;
+    int nb1, nb2, nbOut;
 
-    gNbValIn[0] = gShmIn[0][0].md[0].size[0] * gShmIn[0][0].md[0].size[1];
-    gNbValIn[1] = gShmIn[1][0].md[0].size[0] * gShmIn[1][0].md[0].size[1];
+    nb1   = gShmIn[0][0].md[0].size[0] * gShmIn[0][0].md[0].size[1];
+    nb2   = gShmIn[1][0].md[0].size[0] * gShmIn[1][0].md[0].size[1];
+    nbOut = gShmOut[0].md[0].size[0]  * gShmOut[0].md[0].size[1];
 
-    gPos[0] = 0;
-    gPos[1] = gNbValIn[0];
+    daoInfo("in1  nbVal=%d\n", nb1);
+    daoInfo("in2  nbVal=%d\n", nb2);
+    daoInfo("out  nbVal=%d\n", nbOut);
 
-    gOutExpectedNbVal = gNbValIn[0] + gNbValIn[1];
-
-    outNbVal = gShmOut[0].md[0].size[0] * gShmOut[0].md[0].size[1];
-
-    daoInfo("in1 nbVal=%d\n", gNbValIn[0]);
-    daoInfo("in2 nbVal=%d\n", gNbValIn[1]);
-    daoInfo("out nbVal=%d (expected %d)\n", outNbVal, gOutExpectedNbVal);
-
-    if (outNbVal != gOutExpectedNbVal)
+    if (nb1 != nb2)
     {
-        daoError("Output SHM size mismatch: out=%d but expected in1+in2=%d\n",
-                 outNbVal, gOutExpectedNbVal);
+        daoError("Input SHM sizes mismatch: in1=%d in2=%d\n", nb1, nb2);
+        return DAO_ERROR;
+    }
+    if (nbOut != nb1)
+    {
+        daoError("Output SHM size mismatch: out=%d but expected %d\n", nbOut, nb1);
         return DAO_ERROR;
     }
 
-    /* Optional: warn if pixel formats differ */
+    gNbVal = nb1;
+
+    /* This implementation sums float buffers (like your existing combiner fallback).
+       If you need UI16/UI32/etc, tell me and I’ll add atype dispatch. */
     if (gShmIn[0][0].md[0].atype != gShmIn[1][0].md[0].atype)
         daoWarning("Inputs have different atype (in1=%d in2=%d). This is probably wrong.\n",
                    gShmIn[0][0].md[0].atype, gShmIn[1][0].md[0].atype);
@@ -147,6 +140,14 @@ static int validateSizesAndPositions(void)
                    gShmOut[0].md[0].atype, gShmIn[0][0].md[0].atype);
 
     return DAO_SUCCESS;
+}
+
+/*==========================================================================*/
+static void addFloatBuffers(const float *a, const float *b, float *out, int n)
+{
+    int i;
+    for (i = 0; i < n; i++)
+        out[i] = a[i] + b[i];
 }
 
 /*==========================================================================*/
@@ -174,31 +175,26 @@ static void *shmThreadLoop(void *thread_data)
 
         pthread_mutex_lock(&gOutMutex);
 
-        /* Copy this input into its flat position in output */
-        daoShmCopyToPosition(gShmIn[shmId], gShmOut,
-                             gNbValIn[shmId],
-                             gPos[shmId],
-                             0);
+        /* Recompute out using latest in1 and in2 */
+        addFloatBuffers((const float *)gShmIn[0][0].array.F,
+                        (const float *)gShmIn[1][0].array.F,
+                        (float *)gShmOut[0].array.F,
+                        gNbVal);
 
-        /* Keep output cnt2 aligned with “the event that finalized”:
-           - default: use triggering shm
-           - master: use master shm (only finalized on master anyway) */
+        /* cnt2: align with the event that triggered this compute */
         gShmOut[0].md[0].cnt2 = gShmIn[shmId][0].md[0].cnt2;
 
         if (shouldFinalize(shmId))
-        {
             daoShmImagePart2ShmFinalize(&gShmOut[0]);
-        }
 
         pthread_mutex_unlock(&gOutMutex);
 
         clock_gettime(CLOCK_REALTIME, &t1);
         elapsedUs = (t1.tv_sec - t0.tv_sec) * 1e6 + (t1.tv_nsec - t0.tv_nsec) / 1e3;
 
-        /* Lightweight status */
-        printf("\r update shm%d | copy+%s time = %.1f us | master=%d     ",
+        printf("\r update shm%d | add+%s time = %.1f us | master=%d     ",
                shmId + 1,
-               shouldFinalize(shmId) ? "finalize" : "copy-only",
+               shouldFinalize(shmId) ? "finalize" : "compute-only",
                elapsedUs,
                gMasterChannel);
         fflush(stdout);
@@ -218,7 +214,7 @@ static int prepRealTime(void)
 
     signal(SIGINT, endme);
 
-    gShmOut = (IMAGE *)malloc(sizeof(IMAGE));
+    gShmOut   = (IMAGE *)malloc(sizeof(IMAGE));
     gShmIn[0] = (IMAGE *)malloc(sizeof(IMAGE));
     gShmIn[1] = (IMAGE *)malloc(sizeof(IMAGE));
     if (!gShmOut || !gShmIn[0] || !gShmIn[1])
@@ -236,7 +232,7 @@ static int prepRealTime(void)
     daoShmShm2Img(gShmInName[1], &gShmIn[1][0]);
     daoInfo("Connected IN2: %s\n", gShmInName[1]);
 
-    if (validateSizesAndPositions() == DAO_ERROR)
+    if (validateSizesAndTypes() == DAO_ERROR)
         return DAO_ERROR;
 
     daoInfo("Finalize policy: %s\n",
@@ -256,7 +252,6 @@ static int prepRealTime(void)
         }
     }
 
-    /* Join both (Ctrl+C to exit) */
     pthread_join(gThread[0], NULL);
     pthread_join(gThread[1], NULL);
 
@@ -312,7 +307,7 @@ static void DecodeArgs(int argc, char **argv)
                 break;
 
             case 'L':
-                daoInfo("SHM Concatenate2 real-time loop\n");
+                daoInfo("SHM Add real-time loop\n");
                 if (prepRealTime() == DAO_ERROR)
                     exit(2);
                 break;
@@ -331,7 +326,7 @@ int main(int argc, char **argv)
     int RT_priority = 93; /* 0-99 */
     struct sched_param schedpar;
 
-    /* Try to go RT (will fail if not permitted; that’s OK) */
+    /* Try to go RT (OK if it fails due to perms) */
     schedpar.sched_priority = RT_priority;
     (void)sched_setscheduler(0, SCHED_FIFO, &schedpar);
 
