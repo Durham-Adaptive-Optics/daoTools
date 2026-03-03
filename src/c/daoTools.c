@@ -8,7 +8,11 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
-
+#include <errno.h>
+#include <sched.h>
+#include <string.h>
+#include <sys/mman.h>
+#include <unistd.h>
 #include "daoTools.h"
 
 /** Compute 32-bit XOR checksum over buffer
@@ -1387,30 +1391,29 @@ int_fast8_t daoDmCombine(IMAGE **imageCube, IMAGE *image, int nbChannel, int nbV
 }
 
 
-int_fast8_t daoShmCopyToPosition(IMAGE *imageIn, IMAGE *imageOut, int nbVal, int position, int finalize)
+
+int_fast8_t daoShmCopyToPosition(IMAGE *imageIn, IMAGE *imageOut,
+                                 int nbVal, int position, int finalize)
 {
     daoTrace("\n");
-    int pp;
+
     imageOut->md[0].write = 1;
-    
+
     if (imageIn->md[0].atype == _DATATYPE_FLOAT)
     {
-        for (pp=0; pp<nbVal; pp++)
-        {   
-            imageOut[0].array.F[pp+position] = 0;
-            imageOut[0].array.F[pp+position] = imageIn[0].array.F[pp];
-        }
+        memcpy(&imageOut[0].array.F[position],
+               &imageIn[0].array.F[0],
+               (size_t)nbVal * sizeof(float));
     }
     else if (imageIn->md[0].atype == _DATATYPE_DOUBLE)
     {
-        for (pp=0; pp<nbVal; pp++)
-        {   
-            imageOut[0].array.D[pp+position] = 0;
-            imageOut[0].array.D[pp+position] = imageIn[0].array.D[pp];
-        }
+        memcpy(&imageOut[0].array.D[position],
+               &imageIn[0].array.D[0],
+               (size_t)nbVal * sizeof(double));
     }
+
     imageOut->md[0].write = 0;
-	
+
     if (finalize == 1)
     {
         daoShmImagePart2ShmFinalize(imageOut);
@@ -1465,3 +1468,36 @@ int clock_nanosleep(clockid_t clock_id, int flags, const struct timespec *reques
 }
 
 #endif // __APPLE__
+
+void daoRtSetup(int rt_priority)
+{
+    struct sched_param sp;
+    int policy;
+    int cur_prio;
+
+    /* Lock memory to avoid major page-fault jitter */
+    if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0)
+    {
+        daoTrace("mlockall failed: %s\n", strerror(errno));
+    }
+
+    /* Try to switch to RT FIFO */
+    memset(&sp, 0, sizeof(sp));
+    sp.sched_priority = rt_priority;
+
+    if (sched_setscheduler(0, SCHED_FIFO, &sp) != 0)
+    {
+        daoTrace("sched_setscheduler(SCHED_FIFO,%d) failed: %s\n",
+                 rt_priority, strerror(errno));
+        return;
+    }
+
+    /* Report what we actually got */
+    policy = sched_getscheduler(0);
+    cur_prio = sched_getparam(0, &sp) == 0 ? sp.sched_priority : -1;
+
+    if (policy == SCHED_FIFO)
+        daoTrace("RT enabled: SCHED_FIFO prio=%d\n", cur_prio);
+    else
+        daoTrace("RT not FIFO: policy=%d prio=%d\n", policy, cur_prio);
+}
