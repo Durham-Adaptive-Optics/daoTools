@@ -2,77 +2,47 @@
 <ui version="4.0">
  <class>MainWindow</class>
  <widget class="QMainWindow" name="MainWindow">
-  <property name="geometry">
-   <rect>
-    <x>0</x>
-    <y>0</y>
-    <width>1200</width>
-    <height>700</height>
-   </rect>
-  </property>
   <property name="windowTitle">
    <string>daoShRTD</string>
   </property>
+
   <widget class="QWidget" name="centralwidget">
-   <layout class="QVBoxLayout" name="verticalLayout_main">
+
+   <layout class="QVBoxLayout" name="verticalLayout">
+
+    <!-- ================= TOP DISPLAY AREA ================= -->
+
     <item>
-     <layout class="QHBoxLayout" name="horizontalLayout_top">
+     <layout class="QHBoxLayout" name="topLayout">
+
+      <!-- SH IMAGE -->
       <item>
-       <widget class="GraphicsView" name="graphicsView_image">
-        <property name="minimumSize">
-         <size>
-          <width>400</width>
-          <height>400</height>
-         </size>
-        </property>
-       </widget>
+       <widget class="GraphicsView" name="graphicsView_image"/>
       </item>
+
+      <!-- IMAGE LUT -->
       <item>
-       <widget class="GraphicsView" name="graphicsView_imageLUT">
-        <property name="minimumSize">
-         <size>
-          <width>120</width>
-          <height>400</height>
-         </size>
-        </property>
-        <property name="maximumSize">
-         <size>
-          <width>140</width>
-          <height>16777215</height>
-         </size>
-        </property>
-       </widget>
+       <widget class="GraphicsView" name="graphicsView_imageLUT"/>
       </item>
+
+      <!-- INTENSITY MAP -->
       <item>
-       <widget class="GraphicsView" name="graphicsView_intensity">
-        <property name="minimumSize">
-         <size>
-          <width>400</width>
-          <height>400</height>
-         </size>
-        </property>
-       </widget>
+       <widget class="GraphicsView" name="graphicsView_intensity"/>
       </item>
+
+      <!-- INTENSITY LUT -->
       <item>
-       <widget class="GraphicsView" name="graphicsView_intensityLUT">
-        <property name="minimumSize">
-         <size>
-          <width>120</width>
-          <height>400</height>
-         </size>
-        </property>
-        <property name="maximumSize">
-         <size>
-          <width>140</width>
-          <height>16777215</height>
-         </size>
-        </property>
-       </widget>
+       <widget class="GraphicsView" name="graphicsView_intensityLUT"/>
       </item>
+
      </layout>
     </item>
+
+    <!-- ================= STATUS BAR ================= -->
+
     <item>
-     <layout class="QHBoxLayout" name="horizontalLayout_bottom">
+     <layout class="QHBoxLayout" name="bottomLayout">
+
       <item>
        <widget class="QCheckBox" name="checkBoxLog">
         <property name="text">
@@ -80,13 +50,15 @@
         </property>
        </widget>
       </item>
+
       <item>
        <widget class="QLabel" name="maxLabel">
         <property name="text">
-         <string>max: -</string>
+         <string>max:</string>
         </property>
        </widget>
       </item>
+
       <item>
        <widget class="QLabel" name="freqLabel">
         <property name="text">
@@ -94,24 +66,24 @@
         </property>
        </widget>
       </item>
+
       <item>
        <spacer name="horizontalSpacer">
         <property name="orientation">
          <enum>Qt::Horizontal</enum>
         </property>
-        <property name="sizeHint" stdset="0">
-         <size>
-          <width>40</width>
-          <height>20</height>
-         </size>
-        </property>
        </spacer>
       </item>
+
      </layout>
     </item>
+
    </layout>
+
   </widget>
+
  </widget>
+
  <customwidgets>
   <customwidget>
    <class>GraphicsView</class>
@@ -119,6 +91,7 @@
    <header>pyqtgraph</header>
   </customwidget>
  </customwidgets>
+
  <resources/>
  <connections/>
 </ui>
