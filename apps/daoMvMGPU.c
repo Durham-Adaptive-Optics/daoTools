@@ -92,14 +92,15 @@ void * realTimeLoop(void *thread_data)
     // MAIN LOOP
     daoInfo("ENTERING LOOP\n");
     fflush(stdout);
-    struct timeval t[3];
+    struct timespec t[3];
     double elapsedTime, compTime;
     struct timespec timeout;
     timeout.tv_sec = 1; // 1 second timeout
     int nInputs = matrixShm[0].md[0].size[1];
     int nOutputs = matrixShm[0].md[0].size[0];
     daoInfo("nInputs = %d, nOutputs = %d\n", nInputs, nOutputs);
-    gettimeofday(&t[1],NULL);  
+    clock_gettime(CLOCK_REALTIME, &t[1]);
+
     float alpha_f=1.0;
     float beta_f=0.0;
     double alpha_d=1.0;
@@ -139,7 +140,7 @@ void * realTimeLoop(void *thread_data)
         {
             printf("\rcomputing output, ");  
             
-            gettimeofday(&t[2],NULL);
+            clock_gettime(CLOCK_REALTIME, &t[2]);
             if (inputShm[0].md[0].atype == _DATATYPE_FLOAT)
             {
                 // Copy input vector to GPU (Updated in every iteration)
@@ -185,12 +186,12 @@ void * realTimeLoop(void *thread_data)
             }
 
             t[0]=t[1];        
-            gettimeofday(&t[1],NULL);
-            elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1000.0;    // sec to ms
-            elapsedTime += (t[1].tv_usec - t[0].tv_usec) / 1000.0; // us to ms
-            compTime = (t[1].tv_sec - t[2].tv_sec) * 1000.0;    // sec to ms
-            compTime += (t[1].tv_usec - t[2].tv_usec) / 1000.0; // us to ms
-            printf("comp time = %.3f ms, fps = %8.3f Hz,", compTime, 1e6/(1000*elapsedTime));
+            clock_gettime(CLOCK_REALTIME, &t[1]);
+            elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
+            elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6; 
+            compTime = (t[1].tv_sec - t[2].tv_sec) * 1e6; 
+            compTime += (t[1].tv_nsec - t[2].tv_nsec) / 1e3; 
+            printf("comp time = %9.3f us, fps = %8.3f Hz", compTime, 1e6/(1000*elapsedTime));
             fflush(stdout);
         }
     }
