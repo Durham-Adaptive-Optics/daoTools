@@ -128,7 +128,7 @@ void * realTimeLoop(void *thread_data)
             elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
             compTime = (t[1].tv_sec - t[2].tv_sec) * 1e6;
             compTime += (t[1].tv_nsec - t[2].tv_nsec) / 1e3;
-            printf("comp time = %9.3f ms, fps = %8.3f Hz,", compTime, 1e6/(1000*elapsedTime));
+            printf("comp time = %9.3f us, fps = %8.3f Hz,", compTime, 1e6/(1000*elapsedTime));
             fflush(stdout);
         }
     }
