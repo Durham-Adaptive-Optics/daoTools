@@ -59,7 +59,6 @@ if __name__ == '__main__':
     vShm = dao.shm(vShmName)
     oShm = dao.shm(oShmName)
     
-    t0 = time.time()
     nV = int(m.shape[1])
     while 1:
         v=vShm.get_data(check=True, semNb=semNb)
@@ -72,7 +71,7 @@ if __name__ == '__main__':
             t0 = time.time()
             oShm.set_data(np.matmul(m, v))
         t1 = time.time()
-        sys.stdout.write(f"\rCM({mCounter}) MvM in {t1-t0}")
+        sys.stdout.write(f"\rCM({mCounter}) MvM in {(t1 - t0) * 1000:.3f} ms")
         sys.stdout.flush()
         # update cm if needed
         if mCounter != mShm.get_counter():

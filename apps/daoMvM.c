@@ -93,8 +93,9 @@ void * realTimeLoop(void *thread_data)
     double elapsedTime, compTime;
     struct timespec timeout;
     timeout.tv_sec = 1; // 1 second timeout
-    int nInputs = inputShm[0].md[0].size[0] * inputShm[0].md[0].size[1];
-    int nOutput = outputShm[0].md[0].size[0] * outputShm[0].md[0].size[1];
+    int nInputs = matrixShm[0].md[0].size[1];
+    int nOutputs = matrixShm[0].md[0].size[0];
+    daoInfo("nInputs = %d, nOutputs = %d\n", nInputs, nOutputs);
     gettimeofday(&t[1],NULL);  
     float alpha=1.0;
     float beta=0.0;
@@ -109,12 +110,12 @@ void * realTimeLoop(void *thread_data)
             // MATRIX 
             if (inputShm[0].md[0].atype == _DATATYPE_FLOAT)
             {
-                cblas_sgemv(CblasColMajor, CblasTrans, nInputs, nOutput, alpha,
+                cblas_sgemv(CblasRowMajor, CblasNoTrans, nInputs, nOutputs, alpha,
                     matrixShm[0].array.F, nInputs, inputShm[0].array.F, 1, beta, outputShm[0].array.F, 1);
             }
             else
             {
-                cblas_dgemv(CblasColMajor, CblasTrans, nInputs, nOutput, (double)alpha,
+                cblas_dgemv(CblasRowMajor, CblasNoTrans, nInputs, nOutputs, (double)alpha,
                     matrixShm[0].array.D, nInputs, inputShm[0].array.D, 1, (double)beta, outputShm[0].array.D, 1);
 
             }

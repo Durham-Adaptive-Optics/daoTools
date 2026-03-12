@@ -96,8 +96,9 @@ void * realTimeLoop(void *thread_data)
     double elapsedTime, compTime;
     struct timespec timeout;
     timeout.tv_sec = 1; // 1 second timeout
-    int nInputs = inputShm[0].md[0].size[0] * inputShm[0].md[0].size[1];
-    int nOutput = outputShm[0].md[0].size[0] * outputShm[0].md[0].size[1];
+    int nInputs = matrixShm[0].md[0].size[1];
+    int nOutputs = matrixShm[0].md[0].size[0];
+    daoInfo("nInputs = %d, nOutputs = %d\n", nInputs, nOutputs);
     gettimeofday(&t[1],NULL);  
     float alpha_f=1.0;
     float beta_f=0.0;
@@ -106,13 +107,13 @@ void * realTimeLoop(void *thread_data)
 
     // CUDA memory allocation both float and double matrix
     float *df_matrix, *df_input, *df_output;
-    cudaMalloc((void**)&df_matrix, nInputs * nOutput * sizeof(float));
+    cudaMalloc((void**)&df_matrix, nInputs * nOutputs * sizeof(float));
     cudaMalloc((void**)&df_input, nInputs * sizeof(float));
-    cudaMalloc((void**)&df_output, nOutput * sizeof(float));
+    cudaMalloc((void**)&df_output, nOutputs * sizeof(float));
     double *dd_matrix, *dd_input, *dd_output;
-    cudaMalloc((void**)&dd_matrix, nInputs * nOutput * sizeof(double));
+    cudaMalloc((void**)&dd_matrix, nInputs * nOutputs * sizeof(double));
     cudaMalloc((void**)&dd_input, nInputs * sizeof(double));
-    cudaMalloc((void**)&dd_output, nOutput * sizeof(double));
+    cudaMalloc((void**)&dd_output, nOutputs * sizeof(double));
 
     // Create cuBLAS handle
     cublasHandle_t handle;
@@ -121,11 +122,11 @@ void * realTimeLoop(void *thread_data)
     // Copy matrix to GPU memory
     if (inputShm[0].md[0].atype == _DATATYPE_FLOAT)
     {
-        cudaMemcpy(df_matrix, matrixShm[0].array.F, nInputs * nOutput * sizeof(float), cudaMemcpyHostToDevice);
+        cudaMemcpy(df_matrix, matrixShm[0].array.F, nInputs * nOutputs * sizeof(float), cudaMemcpyHostToDevice);
     }
     else
     {
-        cudaMemcpy(dd_matrix, matrixShm[0].array.D, nInputs * nOutput * sizeof(double), cudaMemcpyHostToDevice);
+        cudaMemcpy(dd_matrix, matrixShm[0].array.D, nInputs * nOutputs * sizeof(double), cudaMemcpyHostToDevice);
     }
 
     unsigned long cnt0Matrix = matrixShm[0].md[0].cnt0;
@@ -145,11 +146,11 @@ void * realTimeLoop(void *thread_data)
                 cudaMemcpy(df_input, inputShm[0].array.F, nInputs * sizeof(float), cudaMemcpyHostToDevice);
 
                 // Perform matrix-vector multiplication (GPU)
-                cublasSgemv(handle, CUBLAS_OP_T, nInputs, nOutput, &alpha_f,
+                cublasSgemv(handle, CUBLAS_OP_T, nInputs, nOutputs, &alpha_f,
                             df_matrix, nInputs, df_input, 1, &beta_f, df_output, 1);
                 
                 // 🔹 Copy result back to CPU
-                cudaMemcpy(outputShm[0].array.F, df_output, nOutput * sizeof(float), cudaMemcpyDeviceToHost);
+                cudaMemcpy(outputShm[0].array.F, df_output, nOutputs * sizeof(float), cudaMemcpyDeviceToHost);
             }
             else // Not FLOAT, assume DOUBLE
             {
@@ -157,11 +158,11 @@ void * realTimeLoop(void *thread_data)
                 cudaMemcpy(dd_input, inputShm[0].array.D, nInputs * sizeof(double), cudaMemcpyHostToDevice);
 
                 // Perform matrix-vector multiplication (GPU)
-                cublasDgemv(handle, CUBLAS_OP_T, nInputs, nOutput, &alpha_d,
+                cublasDgemv(handle, CUBLAS_OP_T, nInputs, nOutputs, &alpha_d,
                             dd_matrix, nInputs, dd_input, 1, &beta_d, dd_output, 1);
                 
                 // 🔹 Copy result back to CPU
-                cudaMemcpy(outputShm[0].array.D, dd_output, nOutput * sizeof(double), cudaMemcpyDeviceToHost);
+                cudaMemcpy(outputShm[0].array.D, dd_output, nOutputs * sizeof(double), cudaMemcpyDeviceToHost);
             }
             
             // Writes output output
@@ -174,11 +175,11 @@ void * realTimeLoop(void *thread_data)
                 // Copy matrix to GPU memory
                 if (inputShm[0].md[0].atype == _DATATYPE_FLOAT)
                 {
-                    cudaMemcpy(df_matrix, matrixShm[0].array.F, nInputs * nOutput * sizeof(float), cudaMemcpyHostToDevice);
+                    cudaMemcpy(df_matrix, matrixShm[0].array.F, nInputs * nOutputs * sizeof(float), cudaMemcpyHostToDevice);
                 }
                 else
                 {
-                    cudaMemcpy(dd_matrix, matrixShm[0].array.D, nInputs * nOutput * sizeof(double), cudaMemcpyHostToDevice);
+                    cudaMemcpy(dd_matrix, matrixShm[0].array.D, nInputs * nOutputs * sizeof(double), cudaMemcpyHostToDevice);
                 } 
                 cnt0Matrix = matrixShm[0].md[0].cnt0; 
             }
