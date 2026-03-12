@@ -41,7 +41,7 @@ class Main(QMainWindow, Ui_MainWindow):
         self.vb.setRange(QtCore.QRectF(0, 0, self.shmim.get_meta_data()['size'][0], self.shmim.get_meta_data()['size'][1]))
         # Get first image
         im = self.shmim.get_data()
-        self.img.setImage(np.rot90(im.reshape(im.shape[1], im.shape[0]),3))
+        self.img.setImage(np.rot90(im.reshape(im.shape[0], im.shape[1]),3))
         # save first counter
         self.imCnt1 = self.shmim.get_meta_data()['cnt0']
         # Create QT timer to update display
@@ -79,7 +79,7 @@ class Main(QMainWindow, Ui_MainWindow):
         im=self.shmim.get_data()
         if self.log==True:
             im=np.log(im)
-        self.img.setImage(np.rot90(im.reshape(im.shape[1], im.shape[0]),3))
+        self.img.setImage(np.rot90(im.reshape(im.shape[0], im.shape[1]),3))
         # get the counter
         self.imCnt2 = self.shmim.get_counter()
 #        sys.stdout.write("\r%d"%self.imCnt2)
