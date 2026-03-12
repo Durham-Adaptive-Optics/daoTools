@@ -159,5 +159,6 @@ int sched_setscheduler(pid_t pid, int policy, const struct sched_param *param);
 
 #endif // __APPLE__
 
-                             
+void daoRtSetup(int rt_priority);                     
+
 #endif

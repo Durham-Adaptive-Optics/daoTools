@@ -30,7 +30,7 @@
 #include <time.h>
 #include <pthread.h>
 #include <sched.h>
-
+#include <sys/mman.h>
 /* DAO header */
 #include "dao.h"
 #include "daoTools.h"
@@ -328,14 +328,14 @@ static void DecodeArgs(int argc, char **argv)
 /*==========================================================================*/
 int main(int argc, char **argv)
 {
-    int RT_priority = 93; /* 0-99 */
-    struct sched_param schedpar;
+    int RT_priority = 93; /* 1..99 */
 
-    /* Try to go RT (will fail if not permitted; that’s OK) */
-    schedpar.sched_priority = RT_priority;
-    (void)sched_setscheduler(0, SCHED_FIFO, &schedpar);
+    sArgv0 = (argc > 0) ? argv[0] : (char *)"program";
 
-    sArgv0 = *argv;
+    /* RT setup early */
+    daoRtSetup(RT_priority);
+
+    /* Your normal argument decode / program start */
     DecodeArgs(argc, argv);
 
     return sExit;
