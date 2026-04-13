@@ -27,6 +27,12 @@ def configure(conf):
 				args='--cflags --libs',
 				uselib_store='PROTOBUF'
 				)
+ 
+	conf.check_cfg( package='cfitsio',
+				args='--cflags --libs',
+				uselib_store='cfitsio'
+				)
+ 
 	# Check for ZeroMQ
 	conf.check_cfg(package='libzmq',
 				args='--cflags --libs',
