@@ -21,6 +21,8 @@ from PyQt5.QtGui import QIcon
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
+from daoTelemetryCtrl import TelemetryControlUI
+
 import magicplot
 import dao
 import gc
@@ -374,7 +376,7 @@ class daoShmViewer(QMainWindow):
         self.setup_recording_tab()
         
         # Tab 3: Multi-Record
-        self.setup_multi_record_tab()
+        # self.setup_multi_record_tab()
         
         # Tab 4: Load
         self.setup_load_tab()
@@ -385,28 +387,32 @@ class daoShmViewer(QMainWindow):
         # Tab 6: Tmux Sessions
         self.setup_tmux_tab()
 
+    # def setup_recording_tab(self):
+    #     """Setup the recording tab."""
+    #     recordingTab = QWidget()
+    #     recordingLayout = QVBoxLayout()
+        
+    #     self.filenameEdit = QLineEdit()
+    #     self.filenameEdit.setReadOnly(True)
+    #     self.filenameEdit.mousePressEvent = self.openFileDialog
+        
+    #     self.frameCounter = QSpinBox()
+    #     self.frameCounter.setRange(1, 10000)
+    #     self.frameCounter.setValue(1)
+        
+    #     self.recordButton = QPushButton("Record")        
+    #     recordingLayout.addWidget(QLabel("Filename:"))
+    #     recordingLayout.addWidget(self.filenameEdit)
+    #     recordingLayout.addWidget(QLabel("Number of Frames:"))
+    #     recordingLayout.addWidget(self.frameCounter)
+    #     recordingLayout.addWidget(self.recordButton)
+        
+    #     recordingTab.setLayout(recordingLayout)
+    #     self.tabWidget.addTab(recordingTab, "Recording")
+
     def setup_recording_tab(self):
         """Setup the recording tab."""
-        recordingTab = QWidget()
-        recordingLayout = QVBoxLayout()
-        
-        self.filenameEdit = QLineEdit()
-        self.filenameEdit.setReadOnly(True)
-        self.filenameEdit.mousePressEvent = self.openFileDialog
-        
-        self.frameCounter = QSpinBox()
-        self.frameCounter.setRange(1, 10000)
-        self.frameCounter.setValue(1)
-        
-        self.recordButton = QPushButton("Record")        
-        recordingLayout.addWidget(QLabel("Filename:"))
-        recordingLayout.addWidget(self.filenameEdit)
-        recordingLayout.addWidget(QLabel("Number of Frames:"))
-        recordingLayout.addWidget(self.frameCounter)
-        recordingLayout.addWidget(self.recordButton)
-        
-        recordingTab.setLayout(recordingLayout)
-        self.tabWidget.addTab(recordingTab, "Recording")
+        self.tabWidget.addTab(TelemetryControlUI(), "Recording")
 
     def setup_metadata_tab(self):
         """Setup the metadata tab."""
@@ -422,40 +428,40 @@ class daoShmViewer(QMainWindow):
         metadataTab.setLayout(metadataLayout)
         self.tabWidget.addTab(metadataTab, "Metadata")
 
-    def setup_multi_record_tab(self):
-        """Setup the multi-record tab."""
-        multiRecordTab = QWidget()
-        multiRecordLayout = QVBoxLayout()
+    # def setup_multi_record_tab(self):
+    #     """Setup the multi-record tab."""
+    #     multiRecordTab = QWidget()
+    #     multiRecordLayout = QVBoxLayout()
         
-        self.multiRecordList = QListWidget()
-        self.multiRecordFilenameEdit = QLineEdit()
-        self.multiRecordFilenameEdit.setReadOnly(True)
-        self.multiRecordFilenameEdit.mousePressEvent = self.openFolderDialog
+    #     self.multiRecordList = QListWidget()
+    #     self.multiRecordFilenameEdit = QLineEdit()
+    #     self.multiRecordFilenameEdit.setReadOnly(True)
+    #     self.multiRecordFilenameEdit.mousePressEvent = self.openFolderDialog
         
-        self.multiFrameCounter = QSpinBox()
-        self.multiFrameCounter.setRange(0, 1000)
-        self.multiFrameCounter.setValue(1)
+    #     self.multiFrameCounter = QSpinBox()
+    #     self.multiFrameCounter.setRange(0, 1000)
+    #     self.multiFrameCounter.setValue(1)
         
-        self.multiRecordButton = QPushButton("Record Selected Files")
+    #     self.multiRecordButton = QPushButton("Record Selected Files")
         
-        # Master file label will be updated when a master is selected
-        self.masterFileLabel = QLabel("Selected Files: (No master selected)")
-        self.masterFileLabel.setStyleSheet("font-weight: bold;")
+    #     # Master file label will be updated when a master is selected
+    #     self.masterFileLabel = QLabel("Selected Files: (No master selected)")
+    #     self.masterFileLabel.setStyleSheet("font-weight: bold;")
         
-        multiRecordLayout.addWidget(self.masterFileLabel)
-        multiRecordLayout.addWidget(self.multiRecordList)
+    #     multiRecordLayout.addWidget(self.masterFileLabel)
+    #     multiRecordLayout.addWidget(self.multiRecordList)
         
-        # Connect list item selection to update master file display
-        self.multiRecordList.itemSelectionChanged.connect(self.updateMasterFileDisplay)
+    #     # Connect list item selection to update master file display
+    #     self.multiRecordList.itemSelectionChanged.connect(self.updateMasterFileDisplay)
         
-        multiRecordLayout.addWidget(QLabel("Save to Folder:"))
-        multiRecordLayout.addWidget(self.multiRecordFilenameEdit)
-        multiRecordLayout.addWidget(QLabel("Number of Frames:"))
-        multiRecordLayout.addWidget(self.multiFrameCounter)
-        multiRecordLayout.addWidget(self.multiRecordButton)
+    #     multiRecordLayout.addWidget(QLabel("Save to Folder:"))
+    #     multiRecordLayout.addWidget(self.multiRecordFilenameEdit)
+    #     multiRecordLayout.addWidget(QLabel("Number of Frames:"))
+    #     multiRecordLayout.addWidget(self.multiFrameCounter)
+    #     multiRecordLayout.addWidget(self.multiRecordButton)
         
-        multiRecordTab.setLayout(multiRecordLayout)
-        self.tabWidget.addTab(multiRecordTab, "Multi-Record (0)")
+    #     multiRecordTab.setLayout(multiRecordLayout)
+    #     self.tabWidget.addTab(multiRecordTab, "Multi-Record (0)")
 
     def setup_load_tab(self):
         """Setup the load tab."""
@@ -522,11 +528,11 @@ class daoShmViewer(QMainWindow):
     def setup_connections(self):
         """Setup signal-slot connections."""
         self.tableWidget.cellClicked.connect(self.onCellClicked)
-        self.recordButton.clicked.connect(lambda: self.record_file(self.filenameEdit.text(), self.frameCounter.value()))
+        # self.recordButton.clicked.connect(lambda: self.record_file(self.filenameEdit.text(), self.frameCounter.value()))
         self.loadButton.clicked.connect(self.loadFile)
         self.snapshot_SaveButton.clicked.connect(self.snapshot_SaveFunction)
         self.snapshot_LoadButton.clicked.connect(self.snapshot_LoadFunction)
-        self.multiRecordButton.clicked.connect(self.record_multiple_files)
+        # self.multiRecordButton.clicked.connect(self.record_multiple_files)
         self.tabWidget.currentChanged.connect(self.on_tab_changed)
 
     def show_create_shm_dialog(self):
