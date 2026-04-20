@@ -8,7 +8,7 @@
 
 import time
 
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QFormLayout, QFileDialog
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QFormLayout, QFileDialog, QGroupBox
 from PyQt5.QtWidgets import QListWidgetItem, QLabel, QLineEdit, QComboBox, QSpinBox, QCheckBox, QStackedWidget
 from daoCommandIfce import daoCommandIfce
 from PyQt5.QtWidgets import QPushButton
@@ -30,12 +30,10 @@ class SharedMemoryConfiguration(QWidget):
         main_layout = QVBoxLayout()
         self.setLayout(main_layout)
         
+        resourceGrp = QGroupBox("Resource")
         form_layout = QFormLayout()
-        
-         # Type label
-        typeLbl = QLabel(f"Type: shared memory (shm://)")
-        form_layout.addRow(typeLbl)
-        
+        resourceGrp.setLayout(form_layout)
+
         # Source with file picker
         source_layout = QHBoxLayout()
         self.source = QLineEdit(source)
@@ -45,11 +43,19 @@ class SharedMemoryConfiguration(QWidget):
         source_layout.addWidget(self.source)
         source_layout.addWidget(source_button)
         form_layout.addRow("Source:", source_layout)
+
+        # Type label
+        typeLbl = QLabel(f"Type: shared memory (shm://)")
+        form_layout.addRow(typeLbl)
         
         # Export Format
         self.export_format = QComboBox()
         self.export_format.addItems(["FITS", "NPY"])
         form_layout.addRow("Export Format:", self.export_format)
+        
+        exportGrp = QGroupBox("Export")
+        form_layout = QFormLayout()
+        exportGrp.setLayout(form_layout)
         
         # Frame Count
         self.frame_count = QSpinBox()
@@ -58,6 +64,14 @@ class SharedMemoryConfiguration(QWidget):
         # File Capacity
         self.field_capacity = QSpinBox()
         form_layout.addRow("File Capacity:", self.field_capacity)
+        
+        # Metadata Only
+        self.metadata_only = QCheckBox()
+        form_layout.addRow("Headers Only:", self.metadata_only)
+        
+        perfGrp = QGroupBox("Performance")
+        form_layout = QFormLayout()
+        perfGrp.setLayout(form_layout)
         
         # Polling Core
         self.polling_core = QSpinBox()
@@ -71,16 +85,14 @@ class SharedMemoryConfiguration(QWidget):
         self.buffer_limit = QSpinBox()
         form_layout.addRow("Queue Capacity:", self.buffer_limit)
         
-        # Metadata Only
-        self.metadata_only = QCheckBox()
-        form_layout.addRow("Headers Only:", self.metadata_only)
-        
         # Remove button
         removeBtn = QPushButton("Remove")
         removeBtn.clicked.connect(lambda: removeCallback(self))
-        form_layout.addRow(removeBtn)
         
-        main_layout.addLayout(form_layout)
+        main_layout.addWidget(resourceGrp)
+        main_layout.addWidget(exportGrp)
+        main_layout.addWidget(perfGrp)
+        main_layout.addWidget(removeBtn)
         main_layout.addStretch()
     
     def genConfig(self):
@@ -109,11 +121,9 @@ class FileConfiguration(QWidget):
         main_layout = QVBoxLayout()
         self.setLayout(main_layout)
         
+        resourceGrp = QGroupBox("Resource")
         form_layout = QFormLayout()
-        
-        # Type label
-        typeLbl = QLabel(f"Type: file (file://)")
-        form_layout.addRow(typeLbl)
+        resourceGrp.setLayout(form_layout)
         
         # Source with file picker
         source_layout = QHBoxLayout()
@@ -124,13 +134,17 @@ class FileConfiguration(QWidget):
         source_layout.addWidget(self.source)
         source_layout.addWidget(source_button)
         form_layout.addRow("Source:", source_layout)
+       
+        # Type label
+        typeLbl = QLabel(f"Type: file (file://)")
+        form_layout.addRow(typeLbl)
         
         # Remove button
         removeBtn = QPushButton("Remove")
         removeBtn.clicked.connect(lambda: removeCallback(self))
-        form_layout.addRow(removeBtn)
         
-        main_layout.addLayout(form_layout)
+        main_layout.addWidget(resourceGrp)
+        main_layout.addWidget(removeBtn)
         main_layout.addStretch()
     
     def genConfig(self):
