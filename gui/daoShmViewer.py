@@ -4,39 +4,29 @@
 #                  IMPORTS
 ################################################
 
-import sys
-import os
 import gc
-import subprocess
+import os
 import signal
+import subprocess
+import sys
 
+import dao
+import yaml
+import magicplot
 import numpy as np
 from astropy.io import fits
-import yaml
-
-from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QDialog,
-    QVBoxLayout, QHBoxLayout, QGridLayout, QSplitter,
-    QTableWidget, QTableWidgetItem, QTableView, QListWidget,
-    QLineEdit, QPushButton, QLabel, QSpinBox, QDoubleSpinBox,
-    QCheckBox, QRadioButton, QButtonGroup, QComboBox, QMenu,
-    QFileDialog, QMessageBox, QStatusBar, QToolBar, QAction,
-    QTabWidget, QHeaderView, QTextEdit
-)
-from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGroupBox,
-    QCheckBox, QLineEdit, QPushButton, QFileDialog, QLabel, QSpinBox,
-    QListWidget, QListWidgetItem, QComboBox, QStackedWidget, QMessageBox,
-    QDialog
-)
-from PyQt5.QtCore import Qt, QDir, QTimer, QAbstractTableModel
-from PyQt5.QtGui import QIcon
-
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-
-import magicplot
-import dao
+from PyQt5.QtCore import QAbstractTableModel, QDir, Qt, QTimer
+from PyQt5.QtGui import QIcon
+from PyQt5.QtWidgets import (
+    QAction, QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog,
+    QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout, QGroupBox,
+    QHeaderView, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
+    QMainWindow, QMessageBox, QPushButton, QRadioButton, QSpinBox,
+    QStackedWidget, QStatusBar, QSplitter, QTabWidget, QTableView,
+    QTableWidget, QTableWidgetItem, QTextEdit, QToolBar, QVBoxLayout, QWidget
+)
 
 ################################################
 #               Custom Widgets
@@ -715,7 +705,7 @@ class daoShmViewer(QMainWindow):
         buttonLayout.addWidget(clearTelemetryBtn)
         
         importBtn = QPushButton("Import")
-        exportBtn.clicked.connect(self.importRecordingConfiguration)
+        importBtn.clicked.connect(self.importRecordingConfiguration)
         buttonLayout.addWidget(importBtn)
 
         exportBtn = QPushButton("Export")
@@ -735,7 +725,9 @@ class daoShmViewer(QMainWindow):
         layout.addLayout(hLayout)
         layout.addLayout(buttonLayout)
         
-        self.tabWidget.addTab(layout, "Record")
+        widget = QWidget()
+        widget.setLayout(layout)
+        self.tabWidget.addTab(widget, "Record")
         
     def setup_metadata_tab(self):
         """Setup the metadata tab."""
