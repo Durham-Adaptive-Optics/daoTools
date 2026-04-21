@@ -2,30 +2,31 @@
 
 import sys
 import os
-import numpy as np
-from astropy.io import fits
+import gc
 import subprocess
-import time
 import signal
 
+import numpy as np
+from astropy.io import fits
+
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QCheckBox, QHeaderView, QLineEdit, QPushButton, QFileDialog, QLabel, QSpinBox,
-    QTabWidget, QSplitter, QTextEdit, QListWidget, QMessageBox, QTableView,
-    QComboBox, QMainWindow, QStatusBar, QToolBar, QAction, QDialog, QGridLayout,
-    QRadioButton , QButtonGroup, QDoubleSpinBox
+    QApplication, QMainWindow, QWidget, QDialog,
+    QVBoxLayout, QHBoxLayout, QGridLayout, QSplitter,
+    QTableWidget, QTableWidgetItem, QTableView, QListWidget,
+    QLineEdit, QPushButton, QLabel, QSpinBox, QDoubleSpinBox,
+    QCheckBox, QRadioButton, QButtonGroup, QComboBox, QMenu,
+    QFileDialog, QMessageBox, QStatusBar, QToolBar, QAction,
+    QTabWidget, QHeaderView, QTextEdit
 )
-from PyQt5.QtCore import QDir, Qt, QTimer, QAbstractTableModel
+from PyQt5.QtCore import Qt, QDir, QTimer, QAbstractTableModel
 from PyQt5.QtGui import QIcon
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
-from daoTelemetryCtrl import TelemetryControlUI
-
+from telFuncs import TelemetryUI
 import magicplot
 import dao
-import gc
 
 class NumpyTableModel(QAbstractTableModel):
     """Model for displaying and editing NumPy arrays in table view."""
@@ -373,10 +374,8 @@ class daoShmViewer(QMainWindow):
         self.setup_metadata_tab()
         
         # Tab 1: Recording controls
+        self.setup_recording_tab_old() # @todo(tom) cleanup
         self.setup_recording_tab()
-        
-        # Tab 3: Multi-Record
-        # self.setup_multi_record_tab()
         
         # Tab 4: Load
         self.setup_load_tab()
@@ -387,32 +386,32 @@ class daoShmViewer(QMainWindow):
         # Tab 6: Tmux Sessions
         self.setup_tmux_tab()
 
-    # def setup_recording_tab(self):
-    #     """Setup the recording tab."""
-    #     recordingTab = QWidget()
-    #     recordingLayout = QVBoxLayout()
+    def setup_recording_tab_old(self):
+        """Setup the recording tab."""
+        recordingTab = QWidget()
+        recordingLayout = QVBoxLayout()
         
-    #     self.filenameEdit = QLineEdit()
-    #     self.filenameEdit.setReadOnly(True)
-    #     self.filenameEdit.mousePressEvent = self.openFileDialog
+        self.filenameEdit = QLineEdit()
+        self.filenameEdit.setReadOnly(True)
+        self.filenameEdit.mousePressEvent = self.openFileDialog
         
-    #     self.frameCounter = QSpinBox()
-    #     self.frameCounter.setRange(1, 10000)
-    #     self.frameCounter.setValue(1)
+        self.frameCounter = QSpinBox()
+        self.frameCounter.setRange(1, 10000)
+        self.frameCounter.setValue(1)
         
-    #     self.recordButton = QPushButton("Record")        
-    #     recordingLayout.addWidget(QLabel("Filename:"))
-    #     recordingLayout.addWidget(self.filenameEdit)
-    #     recordingLayout.addWidget(QLabel("Number of Frames:"))
-    #     recordingLayout.addWidget(self.frameCounter)
-    #     recordingLayout.addWidget(self.recordButton)
+        self.recordButton = QPushButton("Record")        
+        recordingLayout.addWidget(QLabel("Filename:"))
+        recordingLayout.addWidget(self.filenameEdit)
+        recordingLayout.addWidget(QLabel("Number of Frames:"))
+        recordingLayout.addWidget(self.frameCounter)
+        recordingLayout.addWidget(self.recordButton)
         
-    #     recordingTab.setLayout(recordingLayout)
-    #     self.tabWidget.addTab(recordingTab, "Recording")
+        recordingTab.setLayout(recordingLayout)
 
     def setup_recording_tab(self):
         """Setup the recording tab."""
-        self.tabWidget.addTab(TelemetryControlUI(), "Recording")
+        self.filenameEdit = QLineEdit()
+        self.tabWidget.addTab(TelemetryUI(self), "Recording")
 
     def setup_metadata_tab(self):
         """Setup the metadata tab."""
@@ -984,7 +983,7 @@ class daoShmViewer(QMainWindow):
                         if hdu.data is not None and hasattr(hdu.data, 'shape'):
                             hdu_shape = hdu.data.shape
                             hdu_base_dtype = np.dtype(hdu.data.dtype.kind + str(hdu.data.dtype.itemsize))
-                            x
+                            
                             # Check if this HDU matches our requirements
                             if hdu_shape == shm_shape and hdu_base_dtype == shm_base_dtype:
                                 data = hdu.data
