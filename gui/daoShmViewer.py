@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 
+################################################
+#                  IMPORTS
+################################################
+
 import sys
 import os
 import gc
@@ -8,6 +12,7 @@ import signal
 
 import numpy as np
 from astropy.io import fits
+import yaml
 
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QDialog,
@@ -18,15 +23,209 @@ from PyQt5.QtWidgets import (
     QFileDialog, QMessageBox, QStatusBar, QToolBar, QAction,
     QTabWidget, QHeaderView, QTextEdit
 )
+from PyQt5.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGroupBox,
+    QCheckBox, QLineEdit, QPushButton, QFileDialog, QLabel, QSpinBox,
+    QListWidget, QListWidgetItem, QComboBox, QStackedWidget, QMessageBox,
+    QDialog
+)
 from PyQt5.QtCore import Qt, QDir, QTimer, QAbstractTableModel
 from PyQt5.QtGui import QIcon
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
-from telFuncs import TelemetryUI
 import magicplot
 import dao
+
+################################################
+#               Custom Widgets
+################################################
+
+class FileTelemetryConfig(QWidget):
+    ''' Implements a PyQt5 widget for configuring a file telemetry item. '''
+    
+    def __init__(self, source: str, removeTelemetry: callable):
+        super().__init__()
+        self.source = source
+        self.createUI(removeTelemetry)
+    
+    def createUI(self, removeTelemetry: callable):
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.createResourceGroup())
+        layout.addWidget(self.createExportGroup())
+        layout.addWidget(self.removeBtn(removeTelemetry))
+        self.setLayout(layout)
+        
+    def createResourceGroup(self):
+        group = QGroupBox("Resource Details")
+        form = QFormLayout()
+        
+        form.addRow("Type", QLabel("File"))
+        group.setLayout(form)
+        
+        source_field = QLineEdit(self.source)
+        source_field.setReadOnly(True)
+        form.addRow("Source", source_field)
+        return group
+    
+    def createExportGroup(self):
+        group = QGroupBox("Export Options")
+        form = QFormLayout()
+        
+        self.output_name = QLineEdit()
+        form.addRow("Name", self.output_name)
+        
+        group.setLayout(form)
+        return group
+    
+    def removeBtn(self, removeTelemetry: callable):
+        btn = QPushButton("Remove")
+        btn.clicked.connect(lambda: removeTelemetry(self))
+        return btn
+    
+    def generateConfig(self):
+        return {
+            "source": f"file://{self.source}",
+            "name": self.output_name.text() if self.output_name.text() else None 
+        }
+
+class ShmTelemetryConfig(QWidget):
+    ''' Implements a PyQt5 widget for configuring a shared memory telemetry item. '''
+
+    def __init__(self, source: str, removeTelemetry: callable):
+        super().__init__()
+        self.source = source
+        self.createUI(removeTelemetry)
+        
+    def createUI(self, removeTelemetry: callable):
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.createResourceGroup())
+        layout.addWidget(self.createExportGroup())
+        layout.addWidget(self.createAcquisitionGroup())
+        layout.addWidget(self.removeBtn(removeTelemetry))
+        self.setLayout(layout)
+
+    def removeBtn(self, removeTelemetry: callable):
+        btn = QPushButton("Remove")
+        btn.clicked.connect(lambda: removeTelemetry(self))
+        return btn
+
+    def createResourceGroup(self):
+        group = QGroupBox("Resource Details")
+        form = QFormLayout()
+       
+        form.addRow("Type", QLabel("Shared Memory"))
+        
+        source_field = QLineEdit(self.source)
+        source_field.setReadOnly(True)
+        form.addRow("Source", source_field)
+        
+        group.setLayout(form)
+        return group
+    
+    def createExportGroup(self):
+        group = QGroupBox("Export Options")
+        form = QFormLayout()
+        
+        self.name_field = QLineEdit()
+        form.addRow("Name", self.name_field)
+        
+        self.format_combo = QComboBox()
+        self.format_combo.addItems(["fits", "numpy"])
+        self.format_combo.setCurrentText("fits")
+        form.addRow("Format", self.format_combo)
+        
+        self.frame_count = QSpinBox()
+        self.frame_count.setMinimum(0)
+        form.addRow("Frame Count", self.frame_count)
+        
+        self.file_capacity = QSpinBox()
+        self.file_capacity.setMinimum(0)
+        form.addRow("File Capacity", self.file_capacity)
+        
+        self.headers_only = QCheckBox()
+        form.addRow("Headers-Only", self.headers_only)
+        
+        group.setLayout(form)
+        return group
+    
+    def createAcquisitionGroup(self):
+        group = QGroupBox("Acquisition Options")
+        form = QFormLayout()
+        
+        self.poll_affinity = QSpinBox()
+        self.poll_affinity.setMinimum(0)
+        form.addRow("Poll Affinity", self.poll_affinity)
+        
+        self.export_affinity = QSpinBox()
+        self.export_affinity.setMinimum(0)
+        form.addRow("Export Affinity", self.export_affinity)
+        
+        self.queue_capacity = QSpinBox()
+        self.queue_capacity.setMinimum(0)
+        form.addRow("Queue Capacity", self.queue_capacity)
+        
+        group.setLayout(form)
+        return group
+    
+    def generateConfig(self):
+        return {
+            "source": f"shm://{self.source}",
+            "export-format": self.format_combo.currentText(),
+            "metadata-only": "yes" if self.headers_only.isChecked() else "no",
+            "frame-count": self.frame_count.value(),
+            "file-capacity": self.file_capacity.value(),
+            "polling-core": self.poll_affinity.value(),
+            "export-core": self.export_affinity.value(),
+            "buffer-limit": self.queue_capacity.value()
+        }
+
+class QuickRecordModal(QDialog):
+    ''' Modal form to collect shared memory quick record options '''
+    
+    def __init__(self, shmPath: str):
+        super().__init__()
+        self.setWindowTitle("Shared Memory Quick Record")
+        self.initUI(shmPath)
+        
+    def initUI(self, shmPath: str):
+        # create read-only displaying shm path
+        pathInput = QLineEdit(shmPath)
+        pathInput.setReadOnly(True)
+        
+        # create input to display selected saveAs path
+        # and configure to open file picker on click.
+        self.saveAsInput = QLineEdit()
+        self.saveAsInput.mousePressEvent = self.openFileDialog
+        self.saveAsInput.setReadOnly(True)
+        
+        # create numeric input for number of frames to record.
+        self.frameCounter = QSpinBox()
+        self.frameCounter.setRange(1, 10000)
+        self.frameCounter.setValue(1)
+        
+        # create button to allow user to complete the form.
+        doneBtn = QPushButton("Done")
+        doneBtn.clicked.connect(self.finish)
+
+        # assemble widgets into a modal form.
+        form = QFormLayout()
+        form.addRow("Source", pathInput)
+        form.addRow("Save as", self.saveAsInput)
+        form.addRow("Frames to record", self.frameCounter)
+        form.addRow(doneBtn)
+        self.setLayout(form)
+
+    def finish(self):
+        # deny form completion if user has not provided saveAs path.
+        if not self.saveAsField.text():
+            QMessageBox.critical(self.UI, "Quick Record Error", "Please select a SaveAs path!")
+            return
+        
+        # Close modal with success exit code - recording can then
+        # be triggered as all fields are configured.
+        self.accept()
 
 class NumpyTableModel(QAbstractTableModel):
     """Model for displaying and editing NumPy arrays in table view."""
@@ -210,6 +409,10 @@ class SetDataDialog(QDialog):
                 "max": self.maxEdit.value()
             }
 
+################################################
+#           daoShmViewer UI
+################################################
+
 class daoShmViewer(QMainWindow):
     """Main application window for the DAO Shared Memory Viewer."""
     def __init__(self):
@@ -370,49 +573,170 @@ class daoShmViewer(QMainWindow):
         # self.tabWidget.setUsesScrollButtons(True)
         self.tabWidget.setDocumentMode(True)
         
-        # Tab 2: File Metadata
+        # Tab 1: File Metadata
         self.setup_metadata_tab()
         
-        # Tab 1: Recording controls
-        self.setup_recording_tab_old() # @todo(tom) cleanup
+        # Tab 2: Recording controls
         self.setup_recording_tab()
         
-        # Tab 4: Load
+        # Tab 3: Load
         self.setup_load_tab()
         
-        # Tab 5: Snapshot
+        # Tab 4: Snapshot
         self.setup_snapshot_tab()
         
-        # Tab 6: Tmux Sessions
+        # Tab 5: Tmux Sessions
         self.setup_tmux_tab()
 
-    def setup_recording_tab_old(self):
-        """Setup the recording tab."""
-        recordingTab = QWidget()
-        recordingLayout = QVBoxLayout()
+    #####
+    def listRecordingItemWidgets(self):
+        ''' Return a list of all valid telemetry configuration widgets from the configuration panel '''
+        startIndex: int = 1 # exclude index-0 because that is a placeholder widget.
+        return [self.configPanel.widget(i) for i in range(startIndex, self.configPanel.count())]
+    
+    def presentRecordingItemConfig(self, item):
+        ''' Presents telemetry configuration UI for a clicked telemetry item '''
+        configWidget: Qt.Widget = item.data(Qt.UserRole)
+        self.recordingConfigWidgets.setCurrentWidget(configWidget)
+    
+    def clearRecordingConfig(self):
+        ''' Clears all current telemetry configuration '''
+        self.recordingItemExplorer.clear()
+        for cfgWidget in self.listRecordingItemWidgets(): 
+            self.configPanel.removeWidget(cfgWidget)
+        self.configPanel.setCurrentIndex(0) # present placeholder widget.
         
-        self.filenameEdit = QLineEdit()
-        self.filenameEdit.setReadOnly(True)
-        self.filenameEdit.mousePressEvent = self.openFileDialog
+    def deleteRecordingItem(self, configWidget: Qt.Widget):
+        ''' Deletes the specified recording item from the recording configuration. '''
+        self.recordingConfigWidgets.removeWidget(configWidget)
+        self.recordingItemExplorer.clear() # wipe explorer list and rebuild ..
+        self.recordingItemExplorer.addItems([recWidget.source for recWidget in self.listRecordingItemWidgets()])
         
-        self.frameCounter = QSpinBox()
-        self.frameCounter.setRange(1, 10000)
-        self.frameCounter.setValue(1)
+    def addRecordingItem(self):
+        ''' Adds shared-memory(s) or a file to the recording configuration '''
+
+        def insertConfigWidget_(widget):
+            self.recordingConfigWidgets.addWidget(widget)
+            self.recordingConfigWidgets.setCurrentWidget(widget)
+            
+            item = QListWidgetItem(widget.source)
+            item.setData(Qt.UserRole, widget)
+            self.recordingItemExplorer.addItem(item)
         
-        self.recordButton = QPushButton("Record")        
-        recordingLayout.addWidget(QLabel("Filename:"))
-        recordingLayout.addWidget(self.filenameEdit)
-        recordingLayout.addWidget(QLabel("Number of Frames:"))
-        recordingLayout.addWidget(self.frameCounter)
-        recordingLayout.addWidget(self.recordButton)
+        selectedShms = self.tableWidget.selectedItems()
+        recordingSources = [recWidget.source for recWidget in self.listRecordingItemWidgets()]
+
+        if len(selectedShms): # add file item
+            for shmItem in selectedShms:
+                shmSource = f"/tmp/{shmItem.text()}"
+                if not shmSource in recordingSources:
+                    configWidget = ShmTelemetryConfig(shmSource, self.deleteRecordingItem)
+                    insertConfigWidget_(configWidget)
+
+        else:   # add file item
+            fileSource, _ = QFileDialog.getOpenFileName(self, "Select File", os.getcwd())
+            if fileSource and (fileSource not in recordingSources):
+                configWidget = FileTelemetryConfig(fileSource, self.deleteRecordingItem)
+                insertConfigWidget_(configWidget)
+
+    def record(self):
+        ''' Performs a quick-record or full telemetry record depending on UI state'''
         
-        recordingTab.setLayout(recordingLayout)
+        numSelectedShms = len(self.tableWidget.selectedItems())
+        
+        if numSelectedShms > 1:
+            # we cannot quick-record multiple shms, so ignore record action.
+            QMessageBox.critical(self, "Quick Record Error", "Cannot quick-record multiple shared memory targets")
+            return
+            
+        if numSelectedShms == 1: 
+            # single shm selected so capture quick-record
+            # parameters and execute quick-record.
+            shmSource = self.shm.get_meta_data()["name"].decode("utf-8")
+            inputForm = QuickRecordModal(shmSource)
+            if QDialog.Accepted == inputForm.exec_() :
+                print(f"Quick recorded {shmSource}, saved {inputForm.frameCounter.value()} frames to {inputForm.saveAsField.text()}")
+                # self.record_file(saveAsPath, nFrames) # @todo(tom)
+            
+        else:
+            # no shms selected, so invoke recording session with daoTelemetry
+            # using the current recording configuration.
+            QMessageBox.critical(self, "Telemetry Record Error", "TODO") # @todo(tom)
+        
+    def exportRecordingConfiguration(self):
+        ''' Exports recording configuration to disk in YAML format. '''
+        
+        if not self.recordingConfigWidgets.count():
+            self.show_error("failed to export recording configuration as configuration is empty")
+            return
+        
+        saveAs, _ = QFileDialog.getSaveFileName(self, "Save As", os.getcwd())
+        if not saveAs:
+            return
+        
+        with open(saveAs, "w") as file:
+            config = {
+                "session_policies": {
+                    "archive": os.getenv("DAODATA", os.getcwd()),
+                    "grouping": "on" if self.recordingConfigWidgets.count() > 1 else "off"
+                },
+                "telemetry_list": [
+                    configWidget.generateConfig()
+                    for configWidget in self.listRecordingItemWidgets()
+                ]
+            }
+            yaml.dump(config, file)
+        
+    def importRecordingConfiguration(self):
+        QMessageBox.critical(self, "Import Error", "TODO") # @todo(tom)
+        
+    #####
 
     def setup_recording_tab(self):
         """Setup the recording tab."""
-        self.filenameEdit = QLineEdit()
-        self.tabWidget.addTab(TelemetryUI(self), "Recording")
+        
+        # create (left) telemetry summary panel
+        self.recordingItemExplorer = QListWidget()
+        self.recordingItemExplorer.itemClicked.connect(self.presentRecordingItemConfig)
+        
+        # create (right) telemetry configuration panel
+        self.recordingConfigWidgets = QStackedWidget()
+        self.recordingConfigWidgets.addWidget(QListWidget())
 
+        # create (bottom) action buttons
+        buttonLayout = QHBoxLayout()
+
+        addTelemetryBtn = QPushButton("Add")
+        addTelemetryBtn.clicked.connect(self.addRecordingItem)
+        buttonLayout.addWidget(addTelemetryBtn)
+
+        clearTelemetryBtn = QPushButton("Clear")
+        clearTelemetryBtn.clicked.connect(self.clearRecordingConfig)
+        buttonLayout.addWidget(clearTelemetryBtn)
+        
+        importBtn = QPushButton("Import")
+        exportBtn.clicked.connect(self.importRecordingConfiguration)
+        buttonLayout.addWidget(importBtn)
+
+        exportBtn = QPushButton("Export")
+        exportBtn.clicked.connect(self.exportRecordingConfiguration)
+        buttonLayout.addWidget(exportBtn)
+        
+        recordBtn = QPushButton("Record")
+        recordBtn.clicked.connect(self.record)
+        buttonLayout.addWidget(recordBtn)
+
+        # assemble widgets into a new tab
+        hLayout = QHBoxLayout()
+        hLayout.addWidget(self.recordingItemExplorer, 1)
+        hLayout.addWidget(self.recordingConfigWidgets, 2)
+        
+        layout = QVBoxLayout()
+        layout.addLayout(hLayout)
+        layout.addLayout(buttonLayout)
+        
+        self.tabWidget.addTab(layout, "Record")
+        
     def setup_metadata_tab(self):
         """Setup the metadata tab."""
         metadataTab = QWidget()
