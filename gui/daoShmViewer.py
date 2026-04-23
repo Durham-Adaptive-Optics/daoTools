@@ -25,13 +25,73 @@ from PyQt5.QtWidgets import (
     QHeaderView, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
     QMainWindow, QMessageBox, QPushButton, QRadioButton, QSpinBox,
     QStackedWidget, QStatusBar, QSplitter, QTabWidget, QTableView,
-    QTableWidget, QTableWidgetItem, QTextEdit, QToolBar, QVBoxLayout, QWidget
+    QTableWidget, QTableWidgetItem, QTextEdit, QToolBar, QVBoxLayout, QWidget,
+    QTreeWidget, QTreeWidgetItem
 )
 
 ################################################
 #               Custom Widgets
 ################################################
 
+class TelemetrySessionConfig(QWidget):
+    ''' Implements a PyQt5 widget for configuring a telemetry capture session. '''
+    
+    def __init__(self):
+        super().__init__()
+        self.findDefaultStorageRoot()
+        self.createUI()
+    
+    def findDefaultStorageRoot(self):
+        self.defaultStorageRoot = os.getenv("DAODATA", os.getcwd())
+    
+    def createUI(self):
+        layout = QVBoxLayout(self)
+        
+        # Session Policies group
+        group = QGroupBox("Session Policies")
+        form = QFormLayout()
+        
+        # Storage Root with file picker
+        storage_layout = QHBoxLayout()
+        self.storage_root = QLineEdit(self.defaultStorageRoot)
+        self.storage_root.setReadOnly(True)
+        storage_btn = QPushButton("Browse...")
+        storage_btn.clicked.connect(self.pick_storage_root)
+        storage_layout.addWidget(self.storage_root)
+        storage_layout.addWidget(storage_btn)
+        form.addRow("Storage Root:", storage_layout)
+        
+        # Group name input
+        self.group_name = QLineEdit()
+        form.addRow("Group Name:", self.group_name)
+        
+        # Checkboxes side by side
+        self.overwrite = QCheckBox("Overwrite")
+        self.disable_grouping = QCheckBox("Disable Grouping")
+        self.disable_grouping.toggled.connect(self.updateGroupNameInput)
+        form.addRow(self.disable_grouping)
+        form.addRow(self.overwrite)
+        
+        group.setLayout(form)
+        layout.addWidget(group)
+        self.setLayout(layout)
+
+    def updateGroupNameInput(self, checked):
+        self.group_name.setEnabled(not checked)
+
+    def pick_storage_root(self):
+        path = QFileDialog.getExistingDirectory(self, "Select Storage Root")
+        if path:
+            self.storage_root.setText(path)
+            
+    def generateConfig(self):
+        return {
+            "root_storage": self.storage_root.text(),
+            "overwrite_existing": self.overwrite.isChecked(),
+            "group_outputs": not self.disable_grouping.isChecked(),
+            "group_name": self.group_name.text()
+        }
+    
 class FileTelemetryConfig(QWidget):
     ''' Implements a PyQt5 widget for configuring a file telemetry item. '''
     
@@ -598,19 +658,21 @@ class daoShmViewer(QMainWindow):
     def setup_recording_tab(self):
         """Setup the recording tab."""
         
-        # create (left) telemetry summary panel
-        self.recordingItemExplorer = QListWidget()
-        self.recordingItemExplorer.itemClicked.connect(self.presentRecordingItemConfig)
-        
         # create (right) telemetry configuration panel
-        self.recordingConfigWidgets = QStackedWidget()
-        self.recordingConfigWidgets.addWidget(QListWidget())
+        self.recordingConfigStack = QStackedWidget()
+        self.addRecodingConfigUI(QListWidget()) # placeholder widget.
+        
+        # create (left) telemetry summary panel
+        self.recordingExplorer = QTreeWidget()
+        self.recordingExplorer.header().hide()
+        self.recordingExplorer.itemClicked.connect(self.presentRecordingConfig)
+        self.resetRecordingExplorer()
 
         # create (bottom) action buttons
         buttonLayout = QHBoxLayout()
 
         self.addTelemetryBtn = QPushButton("Add File")
-        self.addTelemetryBtn.clicked.connect(self.addRecordingItem)
+        self.addTelemetryBtn.clicked.connect(self.addRecordingSource)
         buttonLayout.addWidget(self.addTelemetryBtn)
 
         clearTelemetryBtn = QPushButton("Clear")
@@ -631,8 +693,8 @@ class daoShmViewer(QMainWindow):
 
         # assemble widgets into a new tab
         hLayout = QHBoxLayout()
-        hLayout.addWidget(self.recordingItemExplorer, 1)
-        hLayout.addWidget(self.recordingConfigWidgets, 2)
+        hLayout.addWidget(self.recordingExplorer, 1)
+        hLayout.addWidget(self.recordingConfigStack, 2)
         
         layout = QVBoxLayout()
         layout.addLayout(hLayout)
@@ -1002,55 +1064,73 @@ class daoShmViewer(QMainWindow):
         except Exception as e:
             self.show_error(f"Error saving data: {e}")
 
-    def listRecordingItemWidgets(self):
+    def getAllRecordingSources(self):
         ''' Return a list of all valid telemetry configuration widgets from the configuration panel '''
-        startIndex: int = 1 # exclude index-0 because that is a placeholder widget.
-        return [self.recordingConfigWidgets.widget(i) for i in range(startIndex, self.recordingConfigWidgets.count())]
+        return [self.recordingConfigStack.widget(i) for i in range(1, self.recordingConfigStack.count())]
     
-    def presentRecordingItemConfig(self, item):
+    def resetRecordingExplorer(self):
+        self.recordingExplorer.clear()
+        
+        sessionConfigUI = TelemetrySessionConfig()
+        sessionLeaf = QTreeWidgetItem(self.recordingExplorer, ["Session Policies"])
+        sessionLeaf.setData(0, Qt.UserRole, sessionConfigUI)
+        self.addRecodingConfigUI(sessionConfigUI)
+        
+        self.recordingExplorerSources = QTreeWidgetItem(self.recordingExplorer, ["Sources"])
+        
+    def presentRecordingConfig(self, item, column):
         ''' Presents telemetry configuration UI for a clicked telemetry item '''
-        configWidget: Qt.Widget = item.data(Qt.UserRole)
-        self.recordingConfigWidgets.setCurrentWidget(configWidget)
+        
+        configWidget: Qt.Widget = item.data(0, Qt.UserRole)
+        if not configWidget:
+            self.recordingConfigStack.setCurrentIndex(0) # show placeholder.
+        else:
+            self.recordingConfigStack.setCurrentWidget(configWidget)
     
     def clearRecordingConfig(self):
         ''' Clears all current telemetry configuration '''
-        self.recordingItemExplorer.clear()
-        for cfgWidget in self.listRecordingItemWidgets(): 
-            self.recordingConfigWidgets.removeWidget(cfgWidget)
-        self.recordingConfigWidgets.setCurrentIndex(0) # present placeholder widget.
+        
+        for cfgWidget in self.getAllRecordingSources(): 
+            self.recordingConfigStack.removeWidget(cfgWidget)
+        self.recordingConfigStack.setCurrentIndex(0) # present placeholder widget.
+        self.resetRecordingExplorer()
         
     def deleteRecordingItem(self, configWidget: Qt.Widget):
         ''' Deletes the specified recording item from the recording configuration. '''
-        self.recordingConfigWidgets.removeWidget(configWidget)
-        self.recordingItemExplorer.clear() # wipe explorer list and rebuild ..
-        self.recordingItemExplorer.addItems([recWidget.source for recWidget in self.listRecordingItemWidgets()])
-        
-    def addRecordingItem(self):
+        self.recordingConfigStack.removeWidget(configWidget)
+        self.recordingExplorerSources.takeChildren()
+        for w in self.getAllRecordingSources():
+            self.addRecordingExplorerSrc(w)
+            
+    def addRecordingExplorerSrc(self, widget):
+        item = QTreeWidgetItem(self.recordingExplorerSources, [widget.sourceName])
+        self.recordingExplorerSources.setExpanded(True)
+        item.setData(0, Qt.UserRole, widget)
+    
+    def addRecodingConfigUI(self, widget):
+        self.recordingConfigStack.addWidget(widget)
+        self.recordingConfigStack.setCurrentWidget(widget)
+    
+    def addRecordingSource(self):
         ''' Adds shared-memory(s) or a file to the recording configuration '''
 
-        def insertConfigWidget_(widget):
-            self.recordingConfigWidgets.addWidget(widget)
-            self.recordingConfigWidgets.setCurrentWidget(widget)
-            
-            item = QListWidgetItem(widget.sourceName)
-            item.setData(Qt.UserRole, widget)
-            self.recordingItemExplorer.addItem(item)
-        
         selectedShms = self.tableWidget.selectedItems()
-        recordingSources = [recWidget.source for recWidget in self.listRecordingItemWidgets()]
+        recordingSources = [recWidget.source for recWidget in self.getAllRecordingSources()]
 
         if len(selectedShms): # add file item
             for shmItem in selectedShms:
                 shmSource = f"/tmp/{shmItem.text()}"
                 if not shmSource in recordingSources:
                     configWidget = ShmTelemetryConfig(shmSource, self.deleteRecordingItem)
-                    insertConfigWidget_(configWidget)
+                    self.addRecodingConfigUI(configWidget)
+                    self.addRecordingExplorerSrc(configWidget)
 
         else:   # add file item
             fileSource, _ = QFileDialog.getOpenFileName(self, "Select File", os.getcwd())
             if fileSource and (fileSource not in recordingSources):
                 configWidget = FileTelemetryConfig(fileSource, self.deleteRecordingItem)
-                insertConfigWidget_(configWidget)
+                self.addRecodingConfigUI(configWidget)
+                self.addRecordingExplorerSrc(configWidget)
 
     def record(self):
         ''' Performs a quick-record or full telemetry record depending on UI state'''
@@ -1067,11 +1147,14 @@ class daoShmViewer(QMainWindow):
             # invoke recording session with daoTelemetry
             # using the current recording configuration.
             QMessageBox.critical(self, "Telemetry Record Error", "TODO") # @todo(tom)
+       
+    def getRecordingSessionUI(self):
+        return self.recordingConfigStack.widget(0)
         
     def exportRecordingConfiguration(self):
         ''' Exports recording configuration to disk in YAML format. '''
         
-        if not self.recordingConfigWidgets.count():
+        if not self.recordingConfigStack.count():
             self.show_error("failed to export recording configuration as configuration is empty")
             return
         
@@ -1081,13 +1164,10 @@ class daoShmViewer(QMainWindow):
         
         with open(saveAs, "w") as file:
             config = {
-                "session_policies": {
-                    "archive": os.getenv("DAODATA", os.getcwd()),
-                    "grouping": "on" if self.recordingConfigWidgets.count() > 1 else "off"
-                },
+                "session_policies": self.getRecordingSessionUI().generateConfig(),
                 "telemetry_list": [
                     configWidget.generateConfig()
-                    for configWidget in self.listRecordingItemWidgets()
+                    for configWidget in self.getAllRecordingSources()
                 ]
             }
             yaml.dump(config, file)
