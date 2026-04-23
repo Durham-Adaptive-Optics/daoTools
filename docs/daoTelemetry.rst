@@ -3,7 +3,7 @@ Telemetry Capture
  
 .. rst-class:: subtitle
 
-   v1.2
+   tool revision: v1.2.0
 
 Overview
 --------
@@ -45,35 +45,34 @@ Start an instance with a port number (defines the network endpoint for API commu
 
    Launch the tool in a persistent shell session (e.g., ``tmux``) to keep it running and available, even if your login session closes.
 
-Capture Sessions
-----------------
+Capture Session Configuration
+-----------------------------
 
-A capture session (or session) defines what telemetry sources shall be recorded and how, along
-with more session specific properties. Sessions are configured via YAML v1.2 and must be provided to
-the capture tool and successfully applied before the session can be carried out.
+A capture session (or session) is the concept defined by the capture tool where
+a set of telemetry is recorded to the disk. All products of a capture session, such
+as datasets containing shared-memory samples or copies of files, are stored into the 
+session's output directory. The session output directory is either the ``root`` directory
+as specified in the session configuration, or a subdirectory inside it. 
 
-Session Configuration
----------------------
+Sessions are configured via a YAML v1.2 
+document and must be provided to the capture tool and successfully applied before 
+the session can be carried out.
 
-The following tables define the session and source configuration fields
-available to the user. 
-
-Some fields are required and omitting them will
-cause the capture tool to fail when applying the configuration; others
-are optional and can be omitted, in which case they take on the specified
-default value.
+The following tables define the session configuration field; some are optional
+and others are required. Failure to provide requires fields will result in an
+error when the capture tool attempts to apply said session configuration.
 
 Session Policies
 ^^^^^^^^^^^^^^^^
 
 The session configuration must contain an object named ``session_policies`` 
-containing any session-wide policies.
+containing any session-wide policies, as shown below.
 
 .. list-table:: session policies
    :header-rows: 1
 
    * - Field
-     - Required
+     - Presence
      - Data Type
      - Default
      - Description
@@ -102,20 +101,23 @@ containing any session-wide policies.
      - False
      - Overwrite any conflicted items in root directory when storing session outputs.
 
-Sources
-^^^^^^^
+Source Configurations
+^^^^^^^^^^^^^^^^^^^^^
 
 The session configuration must contain a list named ``source_list`` 
 of all sources to capture during the session.
 
-File Sources
-~~~~~~~~~~~~~~
+Files
+~~~~~
+
+A file source is simply copied to the session output directory, once
+the session starts. 
 
 .. list-table:: file source configuration
    :header-rows: 1
 
    * - Field
-     - Required
+     - Presence
      - Data Type
      - Default
      - Description
@@ -135,11 +137,15 @@ File Sources
 Shared Memory Sources
 ~~~~~~~~~~~~~~~~~~~~~~
 
+A shared memory source has its samples recorded as they arrive
+in real-time, and are stored into one or many datafiles in the
+session output directory.
+
 .. list-table:: shared-memory source configuration
    :header-rows: 1
 
    * - Field
-     - Required
+     - Presence
      - Data Type
      - Default
      - Description
@@ -170,9 +176,9 @@ Shared Memory Sources
    
    * - ``export_policies/format``
      - Required
-     - Format Type (``numpy``, ``fits``)
+     - Format Type
      - 
-     - Format of the output datafile(s).
+     - Format of the output datafile(s); possible options are: ``numpy``, ``fits``.
    
    * - ``export_policies/chunk_size``
      - Optional
