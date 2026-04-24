@@ -595,6 +595,7 @@ class daoShmViewer(QMainWindow):
         self.tableWidget.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.tableWidget.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.tableWidget.setSelectionBehavior(QTableWidget.SelectRows)
+        self.tableWidget.hideColumn(0) # hide checkbox column - we can remove it from the codebase when we have the time.
         
         # Add keyboard navigation support
         self.tableWidget.keyPressEvent = self.tableKeyPressEvent
@@ -638,11 +639,7 @@ class daoShmViewer(QMainWindow):
         self.tabWidget.setMinimumSize(400, 300)  # Increased minimum height from 200 to 300
         self.tabWidget.setTabsClosable(True)
         self.tabWidget.setMovable(True)
-        # self.tabWidget.setTabPosition(QTabWidget.normalGeometry)
-        # self.tabWidget.setTabShape(QTabWidget.Triangular)
-        # self.tabWidget.setUsesScrollButtons(True)
         self.tabWidget.setTabsClosable(False)
-        # self.tabWidget.setDocumentMode(True)
         
         # Tab 1: File Metadata
         self.setup_metadata_tab()
@@ -835,7 +832,6 @@ class daoShmViewer(QMainWindow):
         """Update the list of shared memory files."""
         # Save currently selected files
         selected_files = set()
-        
         for row in range(self.tableWidget.rowCount()):
             checkBox = self.tableWidget.cellWidget(row, 0)
             if checkBox and checkBox.isChecked():
@@ -856,6 +852,7 @@ class daoShmViewer(QMainWindow):
             checkBox = QCheckBox(self)
             if filename in selected_files:
                 checkBox.setChecked(True)
+                
             # Connect checkbox state change to updateMultiRecordList
             checkBox.stateChanged.connect(self.updateMultiRecordList)
             filenameItem = QTableWidgetItem(filename)
