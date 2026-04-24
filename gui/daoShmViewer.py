@@ -59,7 +59,7 @@ class TelemetrySessionConfig(QWidget):
         form.addRow("Storage Root:", storage_layout)
         
         # Group name input
-        self.group_name = QLineEdit(defStorageRoot)
+        self.group_name = QLineEdit()
         form.addRow("Group Name:", self.group_name)
         
         # Checkboxes side by side
@@ -82,12 +82,12 @@ class TelemetrySessionConfig(QWidget):
             self.storage_root.setText(path)
             
     def export(self):
-        return {
-            "root_storage": self.storage_root.text(),
-            "overwrite_existing": self.overwrite.isChecked(),
-            "group_outputs": not self.disable_grouping.isChecked(),
-            "group_name": self.group_name.text()
-        }
+        cfg = {}
+        cfg["root_storage"] = self.storage_root.text()
+        cfg["overwrite_existing"] =  self.overwrite.isChecked()
+        cfg["group_outputs"] =  (not self.disable_grouping.isChecked())
+        if self.group_name.text(): cfg["group_name"] = self.group_name.text()
+        return cfg
     
 class FileTelemetryConfig(QWidget):
     ''' Implements a PyQt5 widget for configuring a file telemetry item. '''
@@ -119,7 +119,7 @@ class FileTelemetryConfig(QWidget):
         group = QGroupBox("Export Options")
         form = QFormLayout()
         
-        self.output_name = QLineEdit(self.sourceName)
+        self.output_name = QLineEdit()
         form.addRow("Save as", self.output_name)
         
         group.setLayout(form)
@@ -141,10 +141,34 @@ class FileTelemetryConfig(QWidget):
 class ShmTelemetryConfig(QWidget):
     ''' Implements a PyQt5 widget for configuring a shared memory telemetry item. '''
 
-    def __init__(self, source: str, removeTelemetry: callable):
+    def __init__(
+        self, 
+        source: str,
+        removeTelemetry: callable,
+        saveAs: str = "",
+        format: str = "fits",
+        samples: int = -1,
+        chunkSize: int = -1,
+        headerOnly: bool = False,
+        pollAffinity: int = -1,
+        exportAffinity: int = -1, 
+        bufferLimit: int = -1
+    ):
         super().__init__()
+        
+        # make defaults
         self.source = source
         self.sourceName = source.split("/")[-1]
+        self.defSaveAs = saveAs
+        self.defFormat = format
+        self.defSamples = samples
+        self.defChunkSize = chunkSize
+        self.defHeaderOnly = headerOnly
+        self.defPollAffinity = pollAffinity
+        self.defExportAffinity = exportAffinity
+        self.defBufferLimit = bufferLimit
+
+        # make UI
         self.createUI(removeTelemetry)
         
     def createUI(self, removeTelemetry: callable):
@@ -174,23 +198,26 @@ class ShmTelemetryConfig(QWidget):
         group = QGroupBox("Export Options")
         form = QFormLayout()
         
-        self.name_field = QLineEdit()
+        self.name_field = QLineEdit(self.defSaveAs)
         form.addRow("Save as", self.name_field)
         
         self.format_combo = QComboBox()
         self.format_combo.addItems(["fits", "numpy"])
-        self.format_combo.setCurrentText("fits")
+        self.format_combo.setCurrentText(self.defFormat)
         form.addRow("Format", self.format_combo)
         
         self.sample_count = QSpinBox()
-        self.sample_count.setRange(0, 1_000_000)
+        self.sample_count.setRange(-1, 1_000_000)
+        self.sample_count.setValue(self.defSamples) 
         form.addRow("Samples", self.sample_count)
         
         self.chunk_size = QSpinBox()
-        self.chunk_size.setRange(0, 1_000_000)
+        self.chunk_size.setRange(-1, 1_000_000)
+        self.chunk_size.setValue(self.defChunkSize) 
         form.addRow("Chunk size", self.chunk_size)
         
         self.headers_only = QCheckBox()
+        self.headers_only.setChecked(self.defHeaderOnly)
         form.addRow("Headers-Only", self.headers_only)
         
         group.setLayout(form)
@@ -201,35 +228,40 @@ class ShmTelemetryConfig(QWidget):
         form = QFormLayout()
         
         self.poll_affinity = QSpinBox()
-        self.poll_affinity.setRange(0, 1_000_000)
+        self.poll_affinity.setRange(-1, 1_000_000)
+        self.poll_affinity.setValue(self.defPollAffinity) 
         form.addRow("Poll Affinity", self.poll_affinity)
         
         self.export_affinity = QSpinBox()
-        self.export_affinity.setRange(0, 1_000_000)
+        self.export_affinity.setRange(-1, 1_000_000)
+        self.export_affinity.setValue(self.defExportAffinity) 
         form.addRow("Export Affinity", self.export_affinity)
         
         self.buffer_limit = QSpinBox()
-        self.buffer_limit.setRange(0, 1_000_000)
+        self.buffer_limit.setRange(-1, 1_000_000)
+        self.buffer_limit.setValue(self.defBufferLimit) 
         form.addRow("Buffer Limit", self.buffer_limit)
         
         group.setLayout(form)
         return group
     
     def export(self):
+        export_policies = {}
+        if self.name_field.text(): export_policies["save_as"] = self.name_field.text(),
+        export_policies["metadata_only"] = self.headers_only.isChecked()
+        if self.sample_count.value() >= 0: export_policies["samples"] = self.sample_count.value()
+        export_policies["format"] = self.format_combo.currentText()
+        if self.chunk_size.value() >= 0: export_policies["chunk_size"] = self.chunk_size.value()
+        
+        acquisition_policies = {}
+        if self.export_affinity.value() >= 0: acquisition_policies["export_affinity"] = self.export_affinity.value(),
+        if self.poll_affinity.value() >= 0: acquisition_policies["poll_affinity"] = self.poll_affinity.value(),
+        if self.buffer_limit.value() >= 0: acquisition_policies["buffer_limit"] = self.buffer_limit.value()
+
         return {
             "uri": f"smem://{self.source}",
-            "export_policies": {
-                "save_as": self.name_field.text(),
-                "metadata_only": self.headers_only.isChecked(),
-                "samples": self.sample_count.value(),
-                "format": self.format_combo.currentText(),
-                "chunk_size": self.chunk_size.value()
-            },
-            "acquisition_policies": {
-                "export_affinity": self.export_affinity.value(),
-                "poll_affinity": self.poll_affinity.value(),
-                "buffer_limit": self.buffer_limit.value()
-            }
+            "export_policies": export_policies,
+            "acquisition_policies": acquisition_policies
         }
 
 class QuickRecordModal(QDialog):
