@@ -36,13 +36,9 @@ from PyQt5.QtWidgets import (
 class TelemetrySessionConfig(QWidget):
     ''' Implements a PyQt5 widget for configuring a telemetry capture session. '''
     
-    def __init__(self):
+    def __init__(self): 
         super().__init__()
-        self.findDefaultStorageRoot()
         self.createUI()
-    
-    def findDefaultStorageRoot(self):
-        self.defaultStorageRoot = os.getenv("DAODATA", os.getcwd())
     
     def createUI(self):
         layout = QVBoxLayout(self)
@@ -53,21 +49,22 @@ class TelemetrySessionConfig(QWidget):
         
         # Storage Root with file picker
         storage_layout = QHBoxLayout()
-        self.storage_root = QLineEdit(self.defaultStorageRoot)
+        defStorageRoot = os.getenv("DAODATA", os.getcwd())
+        self.storage_root = QLineEdit(defStorageRoot)
         self.storage_root.setReadOnly(True)
-        storage_btn = QPushButton("Browse...")
+        storage_btn = QPushButton("Browse")
         storage_btn.clicked.connect(self.pick_storage_root)
         storage_layout.addWidget(self.storage_root)
         storage_layout.addWidget(storage_btn)
         form.addRow("Storage Root:", storage_layout)
         
         # Group name input
-        self.group_name = QLineEdit()
+        self.group_name = QLineEdit(defStorageRoot)
         form.addRow("Group Name:", self.group_name)
         
         # Checkboxes side by side
-        self.overwrite = QCheckBox("Overwrite")
-        self.disable_grouping = QCheckBox("Disable Grouping")
+        self.overwrite = QCheckBox("Overwrite", checked=False)
+        self.disable_grouping = QCheckBox("Disable Grouping", checked=False)
         self.disable_grouping.toggled.connect(self.updateGroupNameInput)
         form.addRow(self.disable_grouping)
         form.addRow(self.overwrite)
@@ -84,7 +81,7 @@ class TelemetrySessionConfig(QWidget):
         if path:
             self.storage_root.setText(path)
             
-    def generateConfig(self):
+    def export(self):
         return {
             "root_storage": self.storage_root.text(),
             "overwrite_existing": self.overwrite.isChecked(),
@@ -123,7 +120,7 @@ class FileTelemetryConfig(QWidget):
         form = QFormLayout()
         
         self.output_name = QLineEdit(self.sourceName)
-        form.addRow("Name", self.output_name)
+        form.addRow("Save as", self.output_name)
         
         group.setLayout(form)
         return group
@@ -133,10 +130,12 @@ class FileTelemetryConfig(QWidget):
         btn.clicked.connect(lambda: removeTelemetry(self))
         return btn
     
-    def generateConfig(self):
+    def export(self):
         return {
-            "source": f"file://{self.source}",
-            "name": self.output_name.text() if self.output_name.text() else None 
+            "uri": f"file://{self.source}",
+            "export_policies": {
+                "save_as": self.output_name.text() if self.output_name.text() else None
+            }
         }
 
 class ShmTelemetryConfig(QWidget):
@@ -176,20 +175,20 @@ class ShmTelemetryConfig(QWidget):
         form = QFormLayout()
         
         self.name_field = QLineEdit()
-        form.addRow("Name", self.name_field)
+        form.addRow("Save as", self.name_field)
         
         self.format_combo = QComboBox()
         self.format_combo.addItems(["fits", "numpy"])
         self.format_combo.setCurrentText("fits")
         form.addRow("Format", self.format_combo)
         
-        self.frame_count = QSpinBox()
-        self.frame_count.setMinimum(0)
-        form.addRow("Frame Count", self.frame_count)
+        self.sample_count = QSpinBox()
+        self.sample_count.setRange(0, 1_000_000)
+        form.addRow("Samples", self.sample_count)
         
-        self.file_capacity = QSpinBox()
-        self.file_capacity.setMinimum(0)
-        form.addRow("File Capacity", self.file_capacity)
+        self.chunk_size = QSpinBox()
+        self.chunk_size.setRange(0, 1_000_000)
+        form.addRow("Chunk size", self.chunk_size)
         
         self.headers_only = QCheckBox()
         form.addRow("Headers-Only", self.headers_only)
@@ -202,30 +201,35 @@ class ShmTelemetryConfig(QWidget):
         form = QFormLayout()
         
         self.poll_affinity = QSpinBox()
-        self.poll_affinity.setMinimum(0)
+        self.poll_affinity.setRange(0, 1_000_000)
         form.addRow("Poll Affinity", self.poll_affinity)
         
         self.export_affinity = QSpinBox()
-        self.export_affinity.setMinimum(0)
+        self.export_affinity.setRange(0, 1_000_000)
         form.addRow("Export Affinity", self.export_affinity)
         
-        self.queue_capacity = QSpinBox()
-        self.queue_capacity.setMinimum(0)
-        form.addRow("Queue Capacity", self.queue_capacity)
+        self.buffer_limit = QSpinBox()
+        self.buffer_limit.setRange(0, 1_000_000)
+        form.addRow("Buffer Limit", self.buffer_limit)
         
         group.setLayout(form)
         return group
     
-    def generateConfig(self):
+    def export(self):
         return {
-            "source": f"shm://{self.source}",
-            "export-format": self.format_combo.currentText(),
-            "metadata-only": "yes" if self.headers_only.isChecked() else "no",
-            "frame-count": self.frame_count.value(),
-            "file-capacity": self.file_capacity.value(),
-            "polling-core": self.poll_affinity.value(),
-            "export-core": self.export_affinity.value(),
-            "buffer-limit": self.queue_capacity.value()
+            "uri": f"smem://{self.source}",
+            "export_policies": {
+                "save_as": self.name_field.text(),
+                "metadata_only": self.headers_only.isChecked(),
+                "samples": self.sample_count.value(),
+                "format": self.format_combo.currentText(),
+                "chunk_size": self.chunk_size.value()
+            },
+            "acquisition_policies": {
+                "export_affinity": self.export_affinity.value(),
+                "poll_affinity": self.poll_affinity.value(),
+                "buffer_limit": self.buffer_limit.value()
+            }
         }
 
 class QuickRecordModal(QDialog):
@@ -665,7 +669,7 @@ class daoShmViewer(QMainWindow):
         # create (left) telemetry summary panel
         self.recordingExplorer = QTreeWidget()
         self.recordingExplorer.header().hide()
-        self.recordingExplorer.itemClicked.connect(self.presentRecordingConfig)
+        self.recordingExplorer.itemClicked.connect(self.showRecordingConfig)
         self.resetRecordingExplorer()
 
         # create (bottom) action buttons
@@ -1066,7 +1070,7 @@ class daoShmViewer(QMainWindow):
 
     def getAllRecordingSources(self):
         ''' Return a list of all valid telemetry configuration widgets from the configuration panel '''
-        return [self.recordingConfigStack.widget(i) for i in range(1, self.recordingConfigStack.count())]
+        return [self.recordingConfigStack.widget(i) for i in range(2, self.recordingConfigStack.count())]
     
     def resetRecordingExplorer(self):
         self.recordingExplorer.clear()
@@ -1078,21 +1082,21 @@ class daoShmViewer(QMainWindow):
         
         self.recordingExplorerSources = QTreeWidgetItem(self.recordingExplorer, ["Sources"])
         
-    def presentRecordingConfig(self, item, column):
+    def showRecordingConfig(self, item, column):
         ''' Presents telemetry configuration UI for a clicked telemetry item '''
         
         configWidget: Qt.Widget = item.data(0, Qt.UserRole)
-        if not configWidget:
-            self.recordingConfigStack.setCurrentIndex(0) # show placeholder.
-        else:
+        if configWidget:
             self.recordingConfigStack.setCurrentWidget(configWidget)
+        else:
+            self.recordingConfigStack.setCurrentIndex(0)
     
     def clearRecordingConfig(self):
         ''' Clears all current telemetry configuration '''
-        
-        for cfgWidget in self.getAllRecordingSources(): 
-            self.recordingConfigStack.removeWidget(cfgWidget)
-        self.recordingConfigStack.setCurrentIndex(0) # present placeholder widget.
+        self.recordingConfigStack.setCurrentIndex(0)
+        clearList = [self.recordingConfigStack.widget(i) for i in range(1, self.recordingConfigStack.count())] 
+        for w in clearList:
+            self.recordingConfigStack.removeWidget(w)
         self.resetRecordingExplorer()
         
     def deleteRecordingItem(self, configWidget: Qt.Widget):
@@ -1115,19 +1119,18 @@ class daoShmViewer(QMainWindow):
         ''' Adds shared-memory(s) or a file to the recording configuration '''
 
         selectedShms = self.tableWidget.selectedItems()
-        recordingSources = [recWidget.source for recWidget in self.getAllRecordingSources()]
+        sources = [w.source for w in self.getAllRecordingSources()]
 
-        if len(selectedShms): # add file item
+        if len(selectedShms):
             for shmItem in selectedShms:
                 shmSource = f"/tmp/{shmItem.text()}"
-                if not shmSource in recordingSources:
+                if not shmSource in sources:
                     configWidget = ShmTelemetryConfig(shmSource, self.deleteRecordingItem)
                     self.addRecodingConfigUI(configWidget)
                     self.addRecordingExplorerSrc(configWidget)
-
-        else:   # add file item
+        else:
             fileSource, _ = QFileDialog.getOpenFileName(self, "Select File", os.getcwd())
-            if fileSource and (fileSource not in recordingSources):
+            if fileSource and (fileSource not in sources):
                 configWidget = FileTelemetryConfig(fileSource, self.deleteRecordingItem)
                 self.addRecodingConfigUI(configWidget)
                 self.addRecordingExplorerSrc(configWidget)
@@ -1149,7 +1152,7 @@ class daoShmViewer(QMainWindow):
             QMessageBox.critical(self, "Telemetry Record Error", "TODO") # @todo(tom)
        
     def getRecordingSessionUI(self):
-        return self.recordingConfigStack.widget(0)
+        return self.recordingConfigStack.widget(1)
         
     def exportRecordingConfiguration(self):
         ''' Exports recording configuration to disk in YAML format. '''
@@ -1164,16 +1167,39 @@ class daoShmViewer(QMainWindow):
         
         with open(saveAs, "w") as file:
             config = {
-                "session_policies": self.getRecordingSessionUI().generateConfig(),
-                "telemetry_list": [
-                    configWidget.generateConfig()
+                "session_policies": self.getRecordingSessionUI().export(),
+                "source_list": [
+                    configWidget.export()
                     for configWidget in self.getAllRecordingSources()
                 ]
             }
             yaml.dump(config, file)
         
     def importRecordingConfiguration(self):
-        QMessageBox.critical(self, "Import Error", "TODO") # @todo(tom)
+        fileName, _ = QFileDialog.getOpenFileName(
+            self, "Load recording session configuration", "", 
+            "YAML files (*.yml *.yaml);;All Files (*)"
+        )
+        if not fileName:
+            return
+
+
+        try:
+            with open(fileName, "r") as file:
+                config = yaml.safe_load(file)
+                print(config)
+                # import session policies..
+                # cfg_session = config["session_policies"]
+                # get = lambda field: cfg_session[field] if cfg_session[field] else None
+                # sessionUI = TelemetrySessionConfig(
+                #     get("root_storage"),
+                #     groupOutputs= get("group_outputs"),
+                #     groupName= get("group_name"),
+                #     ovewriteExisting = get("overwrite_existing")
+                # )
+        except Exception as e:
+            self.show_error(f"failed to import session configuration ({e})")            
+            return            
 
     def openLoadFileDialog(self, event):
         """Open file dialog for loading."""
