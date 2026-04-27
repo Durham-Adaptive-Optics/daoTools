@@ -15,7 +15,16 @@
 #include <unistd.h>
 #include "daoTools.h"
 
-/** Compute 32-bit XOR checksum over buffer
+/**
+ * @brief Compute a 32-bit XOR checksum over a raw buffer.
+ *
+ * The input buffer is interpreted as a sequence of 32-bit words. Any trailing
+ * bytes that do not form a complete word are ignored.
+ *
+ * @param data Pointer to the input buffer.
+ * @param length_bytes Buffer size in bytes.
+ *
+ * @return XOR checksum of all complete 32-bit words in the buffer.
  */
 uint32_t daoComputeChecksum(const void *data, size_t length_bytes) 
 {
@@ -80,12 +89,11 @@ unsigned daoToolsIp2Int (const char * ip)
 }
 
 /**
- * @brief 
- * 
- * @param base_string 
- * @param prefix 
- * @param suffix 
- * @param final_string 
+ * @brief Insert a prefix before the `.im.shm` suffix of a shared-memory name.
+ *
+ * @param base_string Base shared-memory object name.
+ * @param prefix String inserted before the fixed `.im.shm` suffix.
+ * @param final_string Output buffer receiving the rewritten name.
  */
 void daoToolsInsertShmNamePrefix(const char* base_string, const char* prefix, char* final_string) 
 {
@@ -459,8 +467,21 @@ int_fast8_t daoToolCog(float *img, int height, int width, float *centX, float *c
     return DAO_SUCCESS;
 }
 
-/*
- * Apply 3rd order filter to command
+/**
+ * @brief Apply the servo filter history to a command vector.
+ *
+ * The function removes the command offset, protects against NaN inputs, updates
+ * the delayed command and residual history, and computes the next precomputed
+ * filter term used by subsequent calls.
+ *
+ * @param command Input command vector.
+ * @param nbVal Number of command elements.
+ * @param filterHistory Persistent filter state and history buffers.
+ * @param servoFilter Servo filter coefficients.
+ * @param commandOffset Per-element offset removed before filtering.
+ * @param filteredCommand Output filtered command vector.
+ *
+ * @return DAO_SUCCESS on success.
  */
 int_fast8_t daoToolsCommandFilter(float *command, int nbVal, daoFilterHistory *filterHistory, float *servoFilter, float *commandOffset, float *filteredCommand)
 {
@@ -516,8 +537,17 @@ int_fast8_t daoToolsCommandFilter(float *command, int nbVal, daoFilterHistory *f
     return DAO_SUCCESS;
 }
 
-/*
- * Apply Integrator to command
+/**
+ * @brief Apply a scalar leaky integrator to a single-precision command vector.
+ *
+ * @param command Input command vector.
+ * @param nbVal Number of command elements.
+ * @param leaky Leak factor applied to the previous output.
+ * @param gain Integrator gain applied to the offset-corrected input.
+ * @param commandOffset Per-element offset removed before integration.
+ * @param filteredCommand In-place filtered output vector.
+ *
+ * @return DAO_SUCCESS on success.
  */
 int_fast8_t daoToolsLeakyIntegrator(float *command, int nbVal, float leaky, float gain, float *commandOffset, float *filteredCommand)
 {
@@ -541,8 +571,17 @@ int_fast8_t daoToolsLeakyIntegrator(float *command, int nbVal, float leaky, floa
     return DAO_SUCCESS;
 }
 
-/*
- * Apply Integrator to command double precision
+/**
+ * @brief Apply a scalar leaky integrator to a double-precision command vector.
+ *
+ * @param command Input command vector.
+ * @param nbVal Number of command elements.
+ * @param leaky Leak factor applied to the previous output.
+ * @param gain Integrator gain applied to the offset-corrected input.
+ * @param commandOffset Per-element offset removed before integration.
+ * @param filteredCommand In-place filtered output vector.
+ *
+ * @return DAO_SUCCESS on success.
  */
  int_fast8_t daoToolsLeakyIntegratorDouble(double *command, int nbVal, double leaky, double gain, double *commandOffset, double *filteredCommand)
  {
@@ -565,8 +604,17 @@ int_fast8_t daoToolsLeakyIntegrator(float *command, int nbVal, float leaky, floa
  
      return DAO_SUCCESS;
  }
-/*
- * Apply Integrator to modes
+/**
+ * @brief Apply a per-mode leaky integrator to a single-precision vector.
+ *
+ * @param command Input modal command vector.
+ * @param nbVal Number of modes.
+ * @param leaky Per-mode leak factors.
+ * @param gain Per-mode integrator gains.
+ * @param commandOffset Per-mode offset removed before integration.
+ * @param filteredCommand In-place filtered output vector.
+ *
+ * @return DAO_SUCCESS on success.
  */
 int_fast8_t daoToolsLeakyModalIntegrator(float *command, int nbVal, float *leaky, float *gain, float *commandOffset, float *filteredCommand)
 {
@@ -590,8 +638,17 @@ int_fast8_t daoToolsLeakyModalIntegrator(float *command, int nbVal, float *leaky
     return DAO_SUCCESS;
 }
 
-/*
- * Apply Integrator to modes double precision
+/**
+ * @brief Apply a per-mode leaky integrator to a double-precision vector.
+ *
+ * @param command Input modal command vector.
+ * @param nbVal Number of modes.
+ * @param leaky Per-mode leak factors.
+ * @param gain Per-mode integrator gains.
+ * @param commandOffset Per-mode offset removed before integration.
+ * @param filteredCommand In-place filtered output vector.
+ *
+ * @return DAO_SUCCESS on success.
  */
 int_fast8_t daoToolsLeakyModalIntegratorDouble(double *command, int nbVal, double *leaky, double *gain, double *commandOffset, double *filteredCommand)
  {
@@ -892,7 +949,19 @@ int_fast8_t daoCentroidSpotsRelative(float *image,
 }
 
 /**
- * compute slopes at CPU level.
+ * @brief Compute pyramid WFS slopes on the CPU from quadrant samples.
+ *
+ * @param im Input image buffer.
+ * @param slopes Output slopes vector.
+ * @param slopesRef Reference slopes subtracted from the measurement.
+ * @param wfsPixId Valid slope indices for each pupil sample.
+ * @param wfsPixIdMap Image offsets used to fetch the quadrant pixels.
+ * @param flux Total flux used for normalization.
+ * @param nbPix Number of valid slope measurements.
+ * @param imSize Linear image size.
+ * @param pupSize Number of pupil samples to inspect.
+ *
+ * @return DAO_SUCCESS on success.
  */
 int_fast8_t daoCentroidPws(float *im, float *slopes,
                            float *slopesRef, int *wfsPixId, int *wfsPixIdMap,
@@ -1318,6 +1387,21 @@ int_fast8_t daoToolsHighPassFilterDouble(double *H,
     return DAO_SUCCESS;
 }
 
+/**
+ * @brief Combine multiple DM channels into a single output image.
+ *
+ * Each channel value is clipped before accumulation, and an optional piston
+ * removal step subtracts the mean value across channels for each element.
+ *
+ * @param imageCube Input cube of per-channel command images.
+ * @param image Output image receiving the combined command.
+ * @param nbChannel Number of input channels.
+ * @param nbVal Number of values per channel.
+ * @param removePiston Non-zero to subtract the mean channel value.
+ * @param clipping Symmetric clipping threshold applied before accumulation.
+ *
+ * @return DAO_SUCCESS on success.
+ */
 int_fast8_t daoDmCombine(IMAGE **imageCube, IMAGE *image, int nbChannel, int nbVal, int removePiston, double clipping)
 {
     daoTrace("\n");
@@ -1327,9 +1411,9 @@ int_fast8_t daoDmCombine(IMAGE **imageCube, IMAGE *image, int nbChannel, int nbV
     
     if (image->md[0].atype == _DATATYPE_FLOAT)
     {
-        float sum = 0.0;
         for (pp=0; pp<nbVal; pp++)
         {   
+            float sum = 0.0f;
             image[0].array.F[pp] = 0;
             for(k=0;k<nbChannel;k++) 
             {
@@ -1358,29 +1442,32 @@ int_fast8_t daoDmCombine(IMAGE **imageCube, IMAGE *image, int nbChannel, int nbV
     }
     else if (image->md[0].atype == _DATATYPE_DOUBLE)
     {
-        double sum = 0.0;
         for (pp=0; pp<nbVal; pp++)
         {   
+            double sum = 0.0;
             image[0].array.D[pp] = 0;
-            if (imageCube[k][0].array.D[pp] > clipping)
+            for(k=0;k<nbChannel;k++)
             {
-                image[0].array.D[pp] = clipping;
+                if (imageCube[k][0].array.D[pp] > clipping)
+                {
+                    image[0].array.D[pp] = clipping;
+                }
+                else if (imageCube[k][0].array.D[pp] < -clipping)
+                {
+                    image[0].array.D[pp] = -clipping;
+                }
+                else
+                {
+                    image[0].array.D[pp] = imageCube[k][0].array.D[pp];
+                }
+                sum += image[0].array.D[pp];
             }
-            else if (imageCube[k][0].array.D[pp] < -clipping)
+            if (removePiston)
             {
-                image[0].array.D[pp] = -clipping;
-            }
-            else
-            {
-                image[0].array.D[pp] = imageCube[k][0].array.D[pp];
-            }
-            sum += image[0].array.D[pp];
-        }
-        if (removePiston)
-        {
-            for(k=0;k<nbChannel;k++) 
-            {
-                image[0].array.D[pp] -= sum / nbChannel;
+                for(k=0;k<nbChannel;k++) 
+                {
+                    image[0].array.D[pp] -= sum / nbChannel;
+                }
             }
         }
     }
@@ -1390,8 +1477,20 @@ int_fast8_t daoDmCombine(IMAGE **imageCube, IMAGE *image, int nbChannel, int nbV
     return DAO_SUCCESS;
 }
 
-
-
+/**
+ * @brief Copy a contiguous image buffer into a destination image at an offset.
+ *
+ * The destination shared-memory image is marked writable during the copy and
+ * can optionally be finalized once the transfer is complete.
+ *
+ * @param imageIn Source image.
+ * @param imageOut Destination image.
+ * @param nbVal Number of scalar values to copy.
+ * @param position Destination starting index.
+ * @param finalize Set to `1` to finalize the destination SHM image.
+ *
+ * @return DAO_SUCCESS on success.
+ */
 int_fast8_t daoShmCopyToPosition(IMAGE *imageIn, IMAGE *imageOut,
                                  int nbVal, int position, int finalize)
 {
@@ -1429,7 +1528,12 @@ int_fast8_t daoShmCopyToPosition(IMAGE *imageIn, IMAGE *imageOut,
 #include <mach/mach_time.h>
 #include <sys/time.h>
 
-// Fallback for sched_setscheduler
+/**
+ * @brief macOS fallback for `sched_setscheduler`.
+ *
+ * macOS does not expose Linux real-time scheduling policies such as
+ * `SCHED_FIFO`, so this implementation behaves as a no-op.
+ */
 int sched_setscheduler(pid_t pid, int policy, const struct sched_param *param) {
     // macOS does not support real-time policies (SCHED_FIFO, etc.)
     // Just log and return success as a no-op
@@ -1440,7 +1544,47 @@ int sched_setscheduler(pid_t pid, int policy, const struct sched_param *param) {
     return 0;
 }
 
-// Fallback for clock_nanosleep
+/**
+ * @brief macOS fallback for `sched_getscheduler`.
+ *
+ * @param pid Process identifier, ignored on macOS.
+ *
+ * @return `SCHED_OTHER` to indicate non real-time scheduling.
+ */
+int sched_getscheduler(pid_t pid) {
+    (void)pid;
+    return SCHED_OTHER;
+}
+
+/**
+ * @brief macOS fallback for `sched_getparam`.
+ *
+ * @param pid Process identifier, ignored on macOS.
+ * @param param Output scheduling parameter structure.
+ *
+ * @return 0 on success.
+ */
+int sched_getparam(pid_t pid, struct sched_param *param) {
+    (void)pid;
+    if (param != NULL)
+    {
+        param->sched_priority = 0;
+    }
+    return 0;
+}
+
+/**
+ * @brief macOS fallback for `clock_nanosleep`.
+ *
+ * Absolute deadlines are converted to a relative `nanosleep` delay.
+ *
+ * @param clock_id Clock used to interpret absolute deadlines.
+ * @param flags Sleep mode flags, including `TIMER_ABSTIME`.
+ * @param request Requested sleep duration or deadline.
+ * @param remain Remaining unslept time if interrupted.
+ *
+ * @return 0 on success, or the return value from `nanosleep`.
+ */
 int clock_nanosleep(clockid_t clock_id, int flags, const struct timespec *request, struct timespec *remain) {
     if (flags == TIMER_ABSTIME) {
         // Absolute time mode: wait until the specified time
@@ -1469,6 +1613,14 @@ int clock_nanosleep(clockid_t clock_id, int flags, const struct timespec *reques
 
 #endif // __APPLE__
 
+/**
+ * @brief Attempt to enable real-time scheduling for the current process.
+ *
+ * The function first locks current and future mappings into memory, then tries
+ * to switch the process to `SCHED_FIFO` with the requested priority.
+ *
+ * @param rt_priority Requested real-time FIFO priority.
+ */
 void daoRtSetup(int rt_priority)
 {
     struct sched_param sp;
