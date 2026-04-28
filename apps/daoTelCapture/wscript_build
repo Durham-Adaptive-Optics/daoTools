@@ -1,0 +1,12 @@
+import os
+
+daoTelemetry = bld.program(
+    source = 'src/main.cpp',
+    target = 'daoTelCapture',
+    includes = ['../../include', f"{os.getenv('DAOROOT')}/include", "include"],
+    linkflags = [f'-L{os.getenv('DAOROOT')}/lib', f'-L{os.getenv('DAOROOT')}/lib64'],
+    ldflags = ['-ldao' , '-lpthread', '-ldaoNuma', '-ldaoProto', '-lzmq', '-lprotobuf', '-lyaml-cpp', '-lstdc++fs'],
+    cxxflags = ['-O3', '-Wall', '-Wextra', '-pipe',  '-Werror', '-fdiagnostics-color=auto', '-std=c++17'],
+    use= 'daoTools CLI11 cfitsio'
+)
+        

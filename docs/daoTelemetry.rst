@@ -128,7 +128,7 @@ the session starts.
      - 
      - Absolute path to the file, in the format ``file://<path>``.
  
-   * - ``export_policies/save_as``
+   * - ``save_as``
      - Optional
      - String
      - Original name
@@ -156,49 +156,49 @@ session output directory.
      - 
      - Absolute path to the shared memory, in the format ``smem://<path>``.
    
-   * - ``export_policies/save_as``
+   * - ``save_as``
      - Optional
      - String
      - Original name
      - Base name of the output datafile(s).
    
-   * - ``export_policies/metadata_only``
+   * - ``metadata_only``
      - Optional
      - Boolean
      - False
      - Capture only the frame metadata, discarding the frame data.
    
-   * - ``export_policies/samples``
+   * - ``samples``
      - Optional
      - Integer
      - Unbounded sample target
      - Number of samples to record from the shared memory source. If omitted, collection is unbounded.
    
-   * - ``export_policies/format``
+   * - ``format``
      - Required
      - Format Type
      - 
      - Format of the output datafile(s); possible options are: ``numpy``, ``fits``.
    
-   * - ``export_policies/chunk_size``
+   * - ``chunk_size``
      - Optional
      - Integer
      - Unbounded chunk limit
      - Limits the number of samples in a output datafile, possibly creating multiple datafiles to hold all samples recorded.
    
-   * - ``acquisition_policies/export_affinity``
+   * - ``export_affinity``
      - Optional
      - Integer
      - No affinity
      - Set the cpu core affinity of the sample export thread.
    
-   * - ``acquisition_policies/poll_affinity``
+   * - ``poll_affinity``
      - Optional
      - Integer
      - No affinity
      - Set the cpu core affinity of the sample receive thread.
    
-   * - ``acquisition_policies/buffer_limit``
+   * - ``buffer_limit``
      - Optional
      - Integer
      - Unbounded buffer limit
@@ -219,20 +219,17 @@ Example Configuration Snippet
 
       source_list:
         - uri: file:///path/to/my/file.ext
-          export_policies:
-            save_as: raw-data.npy
+          save_as: raw-data.npy
 
         - uri: smem:///tmp/cblue.im.shm
-          export_policies:
-              save_as: camera7
-              metadata_only: no
-              samples: 1900
-              format: numpy
-              chunk_size: 70
-          acquisition_policies:
-              export_affinity: 7
-              poll_affinity: 7
-              buffer_limit: 900
+          save_as: camera7
+          metadata_only: no
+          samples: 1900
+          format: numpy
+          chunk_size: 70
+          export_affinity: 7
+          poll_affinity: 7
+          buffer_limit: 900
 
 Configuration UI
 ^^^^^^^^^^^^^^^^
