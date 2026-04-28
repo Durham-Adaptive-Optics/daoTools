@@ -20,59 +20,43 @@ namespace Dao
         template <typename T> using Required = T;
         template <typename T> using Optional = std::optional<T>;
 
-        struct MissingRequiredParameter : public std::exception
-        {
-            MissingRequiredParameter(std::string const& paramName)
-                : parameterName_(paramName)
-            {
-            }
-
-            const char* what() const noexcept override
-            {
-                std::string const msg = "capture policies missing required parameter '" + parameterName_ + "'";
-                return msg.c_str();
-            }
-
-            private:
-            std::string const parameterName_;
-        };
-
-        struct InvalidParameterType : public std::exception
-        {
-            InvalidParameterType(std::string const& paramName)
-                : parameterName_(paramName)
-            {
-            }
-
-            const char* what() const noexcept override
-            {
-                std::string const requiredDataType = "??";
-                std::string const msg = "capture policies parameter '" + parameterName_ + "' must have type '" + requiredDataType;
-                return msg.c_str();
-            }
-
-            private:
-            std::string const parameterName_;
-        };
-
+        // @todo move all export related things to export hpp file..
         enum class ExportFormat
         {
             FITS,
             NUMPY
         };
 
-        enum class UriClass
+        static inline std::unordered_map<ExportFormat, std::string> const fmtToRepr
         {
-            SMEM,
-            FILE
+            { ExportFormat::FITS, "fits" },
+            { ExportFormat::NUMPY, "numpy" }
         };
 
+        static inline std::unordered_map<std::string, ExportFormat> const ReprToFmt
+        {
+            { "fits", ExportFormat::FITS },
+            { "numpy", ExportFormat::NUMPY }
+        };
+
+        /* Telemetry source types from URI.
+        */
+        enum class UriClass
+        {
+            FILE,
+            SMEM
+        };
+
+        /* File source policies.
+        */
         struct FilePolicy
         {
             Required<std::string> absPath;
             Optional<std::string> saveAsName;
         };
 
+        /* Shared-memory source policies.
+        */
         struct SharedMemoryPolicy
         {
             Required<std::string> absPath;
@@ -89,25 +73,18 @@ namespace Dao
         class CapturePolicies
         {
             public:
+            /* Parse and store capture session policies from yaml document.
+             * Throws an exception if the parse fails for any reason.
+            */
             CapturePolicies(YAML::Node const& ymlDocument);
+
+            /* Utility method for printing capture policies to stdout
+             * for viewing.
+            */
             void dump() const noexcept;
-
-            static inline std::unordered_map<ExportFormat, std::string> const fmtToRepr
-            {
-                { ExportFormat::FITS, "fits" },
-                { ExportFormat::NUMPY, "numpy" }
-            };
-
-            static inline std::unordered_map<std::string, ExportFormat> const ReprToFmt
-            {
-                { "fits", ExportFormat::FITS },
-                { "numpy", ExportFormat::NUMPY }
-            };
 
             private:
             YAML::Node const& ymlDoc_;
-
-            // capture session policies
             Required<std::string> rootStorage_;
             Optional<bool> groupingEnabled_ { true };
             Optional<std::string> groupName_;
@@ -115,52 +92,74 @@ namespace Dao
             std::vector<FilePolicy> filePolicies_;
             std::vector<SharedMemoryPolicy> smemPolicies_;
 
-            // URI utility methods..
+            /* Parse a URI and return its resource class. If the URI is
+             * malformed then an exception is thrown.
+            */
             UriClass classFromURI(URI const& uri) const;
+
+            /* Parse a URI and return its resource location. If the URI is
+             * malformed then an exception is thrown.
+            */
             std::string locationFromURI(URI const& uri) const;
 
-            // parameter loading methods..
+            /* Parses the yaml document and populates
+             * the capture-policy object. It will throw an exception if
+             * there was an issue during the parse for any reason.
+            */
             void load();
 
-            template <typename Y> struct UnwrapType { using type = Y; };
-            template <typename Y> struct UnwrapType<std::optional<Y>> { using type = Y; };
-
+            /* Loads file policy parameters from a yaml source node.
+            */
             void loadFilePolicy(YAML::Node const& sourceNode, FilePolicy& policySet);
+
+            /* Loads shared-memory policy parameters from a yaml source node.
+            */
             void loadSmemPolicy(YAML::Node const& sourceNode, SharedMemoryPolicy& policySet);
 
+            /* Template specializations for unwrapping optional parameter types.
+            */
+            template <typename Y> struct UnwrapOptional { using type = Y; };
+            template <typename Y> struct UnwrapOptional<std::optional<Y>> { using type = Y; };
+
+            /* Method to load a required parameter from the provided yaml node; if the load fails then
+             * an exception is thrown.
+            */
             template <typename T> void loadRequired(T& store, std::string const& name, std::optional<YAML::Node> const root = std::nullopt) const
             {
                 YAML::Node node = root ? root.value() : ymlDoc_;
                 auto const& parameter = node[name];
 
                 if (!parameter) {
-                    throw MissingRequiredParameter(name);
+                    throw std::runtime_error(name);
                 }
 
                 if (parameter.Type() != YAML::NodeType::Scalar) {
-                    throw InvalidParameterType(name);
+                    throw std::runtime_error(name);
                 }
 
                 try {
-                    store = parameter.as<typename UnwrapType<T>::type>();
+                    store = parameter.as<typename UnwrapOptional<T>::type>();
                 } catch (YAML::BadConversion const& e) {
-                    throw InvalidParameterType(name);
+                    throw std::runtime_error(name);
                 }
             }
 
+            /* Method to load an optional parameter from the provided yaml node, if present; if the load fails then
+             * an exception is thrown.
+            */
             template <typename T> void loadOptional(T& store, std::string const& name, std::optional<YAML::Node> const root = std::nullopt) const
             {
                 YAML::Node node = root ? root.value() : ymlDoc_;
 
                 if (auto const& parameter = node[name]; parameter) {
                     if (parameter.Type() != YAML::NodeType::Scalar) {
-                        throw InvalidParameterType(name);
+                        throw std::runtime_error(name);
                     }
 
                     try {
-                        store = parameter.as<typename UnwrapType<T>::type>();
+                        store = parameter.as<typename UnwrapOptional<T>::type>();
                     } catch (YAML::BadConversion const& e) {
-                        throw InvalidParameterType(name);
+                        throw std::runtime_error(name);
                     }
                 }
             }
