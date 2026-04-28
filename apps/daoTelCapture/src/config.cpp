@@ -3,17 +3,48 @@
  * @ Company: Centre for Advanced Instrumentation, Durham University
  * @ Contact: thomas.n.davies@durham.ac.uk
  * @ Create Time: 2026-04-28 09:43:22
- * @ Description:
+ * @ Description: Telemetry capture tool configuration parsing.
  */
 
 #include <config.hpp>
 #include <iostream>
 
+/* Implements conversions between YAML node and custom types.
+*/
+namespace YAML
+{
+    template<>
+    struct convert<Dao::Telemetry::ExportFormat>
+    {
+        static Node encode(Dao::Telemetry::ExportFormat const& rhs)
+        {
+            return YAML::Node { Dao::Telemetry::CapturePolicies::fmtToRepr.at(rhs) };
+        }
+
+        static bool decode(Node const& node, Dao::Telemetry::ExportFormat& rhs)
+        {
+            bool decoded { false };
+
+            try {
+                std::string const formatString = node.as<std::string>();
+                auto const& kv = Dao::Telemetry::CapturePolicies::ReprToFmt.find(formatString);
+                if (kv != Dao::Telemetry::CapturePolicies::ReprToFmt.end()) {
+                    rhs = kv->second;
+                    decoded = true;
+                }
+            } catch (...) {}
+
+            return decoded;
+        }
+    };
+};
+
+using namespace Dao::Telemetry;
+
 CapturePolicies::CapturePolicies(YAML::Node const& ymlDocument)
     : ymlDoc_(ymlDocument)
 {
     load();
-    dump();
 }
 
 UriClass CapturePolicies::classFromURI(URI const& uri) const
@@ -37,12 +68,13 @@ UriClass CapturePolicies::classFromURI(URI const& uri) const
 
 std::string CapturePolicies::locationFromURI(URI const& uri) const
 {
-    auto const splitPos = uri.find("://");
+    std::string const uriDelimiter { "://" };
+    auto const splitPos = uri.find(uriDelimiter);
     if (splitPos == std::string::npos) {
         throw std::runtime_error("Malformed URI");
     }
 
-    return uri.substr(splitPos, std::string::npos);
+    return uri.substr(splitPos + uriDelimiter.length(), std::string::npos);
 }
 
 void CapturePolicies::loadFilePolicy(YAML::Node const& sourceNode, FilePolicy& policySet)
@@ -56,6 +88,7 @@ void CapturePolicies::loadSmemPolicy(YAML::Node const& sourceNode, SharedMemoryP
     loadOptional(policySet.metadataOnly, "metadata_only", sourceNode);
     loadOptional(policySet.nSamples, "samples", sourceNode);
     loadRequired(policySet.format, "format", sourceNode);
+
     loadOptional(policySet.chunkSize, "chunk_size", sourceNode);
     loadOptional(policySet.exportThreadAffinity, "export_affinity", sourceNode);
     loadOptional(policySet.pollThreadAffinity, "poll_affinity", sourceNode);
@@ -134,7 +167,7 @@ void CapturePolicies::dump() const noexcept
         std::cout << "    Save As:     " << (pol.saveAsName ? pol.saveAsName.value() : "Original") << "\n";
         std::cout << "    Metadata Only:        " << (pol.metadataOnly ? "true" : "false") << "\n";
         std::cout << "    Samples:              " << (pol.nSamples ? std::to_string(pol.nSamples.value()) : "Unbounded") << "\n";
-        std::cout << "    Export Format:        " << formatNames_.at(pol.format) << "\n";
+        std::cout << "    Export Format:        " << CapturePolicies::fmtToRepr.at(pol.format) << "\n";
         std::cout << "    Chunk Size:           " << (pol.chunkSize ? std::to_string(pol.chunkSize.value()) : "Unbounded single-file") << "\n";
         std::cout << "    Export Affinity:       " << (pol.exportThreadAffinity ? std::to_string(pol.exportThreadAffinity.value()) : "Any core") << "\n";
         std::cout << "    Poll Affinity:       " << (pol.pollThreadAffinity ? std::to_string(pol.pollThreadAffinity.value()) : "Any core") << "\n";
@@ -142,4 +175,40 @@ void CapturePolicies::dump() const noexcept
     }
 
     std::cout << "\n=== End Capture Policy Dump ===\n\n";
+}
+
+int main()
+{
+    std::string const cfg = R"(
+session_policies:
+  root_storage: /path/to/data/root
+  overwrite_existing: yes
+  group_outputs: on
+  group_name: my_session
+
+source_list:
+  - uri: file:///path/to/my/file.ext
+    save_as: raw-data.npy
+
+  - uri: smem:///tmp/cblue.im.shm
+    save_as: camera7
+    metadata_only: no
+    samples: 1900
+    format: fits
+    chunk_size: 70
+    export_affinity: 7
+    poll_affinity: 7
+    buffer_limit: 900
+)";
+
+    YAML::Node doc = YAML::Load(cfg);
+    try {
+        CapturePolicies pols(doc);
+        pols.dump();
+    } catch (std::exception const& e) {
+        std::cout << "parse failed: " << e.what() << std::endl;
+        return -1;
+    }
+
+    return 0;
 }

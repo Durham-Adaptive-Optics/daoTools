@@ -334,16 +334,8 @@ daoApplyGain = bld.program(
 	)
 
 if bld.env.HAVE_CLI11:
-	daoTelemetry = bld.program(
-		source = 'daoTelemetry.cpp',
-		target = 'daoTelemetry',
-		includes = '../include '+os.getenv('DAOROOT')+'/include/',
-		linkflags = my_link_flags,
-		ldflags = ['-ldao' , '-lpthread', '-ldaoNuma', '-ldaoProto', '-lzmq', '-lprotobuf', '-lyaml-cpp', '-lstdc++fs'] + my_ld_flags,
-		use= 'daoTools CLI11 cfitsio',
-		cxxflags = ['-O3', '-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto', '-std=c++17']
-	)
-
+	bld.recurse("daoTelCapture")
+    
 	daoDownsample = bld.program(
 		source = 'daoDownsample.cpp',
 		target = 'daoDownsample',
