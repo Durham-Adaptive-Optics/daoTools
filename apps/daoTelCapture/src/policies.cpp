@@ -82,7 +82,7 @@ namespace Dao::Telemetry
         loadOptional(policySet.saveAsName, "save_as", sourceNode);
     }
 
-    void CapturePolicies::loadSmemPolicy(YAML::Node const& sourceNode, SharedMemoryPolicy& policySet)
+    void CapturePolicies::loadSmemPolicy(YAML::Node const& sourceNode, SmemPolicy& policySet)
     {
         loadOptional(policySet.saveAsName, "save_as", sourceNode);
         loadOptional(policySet.metadataOnly, "metadata_only", sourceNode);
@@ -129,7 +129,7 @@ namespace Dao::Telemetry
                     } break;
 
                     case UriClass::SMEM: {
-                        SharedMemoryPolicy& policySet = smemPolicies.emplace_back();
+                        SmemPolicy& policySet = smemPolicies.emplace_back();
                         policySet.absPath = locationFromURI(uri);
                         loadSmemPolicy(sourceNode, policySet);
                     } break;
@@ -150,7 +150,6 @@ namespace Dao::Telemetry
         std::cout << "  Root Storage:       " << generalPolicies.rootStorage << "\n";
         std::cout << "  Grouping Enabled:   " << (generalPolicies.groupingEnabled ? "true" : "false") << "\n";
         std::cout << "  Group Name:         " << (generalPolicies.groupName ? generalPolicies.groupName.value() : "Timestamp") << "\n";
-        std::cout << "  Overwrite Existing: " << (generalPolicies.overwriteExisting ? "true" : "false") << "\n";
 
         // File policies
         std::cout << "\nFile Policies:\n";
@@ -161,7 +160,7 @@ namespace Dao::Telemetry
 
         // Shared memory policies
         std::cout << "\nShared Memory Policies:\n";
-        for (SharedMemoryPolicy const& pol : smemPolicies) {
+        for (SmemPolicy const& pol : smemPolicies) {
             std::cout << "  - Absolute Path:        " << pol.absPath << "\n";
             std::cout << "    Save As:     " << (pol.saveAsName ? pol.saveAsName.value() : "Original") << "\n";
             std::cout << "    Metadata Only:        " << (pol.metadataOnly ? "true" : "false") << "\n";

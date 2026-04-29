@@ -66,7 +66,7 @@ namespace Dao
 
         /* Shared-memory source policies.
         */
-        struct SharedMemoryPolicy
+        struct SmemPolicy
         {
             Required<std::string> absPath;
             Optional<std::string> saveAsName;
@@ -94,7 +94,7 @@ namespace Dao
 
             GeneralPolicies generalPolicies;
             std::vector<FilePolicy> filePolicies;
-            std::vector<SharedMemoryPolicy> smemPolicies;
+            std::vector<SmemPolicy> smemPolicies;
 
             private:
             /* Parse a URI and return its resource class. If the URI is
@@ -119,7 +119,7 @@ namespace Dao
 
             /* Loads shared-memory policy parameters from a yaml source node.
             */
-            void loadSmemPolicy(YAML::Node const& sourceNode, SharedMemoryPolicy& policySet);
+            void loadSmemPolicy(YAML::Node const& sourceNode, SmemPolicy& policySet);
 
             /* Template specializations for unwrapping std::optional types.
             */

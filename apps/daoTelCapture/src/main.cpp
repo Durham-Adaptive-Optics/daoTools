@@ -6,77 +6,77 @@
  * @ Description: Telemetry Capture Tool Entry Point.
  */
 
-#include <string>
+#define APP_NAME            "daoTelCapture"
+#define APP_VERSION_TAG     "v2.0.0"
+#define DEFAULT_TCP_PORT    62000
+
 #include <CLI/CLI.hpp>
 #include <daoLog.hpp>
+#include <server.hpp>
+#include <fstream>
+#include <string>
 
-/**
- * Interface for defining a common recorder object API.
-*/
-// class Recorder
-// {
-//     public:
-//     virtual ~Recorder() = default;
-//     virtual void Start(const std::string& sessionDirectory) {};
-//     virtual void Stop() {};
-//     virtual bool IsRecording() = 0;
-// };
+bool terminateRuntime {};
 
-// /**
-//  * Struct housing target configuration information
-//  * and a reference to its recording object.
-//  */
-// struct Target
-// {
-//     // Common target parameters
-//     Recorder* recorder;
-//     std::string source;
-
-//     enum class Type : std::uint8_t
-//     {
-//         SHARED_MEMORY,
-//         FILE
-//     } type;
-
-//     // Shared memory specific parameters
-//     size_t fileLimit;
-//     size_t bufferLimit;
-//     size_t recordingLimit;
-//     int16_t pollingCore;
-
-//     // File specific parameters
-// };
-
-struct CliArguments
+void endme([[maybe_unused]] int signal)
 {
-    std::string ip = "127.0.0.1";
-    std::string logfile = "";
-    std::string configFile;
-    size_t port;
-};
+    terminateRuntime = true;
+}
 
 int main(int argc, char* argv[])
 {
-    // Parse CLI.
-    CliArguments args;
-    CLI::App app("DAO Telemetry");
-    app.add_option("port", args.port, "Telemetry tool interface port")->required();
-    app.add_option("--ip", args.ip, "Telemetry agent ip address");
-    app.add_option("-c,--config", args.configFile, "Telemetry session configuration file");
-    app.add_option("-l,--logfile", args.logfile, "Log file");
+    //
+    std::uint16_t tcpPort { DEFAULT_TCP_PORT };
+    std::string policyFilePath {};
+    std::string logsFilePath {};
+
+    CLI::App app("Dao Telemetry Capture Tool", APP_NAME);
+
+    app.add_flag_callback("--version, -v", []() {
+        std::cout << "daoTelCapture " << APP_VERSION_TAG << std::endl;
+        throw CLI::Success();
+    });
+
+    app.add_option(
+        "--policy-file, -f",
+        policyFilePath,
+        "Specify an intial session policy file (default: None)"
+    );
+
+    app.add_option(
+        "--logs-file, -l",
+        logsFilePath,
+        "Specify path to file where logs shall be written (default: stdout)"
+    );
+
+    app.add_option(
+        "--port, -p",
+        tcpPort,
+        std::string("Specify service host port (default: ") + std::to_string(DEFAULT_TCP_PORT) + ")"
+    );
+
     CLI11_PARSE(app, argc, argv);
 
-    // Create application logger.
-    Dao::Log::Logger logger(
-        "daoTelemetry",
-        args.logfile.length() ? Dao::Log::Logger::DESTINATION::FILE : Dao::Log::Logger::DESTINATION::SCREEN,
-        args.logfile
-    );
+    // create logger ..
+    auto const logSink = logsFilePath.length() ? Dao::Log::Logger::DESTINATION::FILE : Dao::Log::Logger::DESTINATION::SCREEN;
+    Dao::Log::Logger logger(APP_NAME, logSink, logsFilePath);
     logger.SetLevel(Dao::Log::LEVEL::DEBUG);
 
-    // Create application network interface and start state management loop.
-    // AppComponent appInterface(logger, args.ip, args.port, args.configFile);
-    // appInterface.Manage();
+    // run service ..
+    Dao::Telemetry::Server service(logger, DEFAULT_TCP_PORT);
+
+    try {
+        if (policyFilePath.length()) {
+            std::ifstream policyFile(policyFilePath);
+            std::string const fileContents { std::istreambuf_iterator<char>(policyFile), std::istreambuf_iterator<char>() };
+            service.storePolicyDocument(fileContents);
+        }
+    } catch (std::exception const& e) {
+        std::string const err { e.what() };
+        std::string const msg = "failed to load initial policy file from disk: " + err;
+        logger.Error(msg.c_str());
+    }
+
+    service.runHousekeeping(terminateRuntime);
 }
-/* ========================================================== */
 
