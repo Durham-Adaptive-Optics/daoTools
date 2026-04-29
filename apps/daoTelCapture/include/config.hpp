@@ -47,6 +47,16 @@ namespace Dao
             SMEM
         };
 
+        /* General session policies.
+        */
+        struct GeneralPolicies
+        {
+            Required<std::string> rootStorage_;
+            Optional<bool> groupingEnabled_ { true };
+            Optional<std::string> groupName_;
+            Optional<bool> overwriteExisting_ { false };
+        };
+
         /* File source policies.
         */
         struct FilePolicy
@@ -84,11 +94,7 @@ namespace Dao
             void dump() const noexcept;
 
             private:
-            YAML::Node const& ymlDoc_;
-            Required<std::string> rootStorage_;
-            Optional<bool> groupingEnabled_ { true };
-            Optional<std::string> groupName_;
-            Optional<bool> overwriteExisting_ { false };
+            GeneralPolicies policies_;
             std::vector<FilePolicy> filePolicies_;
             std::vector<SharedMemoryPolicy> smemPolicies_;
 
@@ -106,7 +112,7 @@ namespace Dao
              * the capture-policy object. It will throw an exception if
              * there was an issue during the parse for any reason.
             */
-            void load();
+            void load(YAML::Node const& ymlDoc);
 
             /* Loads file policy parameters from a yaml source node.
             */
@@ -116,7 +122,7 @@ namespace Dao
             */
             void loadSmemPolicy(YAML::Node const& sourceNode, SharedMemoryPolicy& policySet);
 
-            /* Template specializations for unwrapping optional parameter types.
+            /* Template specializations for unwrapping std::optional types.
             */
             template <typename Y> struct UnwrapOptional { using type = Y; };
             template <typename Y> struct UnwrapOptional<std::optional<Y>> { using type = Y; };
@@ -124,10 +130,10 @@ namespace Dao
             /* Method to load a required parameter from the provided yaml node; if the load fails then
              * an exception is thrown.
             */
-            template <typename T> void loadRequired(T& store, std::string const& name, std::optional<YAML::Node> const root = std::nullopt) const
+            template <typename T>
+            void loadRequired(T& store, std::string const& name, std::optional<YAML::Node> const docRoot) const
             {
-                YAML::Node node = root ? root.value() : ymlDoc_;
-                auto const& parameter = node[name];
+                auto const& parameter = docRoot[name];
 
                 if (!parameter) {
                     throw std::runtime_error(name);
@@ -147,11 +153,10 @@ namespace Dao
             /* Method to load an optional parameter from the provided yaml node, if present; if the load fails then
              * an exception is thrown.
             */
-            template <typename T> void loadOptional(T& store, std::string const& name, std::optional<YAML::Node> const root = std::nullopt) const
+            template <typename T>
+            void loadOptional(T& store, std::string const& name, std::optional<YAML::Node> const docRoot) const
             {
-                YAML::Node node = root ? root.value() : ymlDoc_;
-
-                if (auto const& parameter = node[name]; parameter) {
+                if (auto const& parameter = docRoot[name]; parameter) {
                     if (parameter.Type() != YAML::NodeType::Scalar) {
                         throw std::runtime_error(name);
                     }

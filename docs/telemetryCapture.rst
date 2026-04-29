@@ -8,7 +8,7 @@ Telemetry Capture
 Overview
 --------
 
-Dao provides a telemetry capture tool named ``daoTelemetry``, installed as part of the ``daoTools`` repository,
+Dao provides a tool named ``daoTelCapture``, installed as part of the ``daoTools`` repository,
 and enables high-throughput capture of various telemetry sources in parallel, stored to the disk
 in a varietry of available formats.
 
@@ -21,25 +21,25 @@ does not address, please contact thomas.n.davies@durham.ac.uk.
 Usage
 -----
 
-``daoTelemetry`` is installed with other Dao tools and available in your path.
+``daoTelCapture`` is installed with other Dao tools and available in your path.
 
 Check the tool is present and see its version:
 
 .. code-block:: shell
 
-   daoTelemetry --version
+   daoTelCapture --version
 
 View available command-line options:
 
 .. code-block:: shell
 
-   daoTelemetry --help
+   daoTelCapture --help
 
 Start an instance with a port number (defines the network endpoint for API communication):
 
 .. code-block:: shell
 
-   daoTelemetry <ENDPOINT PORT>
+   daoTelCapture <ENDPOINT PORT>
 
 .. tip::
 
@@ -59,14 +59,15 @@ document and must be provided to the capture tool and successfully applied befor
 the session can be carried out.
 
 The following tables define the session configuration field; some are optional
-and others are required. Failure to provide requires fields will result in an
+and others are required. Failure to provide required fields will result in an
 error when the capture tool attempts to apply said session configuration.
 
-Session Policies
-^^^^^^^^^^^^^^^^
+General Session Policies
+^^^^^^^^^^^^^^^^^^^^^^^^
+.. important:: 
 
-The session configuration must contain an object named ``session_policies`` 
-containing any session-wide policies, as shown below.
+  The session configuration must contain an object named ``session_policies`` 
+  containing any session-wide policies, as shown below.
 
 .. list-table:: session policies
    :header-rows: 1
@@ -101,19 +102,21 @@ containing any session-wide policies, as shown below.
      - False
      - Overwrite any conflicted items in root directory when storing session outputs.
 
-Source Configurations
-^^^^^^^^^^^^^^^^^^^^^
+Session Sources
+^^^^^^^^^^^^^^^
 
-The session configuration must contain a list named ``source_list`` 
-of all sources to capture during the session.
+.. important:: 
 
-Files
-~~~~~
+  The session configuration must contain a list named ``source_list`` 
+  of all sources to capture during the session.
 
-A file source is simply copied to the session output directory, once
+File Policies
+~~~~~~~~~~~~~
+
+A file source is copied to the session output directory, once
 the session starts. 
 
-.. list-table:: file source configuration
+.. list-table:: file source policies
    :header-rows: 1
 
    * - Field
@@ -134,14 +137,14 @@ the session starts.
      - Original name
      - Name to save the file as in the session outputs.
 
-Shared Memory Sources
+Shared Memory Policies
 ~~~~~~~~~~~~~~~~~~~~~~
 
 A shared memory source has its samples recorded as they arrive
 in real-time, and are stored into one or many datafiles in the
 session output directory.
 
-.. list-table:: shared-memory source configuration
+.. list-table:: shared-memory source policies
    :header-rows: 1
 
    * - Field
@@ -204,47 +207,32 @@ session output directory.
      - Unbounded buffer limit
      - Sets an upper limit on the sample receive buffer (in units of frames).
 
-Example Configuration Snippet
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.. tip:: Example Session Policy Document
 
-   .. code-block:: yaml
+    Here is an example policy document that defines how the capture
+    session shall be carried out by the capture tool.  
 
-      ---
+    .. code-block:: yaml
 
-      session_policies:
-         root_storage: /path/to/data/root
-         overwrite_existing: yes
-         group_outputs: on
-         group_name: my_session
+        session_policies:
+          root_storage: /path/to/data/root
+          overwrite_existing: yes
+          group_outputs: on
+          group_name: my_session
 
-      source_list:
-        - uri: file:///path/to/my/file.ext
-          save_as: raw-data.npy
+        source_list:
+          - uri: file:///path/to/my/file.ext
+            save_as: raw-data.npy
 
-        - uri: smem:///tmp/cblue.im.shm
-          save_as: camera7
-          metadata_only: no
-          samples: 1900
-          format: numpy
-          chunk_size: 70
-          export_affinity: 7
-          poll_affinity: 7
-          buffer_limit: 900
-
-Configuration UI
-^^^^^^^^^^^^^^^^
-
-The ``daoShmViewer``, installed alongside the capture tool, 
-provides a user-friendly interface for configuring a capture session
-and handling the API communication. See ?? for more information on
-the viewer tool.
-
-.. figure:: _static/recordingUI.png
-   :alt: Image of daoShmViewer Recording Tab UI.
-
-   Screen capture of the ``daoShmViewer`` tool's recording UI tab
-   for user-friendly configuration and commanding of the telemetry 
-   tool.
+          - uri: smem:///tmp/cblue.im.shm
+            save_as: camera7
+            metadata_only: no
+            samples: 1900
+            format: numpy
+            chunk_size: 70
+            export_affinity: 7
+            poll_affinity: 7
+            buffer_limit: 900
 
 Operating Sessions
 ------------------
@@ -263,7 +251,7 @@ There are two ways to provide the capture tool with a session configuration:
 
   .. code-block:: shell
 
-     daoTelemetry --config /path/to/my-session.yml ..
+     daoTelCapture --config /path/to/my-session.yml ..
 
 - **Dynamically**: Provide a YAML document string dynamically via the Dao component API ``Other`` method.
 

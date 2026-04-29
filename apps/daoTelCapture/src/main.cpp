@@ -7,7 +7,7 @@
  */
 
 /* ==========================================================
-                        Includes                         
+                        Includes
    ========================================================== */
 #include <daoThreadSafeQueue.hpp>
 #include <daoComponent.hpp>
@@ -20,7 +20,7 @@
 #include <string>
 
 /* ==========================================================
-                    Recording Interface                         
+                    Recording Interface
    ========================================================== */
 /**
  * Interface for defining a common recorder object API.
@@ -29,13 +29,13 @@ class Recorder
 {
     public:
     virtual ~Recorder() = default;
-    virtual void Start(const std::string &sessionDirectory) {};
+    virtual void Start(const std::string& sessionDirectory) {};
     virtual void Stop() {};
     virtual bool IsRecording() = 0;
 };
 
 /* ==========================================================
-                            Target                          
+                            Target
    ========================================================== */
 /**
  * Struct housing target configuration information
@@ -44,7 +44,7 @@ class Recorder
 struct Target
 {
     // Common target parameters
-    Recorder *recorder;
+    Recorder* recorder;
     std::string source;
 
     enum class Type : std::uint8_t
@@ -62,10 +62,10 @@ struct Target
     // File specific parameters
 };
 
-std::string daoShmLocalName(const std::string &shmPath) // todo port to C and put in daoTools.
+std::string daoShmLocalName(const std::string& shmPath) // todo port to C and put in daoTools.
 {
     std::string localName = shmPath;
-    
+
     auto x = shmPath.find_last_of('/');
     if (x != std::string::npos) localName = shmPath.substr(x + 1);
 
@@ -76,21 +76,21 @@ std::string daoShmLocalName(const std::string &shmPath) // todo port to C and pu
 }
 
 /* ==========================================================
-                    File Recorder                         
+                    File Recorder
    ========================================================== */
-class FileRecorder : public Recorder 
+class FileRecorder : public Recorder
 {
     public:
     /**
      * Constructs FileRecorder.
      * @param logger Application logger.
-     * @param filePath Target file path. 
+     * @param filePath Target file path.
      * @param errorFlag Application error flag.
      */
     FileRecorder(
-        Dao::Log::Logger &logger,
-        std::string filePath, 
-        volatile bool &errorFlag
+        Dao::Log::Logger& logger,
+        std::string filePath,
+        volatile bool& errorFlag
     )
         :
         mErrorFlag(errorFlag),
@@ -111,10 +111,10 @@ class FileRecorder : public Recorder
      * Copies target file to the specified session directory.
      * @param sessionDirectory Directory path for where the file should be copied to.
      */
-    void Start(const std::string &sessionDirectory) override
+    void Start(const std::string& sessionDirectory) override
     {
         mCopying = true;
-        
+
         // construct destination path. 
         std::string filename = mFilePath;
         auto x = mFilePath.find_last_of("/");
@@ -127,8 +127,7 @@ class FileRecorder : public Recorder
         try {
             std::filesystem::copy_file(mFilePath, destPath);
             mCopying = false;
-        }
-        catch(const std::exception &e) {
+        } catch (const std::exception& e) {
             mLogger.Error("Failed to copy file '%s' because: %s", mFilePath.c_str(), e.what());
             mErrorFlag = true;
             return;
@@ -149,14 +148,14 @@ class FileRecorder : public Recorder
     /**
       * Member Variables
     */
-    Dao::Log::Logger &mLogger;
-    volatile bool &mErrorFlag;
+    Dao::Log::Logger& mLogger;
+    volatile bool& mErrorFlag;
     std::string mFilePath;
     bool mCopying;
 };
 
 /* ==========================================================
-                    Shared Memory Recorder                         
+                    Shared Memory Recorder
    ========================================================== */
 /**
  * Macro for cfitsio error handling.
@@ -187,7 +186,7 @@ struct SharedMemoryFrame
     uint64_t cnt0;
     uint64_t cnt1;
     uint64_t cnt2;
-    int8_t *data;
+    int8_t* data;
 };
 
 class SharedMemoryPoller : public Dao::Thread
@@ -198,15 +197,15 @@ class SharedMemoryPoller : public Dao::Thread
      * for shared memory polling, and loads the target shared memory.
      * @param frameQueue Reference to a shared thread-safe queue where frames will be deposited.
      * @param logger Application logger.
-     * @param shmPath Target shared memory path. 
+     * @param shmPath Target shared memory path.
      * @param core Desired core affinity for polling thread.
      * @param errorFlag Application error flag.
      * @param bufferLimit Max capacity (in frames) of the frame queue (if zero then queue can grow unbounded).
      */
     SharedMemoryPoller(
-        Dao::ThreadSafeQueue<SharedMemoryFrame> &frameQueue, 
-        Dao::Log::Logger &logger,
-        std::string shmPath, 
+        Dao::ThreadSafeQueue<SharedMemoryFrame>& frameQueue,
+        Dao::Log::Logger& logger,
+        std::string shmPath,
         int core,
         size_t bufferLimit
     )
@@ -231,7 +230,7 @@ class SharedMemoryPoller : public Dao::Thread
     }
 
     /**
-     * Routine that runs before polling begins to setup 
+     * Routine that runs before polling begins to setup
      * internal state.
      */
     void OnceOnStart() override
@@ -245,15 +244,15 @@ class SharedMemoryPoller : public Dao::Thread
      * information to be used when queuing frames.
      * @param shmName Shared memory path
      */
-    void LoadSharedMemory(const std::string &shmName)
+    void LoadSharedMemory(const std::string& shmName)
     {
         // open shared memory.
         if (daoShmShm2Img(shmName.c_str(), &mImage) != DAO_SUCCESS) {
             throw std::runtime_error("Failed to open shared memory");
         }
-        
+
         // re-interpret metadata pointer as volatile.
-        mMetadata = (volatile IMAGE_METADATA *)mImage.md;
+        mMetadata = (volatile IMAGE_METADATA*)mImage.md;
 
         // extract frame data type.
         mFrameDatatype = mMetadata->atype;
@@ -263,7 +262,7 @@ class SharedMemoryPoller : public Dao::Thread
 
         // extract frame dimensions (revsered order for FITS).
         mFrameSize.resize(mMetadata->naxis);
-        for(size_t i = 0; i < mMetadata->naxis; ++i)
+        for (size_t i = 0; i < mMetadata->naxis; ++i)
             mFrameSize[mMetadata->naxis - 1 - i] = (long)mMetadata->size[i]; // cast uint32_t -> long for cfitsio.
 
         // calculate memory footprint of frame data.
@@ -285,21 +284,21 @@ class SharedMemoryPoller : public Dao::Thread
      * @return True if frame can be recorded, False is not.
      */
     inline
-    bool FrameGood(void *arrayBuffer)
+        bool FrameGood(void* arrayBuffer)
     {
         bool good = true;
 
-        if(!arrayBuffer) {
+        if (!arrayBuffer) {
             m_log.Warning("%s dropped frame because: failed to allocate array buffer", m_thread_name.c_str());
             good = false;
         }
 
-        if(mMetadata->write == 1 || mMetadata->cnt0 > mCnt0) {
+        if (mMetadata->write == 1 || mMetadata->cnt0 > mCnt0) {
             m_log.Warning("%s dropped frame because: shared memory written to during copy", m_thread_name.c_str());
             good = false;
         }
 
-        if(mBufferLimit && mFrameQueue.size() == mBufferLimit) {
+        if (mBufferLimit && mFrameQueue.size() == mBufferLimit) {
             m_log.Warning("%s dropped frame because: frame queue is at capacity (%d frames)", m_thread_name.c_str(), mBufferLimit);
             good = false;
         }
@@ -311,7 +310,7 @@ class SharedMemoryPoller : public Dao::Thread
      * Core polling thread loop. Awaits a frame to be written
      * into the shared memory and then queues its data for recording.
      */
-    void RestartableThread() override 
+    void RestartableThread() override
     {
         const uint64_t cnt0 = mMetadata->cnt0;
         if (mInitialGrab || cnt0 > mCnt0) {
@@ -319,10 +318,10 @@ class SharedMemoryPoller : public Dao::Thread
             DAO_PROFILE_NEW_FRAME(mProfile);
             mInitialGrab = false;
             mCnt0 = cnt0;
-            
+
             // Copy frame data out of shared memory.
             DAO_PROFILE_START(mProfile, "Metadata-Copy")
-            SharedMemoryFrame frame;
+                SharedMemoryFrame frame;
             frame.size = mFrameSize;
             frame.atype = mFrameDatatype;
             frame.cnt0 = mMetadata->cnt0;
@@ -332,21 +331,21 @@ class SharedMemoryPoller : public Dao::Thread
             frame.atime = mMetadata->atime.tsfixed.secondlong;
             DAO_PROFILE_STOP(mProfile, "Metadata-Copy")
 
-            DAO_PROFILE_START(mProfile, "Array-Copy")
-            frame.data = (int8_t*) malloc(mFrameFootprint);
-            if(frame.data) {
+                DAO_PROFILE_START(mProfile, "Array-Copy")
+                frame.data = (int8_t*)malloc(mFrameFootprint);
+            if (frame.data) {
                 memcpy(frame.data, mImage.array.V, mFrameFootprint);
             }
             DAO_PROFILE_STOP(mProfile, "Array-Copy")
 
             // Validate frame and push onto queue.
-            DAO_PROFILE_START(mProfile, "Enqueue")
-            if(FrameGood(frame.data)) {
-                mFrameQueue.push(frame);
-            } 
-            else if(frame.data) {
-                free(frame.data);
-            }
+                DAO_PROFILE_START(mProfile, "Enqueue")
+                if (FrameGood(frame.data)) {
+                    mFrameQueue.push(frame);
+                }
+                else if (frame.data) {
+                    free(frame.data);
+                }
             DAO_PROFILE_STOP(mProfile, "Enqueue")
         }
     }
@@ -354,9 +353,9 @@ class SharedMemoryPoller : public Dao::Thread
     /**
       * Member Variables
     */
-   DAO_PROFILE(mProfile, std::chrono::nanoseconds, "Metadata-Copy", "Array-Copy", "Enqueue");
-    Dao::ThreadSafeQueue<SharedMemoryFrame> &mFrameQueue;
-    volatile IMAGE_METADATA *mMetadata;
+    DAO_PROFILE(mProfile, std::chrono::nanoseconds, "Metadata-Copy", "Array-Copy", "Enqueue");
+    Dao::ThreadSafeQueue<SharedMemoryFrame>& mFrameQueue;
+    volatile IMAGE_METADATA* mMetadata;
     std::vector<long> mFrameSize;
     size_t mFrameElementCount;
     size_t mFrameFootprint;
@@ -366,7 +365,7 @@ class SharedMemoryPoller : public Dao::Thread
     uint64_t mCnt0;
     IMAGE mImage {};
 
-    const std::unordered_map<uint8_t, uint8_t> mDaoTypeSizes{ // lookup table from dao types to byte sizes.
+    const std::unordered_map<uint8_t, uint8_t> mDaoTypeSizes { // lookup table from dao types to byte sizes.
         {_DATATYPE_UINT8, SIZEOF_DATATYPE_UINT8},
         {_DATATYPE_INT8, SIZEOF_DATATYPE_INT8},
         {_DATATYPE_UINT16, SIZEOF_DATATYPE_UINT16},
@@ -385,7 +384,7 @@ class SharedMemoryExporter : public Dao::Thread
     public:
     /**
      * Constructs SharedMemoryExporter, creating a dedicated dao thread for exporting
-     * queued shared memory frames to FITS data files on disk. 
+     * queued shared memory frames to FITS data files on disk.
      * @param frameQueue Reference to a shared thread-safe queue where frames are deposited for recording.
      * @param logger Application logger.
      * @param shmPath Target shared memory path.
@@ -394,12 +393,12 @@ class SharedMemoryExporter : public Dao::Thread
      * @param errorFlag Application error flag.
      */
     SharedMemoryExporter(
-        Dao::ThreadSafeQueue<SharedMemoryFrame> &frameQueue, 
-        Dao::Log::Logger &logger,
+        Dao::ThreadSafeQueue<SharedMemoryFrame>& frameQueue,
+        Dao::Log::Logger& logger,
         std::string shmPath,
         size_t datafileCapacity,
         size_t exportLimit,
-        volatile bool &errorFlag
+        volatile bool& errorFlag
     )
         :
         Dao::Thread("Export_" + daoShmLocalName(shmPath), logger),
@@ -426,7 +425,7 @@ class SharedMemoryExporter : public Dao::Thread
      * Sets the directory to be used for storing target telemetry files.
      * @param directory Directory path.
      */
-    void SetStorageDirectory(const std::string &directory)
+    void SetStorageDirectory(const std::string& directory)
     {
         mStorageDirectory = directory;
     }
@@ -434,7 +433,7 @@ class SharedMemoryExporter : public Dao::Thread
     /**
      * Provides a method for querying if the export thread is actively
      * exporting frames from the queue, or if instead it is waiting to
-     * be started. 
+     * be started.
      */
     bool IsRecording() const { return mRecording; }
 
@@ -486,12 +485,12 @@ class SharedMemoryExporter : public Dao::Thread
 
     /**
      * Routine that runs after the export thread's core loop
-     * is stopped. 
+     * is stopped.
      */
     void OnceOnStop() override
     {
         mRecording = false;
-        if(mDatafile && !CloseDatafile())
+        if (mDatafile && !CloseDatafile())
             TriggerError();
     }
 
@@ -501,29 +500,29 @@ class SharedMemoryExporter : public Dao::Thread
     void RestartableThread() override
     {
         // Automatically stop once we have exported the desired number of frames (if applicable).
-        if(mExportLimit && mExportedFrames == mExportLimit) {
+        if (mExportLimit && mExportedFrames == mExportLimit) {
             m_log.Debug("%s reached export limit", m_thread_name.c_str());
             Stop();
             return;
         }
 
         // Close the current datafile if it has reach capacity (if applicable).
-        if(mDatafile && mDatafileCapacity && mDatafileSize == mDatafileCapacity) {
+        if (mDatafile && mDatafileCapacity && mDatafileSize == mDatafileCapacity) {
             m_log.Debug("%s datafile reached capacity (%d/%d)", m_thread_name.c_str(), mDatafileSize, mDatafileCapacity);
-            if(!CloseDatafile()) {
+            if (!CloseDatafile()) {
                 TriggerError();
                 return;
             }
         }
 
         // Create datafile if we haven't got one.
-        if(!mDatafile) {
+        if (!mDatafile) {
             int status = 0;
             std::string fileName = mShmLocalName + "_" + std::to_string(mDatafileCount + 1);
             std::string filePath = mStorageDirectory + "/" + fileName + ".fits";
             m_log.Debug("Creating datafile %s [%s]", filePath.c_str(), m_thread_name.c_str());
             fits_create_file(&mDatafile, filePath.c_str(), &status);
-            
+
             if (status) {
                 char err_msg[FLEN_ERRMSG];
                 fits_get_errstatus(status, err_msg);
@@ -537,16 +536,16 @@ class SharedMemoryExporter : public Dao::Thread
         }
 
         // Export frame from queue.
-        if(mFrameQueue.size()) {
+        if (mFrameQueue.size()) {
             int fitsError = 0;
             SharedMemoryFrame frame = mFrameQueue.pop();
-            FITS_CHECK( fits_create_img(mDatafile, mDaoToFitsDest.at(frame.atype), frame.size.size(), frame.size.data(), &fitsError) );
-            FITS_CHECK( fits_write_key(mDatafile, TBYTE, "atype", &frame.atype, nullptr, &fitsError) );
-            FITS_CHECK( fits_write_key(mDatafile, TLONGLONG, "atime", &frame.atime, nullptr, &fitsError) );
-            FITS_CHECK( fits_write_key(mDatafile, TULONGLONG, "cnt0", &frame.cnt0, nullptr, &fitsError) );
-            FITS_CHECK( fits_write_key(mDatafile, TULONGLONG, "cnt1", &frame.cnt1, nullptr, &fitsError) );
-            FITS_CHECK( fits_write_key(mDatafile, TULONGLONG, "cnt2", &frame.cnt2, nullptr, &fitsError) );
-            FITS_CHECK( fits_write_img(mDatafile, mDaoToFitsSrc.at(frame.atype), 1, frame.nElements, frame.data, &fitsError) );
+            FITS_CHECK(fits_create_img(mDatafile, mDaoToFitsDest.at(frame.atype), frame.size.size(), frame.size.data(), &fitsError));
+            FITS_CHECK(fits_write_key(mDatafile, TBYTE, "atype", &frame.atype, nullptr, &fitsError));
+            FITS_CHECK(fits_write_key(mDatafile, TLONGLONG, "atime", &frame.atime, nullptr, &fitsError));
+            FITS_CHECK(fits_write_key(mDatafile, TULONGLONG, "cnt0", &frame.cnt0, nullptr, &fitsError));
+            FITS_CHECK(fits_write_key(mDatafile, TULONGLONG, "cnt1", &frame.cnt1, nullptr, &fitsError));
+            FITS_CHECK(fits_write_key(mDatafile, TULONGLONG, "cnt2", &frame.cnt2, nullptr, &fitsError));
+            FITS_CHECK(fits_write_img(mDatafile, mDaoToFitsSrc.at(frame.atype), 1, frame.nElements, frame.data, &fitsError));
             free(frame.data);
             mExportedFrames++;
             mDatafileSize++;
@@ -557,18 +556,18 @@ class SharedMemoryExporter : public Dao::Thread
       * Member Variables
     */
     std::string mShmLocalName;
-    Dao::ThreadSafeQueue<SharedMemoryFrame> &mFrameQueue;
+    Dao::ThreadSafeQueue<SharedMemoryFrame>& mFrameQueue;
     std::string mStorageDirectory;
-    volatile bool &mErrorFlag;
+    volatile bool& mErrorFlag;
     size_t mDatafileCapacity;
     size_t mExportedFrames;
     size_t mDatafileCount;
     size_t mDatafileSize;
     size_t mExportLimit;
-    fitsfile *mDatafile;
+    fitsfile* mDatafile;
     bool mRecording;
 
-    const std::unordered_map<uint8_t, int> mDaoToFitsDest{
+    const std::unordered_map<uint8_t, int> mDaoToFitsDest {
         {_DATATYPE_UINT8, BYTE_IMG},
         {_DATATYPE_INT8, SBYTE_IMG},
         {_DATATYPE_UINT16, USHORT_IMG},
@@ -581,7 +580,7 @@ class SharedMemoryExporter : public Dao::Thread
         {_DATATYPE_DOUBLE, DOUBLE_IMG}
     };
 
-    const std::unordered_map<uint8_t, int> mDaoToFitsSrc{
+    const std::unordered_map<uint8_t, int> mDaoToFitsSrc {
         {_DATATYPE_UINT8, TBYTE},
         {_DATATYPE_INT8, TSBYTE},
         {_DATATYPE_UINT16, TUSHORT},
@@ -603,9 +602,9 @@ class SharedMemoryRecorder : public Recorder
      * and poller objects and spawing their threads.
      * @param target Shared memory target information that is to be recorded by this class.
      * @param logger Application logger.
-     * @param errorFlag Application error flag. 
+     * @param errorFlag Application error flag.
      */
-    SharedMemoryRecorder(const Target &target, Dao::Log::Logger &logger, volatile bool &errorFlag)
+    SharedMemoryRecorder(const Target& target, Dao::Log::Logger& logger, volatile bool& errorFlag)
         :
         mExporter(mFrameQueue, logger, target.source, target.fileLimit, target.recordingLimit, errorFlag),
         mPoller(mFrameQueue, logger, target.source, target.pollingCore, target.bufferLimit)
@@ -613,7 +612,7 @@ class SharedMemoryRecorder : public Recorder
         mExporter.Spawn();
         mPoller.Spawn();
     }
-    
+
     /**
      * Destructs SharedMemoryRecorder class, ensures exporter and poller
      * threads terminate correctly.
@@ -628,7 +627,7 @@ class SharedMemoryRecorder : public Recorder
      * Starts data acquisition for the provided shared memory target.
      * @param sessionDirectory Directory path for where data files should be stored.
      */
-    void Start(const std::string &sessionDirectory) override
+    void Start(const std::string& sessionDirectory) override
     {
         mExporter.SetStorageDirectory(sessionDirectory);
         mExporter.Start();
@@ -663,20 +662,20 @@ class SharedMemoryRecorder : public Recorder
 };
 
 /* ==========================================================
-                    AppComponent Class                         
+                    AppComponent Class
    ========================================================== */
 class AppComponent : public Dao::Component
 {
     public:
     /**
      * Constructs AppComponent class, in-turn constructing the network interface thread
-     * and loading a default configuration from file if one is provided. 
+     * and loading a default configuration from file if one is provided.
      * @param logger Dao logger class to be used for logging.
      * @param ip IP address of the application network interface.
      * @param port Port of the application network interface.
      * @param configFile Path to a default configuration file (optional).
      */
-    AppComponent(Dao::Log::Logger &logger, const std::string &ip, size_t port, const std::string &configFile = "")
+    AppComponent(Dao::Log::Logger& logger, const std::string& ip, size_t port, const std::string& configFile = "")
         :
         Component("daoTelemetry", logger, ip, port),
         mConfigString(""),
@@ -697,7 +696,7 @@ class AppComponent : public Dao::Component
     /**
      * Periodically polls the current application state and
      * handles invoking the error transition if a recorder
-     * has flagged an issue while running. Also handles 
+     * has flagged an issue while running. Also handles
      * transitioning to Idle if all recorders have completed.
      */
     void Manage()
@@ -714,12 +713,12 @@ class AppComponent : public Dao::Component
 
                 // count how many targets have finished recording (if any).
                 size_t nFinished = 0;
-                for(const Target &target : mTargets) {
-                    if(!target.recorder->IsRecording()) nFinished++;
+                for (const Target& target : mTargets) {
+                    if (!target.recorder->IsRecording()) nFinished++;
                 }
 
                 // if all targets have finished recording then change state to reflect this.
-                if(nFinished == mTargets.size()) {
+                if (nFinished == mTargets.size()) {
                     m_log.Info("All targets finished recording");
                     while (GetStateText() == "Running") Idle();
                 }
@@ -734,7 +733,7 @@ class AppComponent : public Dao::Component
      * when configuring a recording session.
      * @param configStr Session configuration YAML string.
      */
-    void SetConfig(const std::string &configStr)
+    void SetConfig(const std::string& configStr)
     {
         mConfigString = configStr;
         m_log.Debug("Configuration set");
@@ -742,10 +741,10 @@ class AppComponent : public Dao::Component
 
     /**
      * Loads YAML configuration from provided file
-     * and sets the active configuration string. 
+     * and sets the active configuration string.
      * @param filePath Path to YAML configuration file.
      */
-    void ConfigFromFile(const std::string &filePath)
+    void ConfigFromFile(const std::string& filePath)
     {
         std::ifstream file(filePath);
         if (!file) {
@@ -769,7 +768,7 @@ class AppComponent : public Dao::Component
         if (!mConfigString.length()) throw std::invalid_argument("No session configuration present");
 
         // parse yaml string
-        const YAML::Node &config = YAML::Load(mConfigString);
+        const YAML::Node& config = YAML::Load(mConfigString);
         m_log.Debug("YAML string parsed");
 
         // get data root directory
@@ -780,34 +779,34 @@ class AppComponent : public Dao::Component
         // parse each target in the config and add to the
         // list of session targets.
         if (!config["targets"]) throw std::invalid_argument("No targets list");
-        for (const YAML::Node &targetConfig : config["targets"]) {
+        for (const YAML::Node& targetConfig : config["targets"]) {
             Target target;
 
             // ensure target has a source specified, and only one specified.
-            if(!targetConfig["shared-memory"] && !targetConfig["file"]) throw std::invalid_argument("Target has no source");
-            if(targetConfig["shared-memory"] && targetConfig["file"]) throw std::invalid_argument("Target has ambiguous source");
+            if (!targetConfig["shared-memory"] && !targetConfig["file"]) throw std::invalid_argument("Target has no source");
+            if (targetConfig["shared-memory"] && targetConfig["file"]) throw std::invalid_argument("Target has ambiguous source");
 
             // infer target source type
-            if(targetConfig["shared-memory"]) {
+            if (targetConfig["shared-memory"]) {
                 target.type = Target::Type::SHARED_MEMORY;
             }
-            else if(targetConfig["file"]) {
+            else if (targetConfig["file"]) {
                 target.type = Target::Type::FILE;
             }
 
             // get relevant target parameters
-            switch(target.type) {
+            switch (target.type) {
                 case Target::Type::SHARED_MEMORY:
                     target.source = targetConfig["shared-memory"].as<std::string>();
                     target.fileLimit = targetConfig["file-limit"] ? targetConfig["file-limit"].as<size_t>() : 0;
-                    target.bufferLimit = targetConfig["buffer-limit"] ? targetConfig["buffer-limit"].as<size_t>() : 0; 
+                    target.bufferLimit = targetConfig["buffer-limit"] ? targetConfig["buffer-limit"].as<size_t>() : 0;
                     target.pollingCore = targetConfig["polling-core"] ? targetConfig["polling-core"].as<int16_t>() : -1;
                     target.recordingLimit = targetConfig["recording-limit"] ? targetConfig["recording-limit"].as<size_t>() : 0;
 
-                    m_log.Debug("Configured shared memory target '%s' (file-limit=%d,recording-limit=%d,buffer-limit=%d,polling-core=%d)", 
+                    m_log.Debug("Configured shared memory target '%s' (file-limit=%d,recording-limit=%d,buffer-limit=%d,polling-core=%d)",
                         target.source.c_str(), target.fileLimit, target.recordingLimit, target.bufferLimit, target.pollingCore
                     );
-                    
+
                     break;
 
                 case Target::Type::FILE:
@@ -837,26 +836,26 @@ class AppComponent : public Dao::Component
     }
 
     /**
-     * Creates the recording resources required by each 
+     * Creates the recording resources required by each
      * target in the list of recording targets.
      */
     void CreateRecordingResources()
     {
         m_log.Debug("Allocating session resources..");
-        for (Target &target : mTargets) {
-            switch(target.type) {
+        for (Target& target : mTargets) {
+            switch (target.type) {
                 case Target::Type::SHARED_MEMORY:
                     target.recorder = new SharedMemoryRecorder(target, m_log, mErrorFlag);
                     break;
 
-            case Target::Type::FILE:
-                target.recorder = new FileRecorder(m_log, target.source, mErrorFlag);
-                break;
+                case Target::Type::FILE:
+                    target.recorder = new FileRecorder(m_log, target.source, mErrorFlag);
+                    break;
 
-            default:
-                m_log.Critical("Target '%s' has unknown source type", target.source.c_str());
-                assert(false);
-                break;
+                default:
+                    m_log.Critical("Target '%s' has unknown source type", target.source.c_str());
+                    assert(false);
+                    break;
             }
         }
 
@@ -864,13 +863,13 @@ class AppComponent : public Dao::Component
     }
 
     /**
-     * Destroys the recording resources held by each 
+     * Destroys the recording resources held by each
      * target in the list of recording targets.
      */
     void DestoryRecordingResources()
     {
         m_log.Debug("Freeing session resources..");
-        for (Target &target : mTargets) 
+        for (Target& target : mTargets)
             delete target.recorder;
         m_log.Info("Session resources freed");
     }
@@ -892,10 +891,10 @@ class AppComponent : public Dao::Component
         // to house the session data files that are produced by the recorders.
         char timestamp[16];
         time_t t = time(nullptr);
-        tm *td = localtime(&t);
+        tm* td = localtime(&t);
         strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", td);
         const std::string sessionDir = mDataRoot + "/" + timestamp;
-        
+
         m_log.Debug("Creating session directory: %s", sessionDir.c_str());
         if (mkdir(sessionDir.c_str(), 0755)) {
             m_log.Error("Failed to create session directory because: %s\n", strerror(errno));
@@ -903,11 +902,11 @@ class AppComponent : public Dao::Component
         }
         m_log.Info("Created session directory: %s", sessionDir.c_str());
 
-        
+
 
         // Start recorder for each target.
         m_log.Debug("Starting recorders..");
-        for (Target &t : mTargets) 
+        for (Target& t : mTargets)
             t.recorder->Start(sessionDir);
         m_log.Info("Started recorders");
 
@@ -926,7 +925,7 @@ class AppComponent : public Dao::Component
         m_log.Debug("Ending session..");
 
         m_log.Debug("Stopping recorders..");
-        for (Target &t : mTargets) 
+        for (Target& t : mTargets)
             t.recorder->Stop();
         m_log.Info("Stopped recorders");
 
@@ -938,15 +937,15 @@ class AppComponent : public Dao::Component
      * Handles resotring application from the Error to the Idle
      * state. This involves resetting the error flag, destroying
      * the recording resources, and re-creating them - at this point
-     * recording sessions can now resume. 
+     * recording sessions can now resume.
      */
     void RecoveryRoutine()
     {
         //
         m_log.Debug("Recovering..");
-        
+
         mErrorFlag = false; // put 1st so any recovery errors are raised correctly. 
-        
+
         DestoryRecordingResources();
         ClearConfiguration();
 
@@ -959,7 +958,7 @@ class AppComponent : public Dao::Component
 
     /**
      * Component base class overloads. These dispatch to the appropriate
-     * application function for the various state machine transitions. 
+     * application function for the various state machine transitions.
      */
     void PROCESS_OTHER(std::string payload) override { SetConfig(payload); }
     void transition_Off_Standby() override { Configure(); }
@@ -982,20 +981,22 @@ class AppComponent : public Dao::Component
 };
 
 /* ==========================================================
-                        App Entry Point                         
+                        App Entry Point
    ========================================================== */
 /**
  * Stores values of application command-line arguments.
  */
-struct CliArguments {
+struct CliArguments
+{
     std::string ip = "127.0.0.1";
     std::string logfile = "";
     std::string configFile;
     size_t port;
 };
 
-int main(int argc, char *argv[]) {
-    // Parse CLI.
+int main(int argc, char* argv[])
+{
+// Parse CLI.
     CliArguments args;
     CLI::App app("DAO Telemetry");
     app.add_option("port", args.port, "Telemetry tool interface port")->required();

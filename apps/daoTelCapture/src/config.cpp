@@ -39,8 +39,6 @@ namespace YAML
     };
 };
 
-/* Implements CapturePolicies class.
-*/
 namespace Dao::Telemetry
 {
     UriClass CapturePolicies::classFromURI(URI const& uri) const
@@ -73,10 +71,9 @@ namespace Dao::Telemetry
         return uri.substr(splitPos + uriDelimiter.length(), std::string::npos);
     }
 
-    CapturePolicies::CapturePolicies(YAML::Node const& ymlDocument)
-        : ymlDoc_(ymlDocument)
+    CapturePolicies::CapturePolicies(YAML::Node const& ymlDoc)
     {
-        load();
+        load(ymlDoc);
     }
 
     void CapturePolicies::loadFilePolicy(YAML::Node const& sourceNode, FilePolicy& policySet)
@@ -97,21 +94,21 @@ namespace Dao::Telemetry
         loadOptional(policySet.bufferLimit, "buffer_limit", sourceNode);
     }
 
-    void CapturePolicies::load()
+    void CapturePolicies::load(YAML::Node const& ymlDoc)
     {
         // load session policies..
-        if (auto const& sessionNode = ymlDoc_["session_policies"]; sessionNode) {
-            loadRequired(rootStorage_, "root_storage", sessionNode);
-            loadOptional(groupingEnabled_, "group_outputs", sessionNode);
-            loadOptional(groupName_, "group_name", sessionNode);
-            loadOptional(overwriteExisting_, "overwrite_existing", sessionNode);
+        if (auto const& sessionNode = ymlDoc["session_policies"]; sessionNode) {
+            loadRequired(policies_.rootStorage_, "root_storage", sessionNode);
+            loadOptional(policies_.groupingEnabled_, "group_outputs", sessionNode);
+            loadOptional(policies_.groupName_, "group_name", sessionNode);
+            loadOptional(policies_.overwriteExisting_, "overwrite_existing", sessionNode);
         }
         else {
             throw std::runtime_error("session_policies");
         }
 
         // load source policies..
-        if (auto const& sourcesNode = ymlDoc_["source_list"]; sourcesNode) {
+        if (auto const& sourcesNode = ymlDoc["source_list"]; sourcesNode) {
             if (sourcesNode.Type() != YAML::NodeType::Sequence) {
                 throw std::runtime_error("source_list");
             }
@@ -150,10 +147,10 @@ namespace Dao::Telemetry
 
         // Session policies
         std::cout << "Session Policies:\n";
-        std::cout << "  Root Storage:       " << rootStorage_ << "\n";
-        std::cout << "  Grouping Enabled:   " << (groupingEnabled_ ? "true" : "false") << "\n";
-        std::cout << "  Group Name:         " << (groupName_ ? groupName_.value() : "Timestamp") << "\n";
-        std::cout << "  Overwrite Existing: " << (overwriteExisting_ ? "true" : "false") << "\n";
+        std::cout << "  Root Storage:       " << policies_.rootStorage_ << "\n";
+        std::cout << "  Grouping Enabled:   " << (policies_.groupingEnabled_ ? "true" : "false") << "\n";
+        std::cout << "  Group Name:         " << (policies_.groupName_ ? policies_.groupName_.value() : "Timestamp") << "\n";
+        std::cout << "  Overwrite Existing: " << (policies_.overwriteExisting_ ? "true" : "false") << "\n";
 
         // File policies
         std::cout << "\nFile Policies:\n";
