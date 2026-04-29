@@ -51,10 +51,9 @@ namespace Dao
         */
         struct GeneralPolicies
         {
-            Required<std::string> rootStorage_;
-            Optional<bool> groupingEnabled_ { true };
-            Optional<std::string> groupName_;
-            Optional<bool> overwriteExisting_ { false };
+            Required<std::string> rootStorage;
+            Optional<bool> groupingEnabled { true };
+            Optional<std::string> groupName;
         };
 
         /* File source policies.
@@ -86,18 +85,18 @@ namespace Dao
             /* Parse and store capture session policies from yaml document.
              * Throws an exception if the parse fails for any reason.
             */
-            CapturePolicies(YAML::Node const& ymlDocument);
+            CapturePolicies(std::string const& ymlDocumentString);
 
             /* Utility method for printing capture policies to stdout
              * for viewing.
             */
             void dump() const noexcept;
 
-            private:
-            GeneralPolicies policies_;
-            std::vector<FilePolicy> filePolicies_;
-            std::vector<SharedMemoryPolicy> smemPolicies_;
+            GeneralPolicies generalPolicies;
+            std::vector<FilePolicy> filePolicies;
+            std::vector<SharedMemoryPolicy> smemPolicies;
 
+            private:
             /* Parse a URI and return its resource class. If the URI is
              * malformed then an exception is thrown.
             */

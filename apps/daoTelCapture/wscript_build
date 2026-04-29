@@ -1,7 +1,7 @@
 import os
 
 daoTelemetry = bld.program(
-    source = 'src/main.cpp',
+    source = 'src/*.cpp',
     target = 'daoTelCapture',
     includes = ['../../include', f"{os.getenv('DAOROOT')}/include", "include"],
     linkflags = [f'-L{os.getenv('DAOROOT')}/lib', f'-L{os.getenv('DAOROOT')}/lib64'],

@@ -6,7 +6,7 @@
  * @ Description: Telemetry capture tool configuration parsing.
  */
 
-#include <config.hpp>
+#include <policies.hpp>
 #include <iostream>
 
 /* Implements conversions between YAML node and custom types.
@@ -71,8 +71,9 @@ namespace Dao::Telemetry
         return uri.substr(splitPos + uriDelimiter.length(), std::string::npos);
     }
 
-    CapturePolicies::CapturePolicies(YAML::Node const& ymlDoc)
+    CapturePolicies::CapturePolicies(std::string const& ymlDocumentString)
     {
+        auto const ymlDoc = YAML::Load(ymlDocumentString);
         load(ymlDoc);
     }
 
@@ -98,10 +99,9 @@ namespace Dao::Telemetry
     {
         // load session policies..
         if (auto const& sessionNode = ymlDoc["session_policies"]; sessionNode) {
-            loadRequired(policies_.rootStorage_, "root_storage", sessionNode);
-            loadOptional(policies_.groupingEnabled_, "group_outputs", sessionNode);
-            loadOptional(policies_.groupName_, "group_name", sessionNode);
-            loadOptional(policies_.overwriteExisting_, "overwrite_existing", sessionNode);
+            loadRequired(generalPolicies.rootStorage, "root_storage", sessionNode);
+            loadOptional(generalPolicies.groupingEnabled, "group_outputs", sessionNode);
+            loadOptional(generalPolicies.groupName, "group_name", sessionNode);
         }
         else {
             throw std::runtime_error("session_policies");
@@ -123,13 +123,13 @@ namespace Dao::Telemetry
 
                 switch (classFromURI(uri)) {
                     case UriClass::FILE: {
-                        FilePolicy& policySet = filePolicies_.emplace_back();
+                        FilePolicy& policySet = filePolicies.emplace_back();
                         policySet.absPath = locationFromURI(uri);
                         loadFilePolicy(sourceNode, policySet);
                     } break;
 
                     case UriClass::SMEM: {
-                        SharedMemoryPolicy& policySet = smemPolicies_.emplace_back();
+                        SharedMemoryPolicy& policySet = smemPolicies.emplace_back();
                         policySet.absPath = locationFromURI(uri);
                         loadSmemPolicy(sourceNode, policySet);
                     } break;
@@ -147,21 +147,21 @@ namespace Dao::Telemetry
 
         // Session policies
         std::cout << "Session Policies:\n";
-        std::cout << "  Root Storage:       " << policies_.rootStorage_ << "\n";
-        std::cout << "  Grouping Enabled:   " << (policies_.groupingEnabled_ ? "true" : "false") << "\n";
-        std::cout << "  Group Name:         " << (policies_.groupName_ ? policies_.groupName_.value() : "Timestamp") << "\n";
-        std::cout << "  Overwrite Existing: " << (policies_.overwriteExisting_ ? "true" : "false") << "\n";
+        std::cout << "  Root Storage:       " << generalPolicies.rootStorage << "\n";
+        std::cout << "  Grouping Enabled:   " << (generalPolicies.groupingEnabled ? "true" : "false") << "\n";
+        std::cout << "  Group Name:         " << (generalPolicies.groupName ? generalPolicies.groupName.value() : "Timestamp") << "\n";
+        std::cout << "  Overwrite Existing: " << (generalPolicies.overwriteExisting ? "true" : "false") << "\n";
 
         // File policies
         std::cout << "\nFile Policies:\n";
-        for (FilePolicy const& pol : filePolicies_) {
+        for (FilePolicy const& pol : filePolicies) {
             std::cout << "  - Absolute Path: " << pol.absPath << "\n";
             std::cout << "    Save As:     " << (pol.saveAsName ? pol.saveAsName.value() : "Original") << "\n";
         }
 
         // Shared memory policies
         std::cout << "\nShared Memory Policies:\n";
-        for (SharedMemoryPolicy const& pol : smemPolicies_) {
+        for (SharedMemoryPolicy const& pol : smemPolicies) {
             std::cout << "  - Absolute Path:        " << pol.absPath << "\n";
             std::cout << "    Save As:     " << (pol.saveAsName ? pol.saveAsName.value() : "Original") << "\n";
             std::cout << "    Metadata Only:        " << (pol.metadataOnly ? "true" : "false") << "\n";

@@ -96,12 +96,6 @@ General Session Policies
      - Timestamp (eg. 2026-04-22_14-30-45)
      - Name of session's group subdirectory (if grouping is enabled).
   
-   * - ``session_policies/overwrite_existing``
-     - Optional
-     - Boolean
-     - False
-     - Overwrite any conflicted items in root directory when storing session outputs.
-
 Session Sources
 ^^^^^^^^^^^^^^^
 
