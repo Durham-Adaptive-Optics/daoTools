@@ -1,75 +1,37 @@
-class FileRecorder : public Recorder
+/**
+ * @ Author: Thomas N. Davies
+ * @ Company: Centre for Advanced Instrumentation, Durham University
+ * @ Contact: thomas.n.davies@durham.ac.uk
+ * @ Create Time: 2026-04-28 09:43:11
+ * @ Description: Implements a file capture resource.
+ */
+
+#include <captureResource.hpp>
+#include <filesystem>
+
+namespace Dao::Telemetry
 {
-    public:
-    /**
-     * Constructs FileRecorder.
-     * @param logger Application logger.
-     * @param filePath Target file path.
-     * @param errorFlag Application error flag.
-     */
-    FileRecorder(
-        Dao::Log::Logger& logger,
-        std::string filePath,
-        volatile bool& errorFlag
-    )
-        :
-        mErrorFlag(errorFlag),
-        mFilePath(filePath),
-        mLogger(logger),
-        mCopying(false)
+    FileCaptureResource::FileCaptureResource(FilePolicy const& policy, std::function<void()> raiseCaptureError) :
+        CaptureResource { raiseCaptureError },
+        policies(policy)
     {
     }
 
-    /**
-     * Destructs FileRecorder.
-     */
-    ~FileRecorder()
+    void FileCaptureResource::beginCapture(std::filesystem::path const& outputPath)
     {
-    }
-
-    /**
-     * Copies target file to the specified session directory.
-     * @param sessionDirectory Directory path for where the file should be copied to.
-     */
-    void Start(const std::string& sessionDirectory) override
-    {
-        mCopying = true;
-
-        // construct destination path. 
-        std::string filename = mFilePath;
-        auto x = mFilePath.find_last_of("/");
-        if (x != std::string::npos) filename = mFilePath.substr(x + 1);
-        std::string destPath = sessionDirectory + "/" + filename;
-
-        // copy file to destination.
-        mLogger.Debug("Copying file '%s' to '%s'", mFilePath.c_str(), destPath.c_str());
+        std::filesystem::path const fileSourcePath { policies.absPath };
+        std::string const fileOutputName = policies.saveAsName ? policies.saveAsName.value() : fileSourcePath.filename().string();
+        std::filesystem::path const fileOutputPath = outputPath / fileOutputName;
 
         try {
-            std::filesystem::copy_file(mFilePath, destPath);
-            mCopying = false;
-        } catch (const std::exception& e) {
-            mLogger.Error("Failed to copy file '%s' because: %s", mFilePath.c_str(), e.what());
-            mErrorFlag = true;
+            std::filesystem::copy_file(fileSourcePath, fileOutputPath);
+            targetAchieved_ = true;
+        } catch (std::exception const& e) {
+            raiseCaptureError_();
             return;
         }
-
-        mLogger.Info("Copied file '%s'", mFilePath.c_str());
     }
 
-    /**
-     * Provides a method for querying if the file copy is in-progress.
-     */
-    bool IsRecording() override
-    {
-        return mCopying;
-    }
+    void FileCaptureResource::endCapture() {}
+}
 
-    private:
-    /**
-      * Member Variables
-    */
-    Dao::Log::Logger& mLogger;
-    volatile bool& mErrorFlag;
-    std::string mFilePath;
-    bool mCopying;
-};

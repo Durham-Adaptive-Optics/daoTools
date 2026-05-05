@@ -6,6 +6,8 @@
  * @ Description:
  */
 
+#pragma once
+
 #include <captureResource.hpp>
 #include <daoComponent.hpp>
 #include <yaml-cpp/yaml.h>
@@ -37,6 +39,7 @@ namespace Dao::Telemetry
         void endSession();
         void freeSessionResources();
         void clearSessionPolicy();
+        void captureErrorHandler();
 
         // -- Server API Hooks -- 
         void PROCESS_OTHER(std::string ymlPolicyDocument) override;

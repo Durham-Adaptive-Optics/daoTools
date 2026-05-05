@@ -21,7 +21,7 @@ namespace Dao::Telemetry
         using namespace std::chrono_literals;
 
         while (!runtimeTerminated) {
-            std::this_thread::sleep_for(250ms); // rest to not burn core up, this is not high perf.
+            std::this_thread::sleep_for(250ms);
 
             if ("Running" == currentState()) {
                 size_t numFinished {};
@@ -62,13 +62,13 @@ namespace Dao::Telemetry
     {
         for (auto const& policy : policies_->filePolicies) {
             captureResources_.push_back(
-                std::make_unique<FileCaptureResource>(policy)
+                std::make_unique<FileCaptureResource>(policy, [this]() { captureErrorHandler(); })
             );
         }
 
         for (auto const& policy : policies_->smemPolicies) {
             captureResources_.push_back(
-                std::make_unique<SmemCaptureResource>(policy)
+                std::make_unique<SmemCaptureResource>(policy, [this]() { captureErrorHandler(); })
             );
         }
     }
@@ -100,6 +100,16 @@ namespace Dao::Telemetry
     void Server::clearSessionPolicy()
     {
         policies_.reset();
+    }
+
+    /* Callback passed to all capture resources upon their construction
+     * enabling them to inform the server of an issue
+     * during capture; this triggers an error state whereby the
+     * capture session is ended.
+    */
+    void Server::captureErrorHandler()
+    {
+        OnFailure();
     }
 
     // -- Server API Hooks -- 

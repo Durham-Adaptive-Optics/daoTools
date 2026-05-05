@@ -6,6 +6,8 @@
  * @ Description: Telemetry capture tool configuration parsing.
  */
 
+#pragma once
+
 #include <vector>
 #include <optional>
 #include <exception>
@@ -27,13 +29,13 @@ namespace Dao
             NUMPY
         };
 
-        static inline std::unordered_map<ExportFormat, std::string> const fmtToRepr
+        inline static std::unordered_map<ExportFormat, std::string> const fmtToRepr
         {
             { ExportFormat::FITS, "fits" },
             { ExportFormat::NUMPY, "numpy" }
         };
 
-        static inline std::unordered_map<std::string, ExportFormat> const ReprToFmt
+        inline static std::unordered_map<std::string, ExportFormat> const ReprToFmt
         {
             { "fits", ExportFormat::FITS },
             { "numpy", ExportFormat::NUMPY }
@@ -130,7 +132,7 @@ namespace Dao
              * an exception is thrown.
             */
             template <typename T>
-            void loadRequired(T& store, std::string const& name, std::optional<YAML::Node> const docRoot) const
+            void loadRequired(T& store, std::string const& name, YAML::Node const docRoot) const
             {
                 auto const& parameter = docRoot[name];
 
@@ -153,7 +155,7 @@ namespace Dao
              * an exception is thrown.
             */
             template <typename T>
-            void loadOptional(T& store, std::string const& name, std::optional<YAML::Node> const docRoot) const
+            void loadOptional(T& store, std::string const& name, YAML::Node const docRoot) const
             {
                 if (auto const& parameter = docRoot[name]; parameter) {
                     if (parameter.Type() != YAML::NodeType::Scalar) {
