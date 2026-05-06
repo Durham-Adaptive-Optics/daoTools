@@ -40,14 +40,14 @@ namespace Dao::Telemetry
 
     void FitsExporter::newStore()
     {
-        std::string const storeName = policies_.chunkSize ? storeBaseName_ : storeBaseName_ + "_" + std::to_string(nStores_++);
+        std::string const storeName = policies_.fileRollover ? storeBaseName_ : storeBaseName_ + "_" + std::to_string(nStores_++);
         std::filesystem::path const storePath { outputDirectory_ / storeName };
 
         int err {};
         fits_create_file(&store_, storePath.string().c_str(), &err);
     }
 
-    bool FitsExporter::storeFull() const { return policies_.chunkSize && nSamplesStored_ == policies_.chunkSize.value(); }
+    bool FitsExporter::storeFull() const { return policies_.fileRollover && nSamplesStored_ == policies_.fileRollover.value(); }
 
     void FitsExporter::finish()
     {

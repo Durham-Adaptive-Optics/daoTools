@@ -10,4 +10,4 @@ daoTools
    :maxdepth: 2
    :caption: Contents:
 
-   telemetryCapture
+   daoDAQ

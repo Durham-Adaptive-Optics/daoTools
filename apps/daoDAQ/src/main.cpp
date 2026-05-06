@@ -38,13 +38,13 @@ int main(int argc, char* argv[])
     });
 
     app.add_option(
-        "--policy-file, -f",
+        "--daq-configuration, -c",
         policyFilePath,
-        "Specify an intial session policy file (default: None)"
+        "Specify a DAQ session configuration file (default: None)"
     );
 
     app.add_option(
-        "--logs-file, -l",
+        "--log-file, -l",
         logsFilePath,
         "Specify path to file where logs shall be written (default: stdout)"
     );

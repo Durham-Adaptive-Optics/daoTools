@@ -39,7 +39,7 @@ namespace Dao::Telemetry
     void SmemCaptureResource::pollMain()
     {
         // thread setup..
-        configureThread(policies.pollThreadAffinity);
+        configureThread(policies.daqThreadAffinity);
 
         // restartable capture session..
         while (stopToken_.load()) {
@@ -55,7 +55,7 @@ namespace Dao::Telemetry
     void SmemCaptureResource::exportMain()
     {
         // thread setup..
-        configureThread(policies.exportThreadAffinity);
+        configureThread(policies.sinkThreadAffinity);
 
         // restartable capture session..
         while (stopToken_.load()) {

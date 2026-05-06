@@ -1,8 +1,8 @@
 import os
 
-daoTelemetry = bld.program(
+bld.program(
     source = ['src/fileCapture.cpp', 'src/main.cpp', 'src/policies.cpp', 'src/server.cpp', 'src/smemCapture.cpp'],
-    target = 'daoTelCapture',
+    target = 'daoDAQ',
     includes = ['../../include', f"{os.getenv('DAOROOT')}/include", "include"],
     linkflags = [f'-L{os.getenv('DAOROOT')}/lib', f'-L{os.getenv('DAOROOT')}/lib64'],
     ldflags = ['-ldao' , '-lpthread', '-ldaoNuma', '-ldaoProto', '-lzmq', '-lprotobuf', '-lyaml-cpp', '-lstdc++fs'],

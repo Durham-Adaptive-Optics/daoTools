@@ -72,9 +72,9 @@ namespace Dao
             Optional<bool> metadataOnly { false };
             Optional<size_t> nSamples;
             Required<ExportFormat> format;
-            Optional<size_t> chunkSize;
-            Optional<CoreID> exportThreadAffinity;
-            Optional<CoreID> pollThreadAffinity;
+            Optional<size_t> fileRollover;
+            Optional<CoreID> sinkThreadAffinity;
+            Optional<CoreID> daqThreadAffinity;
             Optional<size_t> bufferLimit;
         };
 

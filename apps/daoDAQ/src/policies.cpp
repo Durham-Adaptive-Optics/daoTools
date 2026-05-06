@@ -85,9 +85,9 @@ namespace Dao::Telemetry
         loadOptional(policySet.nSamples, "samples", sourceNode);
         loadRequired(policySet.format, "format", sourceNode);
 
-        loadOptional(policySet.chunkSize, "chunk_size", sourceNode);
-        loadOptional(policySet.exportThreadAffinity, "export_affinity", sourceNode);
-        loadOptional(policySet.pollThreadAffinity, "poll_affinity", sourceNode);
+        loadOptional(policySet.fileRollover, "file_rollover", sourceNode);
+        loadOptional(policySet.daqThreadAffinity, "daq_affinity", sourceNode);
+        loadOptional(policySet.sinkThreadAffinity, "sink_affinity", sourceNode);
         loadOptional(policySet.bufferLimit, "buffer_limit", sourceNode);
     }
 
@@ -158,9 +158,9 @@ namespace Dao::Telemetry
             std::cout << "    Metadata Only:        " << (pol.metadataOnly ? "true" : "false") << "\n";
             std::cout << "    Samples:              " << (pol.nSamples ? std::to_string(pol.nSamples.value()) : "Unbounded") << "\n";
             std::cout << "    Export Format:        " << fmtToRepr.at(pol.format) << "\n";
-            std::cout << "    Chunk Size:           " << (pol.chunkSize ? std::to_string(pol.chunkSize.value()) : "Unbounded single-file") << "\n";
-            std::cout << "    Export Affinity:       " << (pol.exportThreadAffinity ? std::to_string(pol.exportThreadAffinity.value()) : "Any core") << "\n";
-            std::cout << "    Poll Affinity:       " << (pol.pollThreadAffinity ? std::to_string(pol.pollThreadAffinity.value()) : "Any core") << "\n";
+            std::cout << "    Chunk Size:           " << (pol.fileRollover ? std::to_string(pol.fileRollover.value()) : "Unbounded single-file") << "\n";
+            std::cout << "    Export Affinity:       " << (pol.sinkThreadAffinity ? std::to_string(pol.sinkThreadAffinity.value()) : "Any core") << "\n";
+            std::cout << "    Poll Affinity:       " << (pol.daqThreadAffinity ? std::to_string(pol.daqThreadAffinity.value()) : "Any core") << "\n";
             std::cout << "    Buffer Limit:       " << (pol.bufferLimit ? std::to_string(pol.bufferLimit.value()) : "Unbounded") << "\n";
         }
 

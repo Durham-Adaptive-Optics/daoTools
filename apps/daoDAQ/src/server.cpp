@@ -159,7 +159,7 @@ namespace Dao::Telemetry
 
         // create folder structure..
         for (auto const& smem : policies_->smemPolicies) {
-            if (smem.chunkSize) {
+            if (smem.fileRollover) {
                 int buffLen {};
                 if (DAO_SUCCESS != daoToolsLocalName(smem.absPath.c_str(), nullptr, &buffLen))
                     throw std::runtime_error("failed to extract shm local name length");
