@@ -54,7 +54,7 @@ namespace Dao::Telemetry
         void transition_Error_Idle() override;
 
         // -- Utility Methods -- 
-        std::string genGroupName();
+        std::string genGroupTimestamp();
         std::filesystem::path createSessionGroup();
     };
 };

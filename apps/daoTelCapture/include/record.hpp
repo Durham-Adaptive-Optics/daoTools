@@ -9,6 +9,7 @@
 #pragma once
 
 #include <unordered_map>
+#include <exporters.hpp>
 #include <policies.hpp>
 #include <filesystem>
 #include <functional>
@@ -22,16 +23,16 @@ namespace Dao::Telemetry
 {
     struct CaptureResource
     {
-        CaptureResource(std::function<void()> raiseCaptureError) : targetAchieved_ { false }, raiseCaptureError_(raiseCaptureError) {}
+        CaptureResource(std::function<void()> raiseCaptureError) : sampleGoalMet_ { false }, raiseCaptureError_(raiseCaptureError) {}
         virtual ~CaptureResource() = default;
 
         virtual void beginCapture(std::filesystem::path const& outputPath) = 0;
         virtual void endCapture() = 0;
 
-        bool targetAchieved() const { return targetAchieved_; };
+        bool targetAchieved() const { return sampleGoalMet_; };
 
         protected:
-        std::atomic<bool> targetAchieved_;
+        std::atomic<bool> sampleGoalMet_;
         std::function<void()> raiseCaptureError_;
     };
 
@@ -58,21 +59,25 @@ namespace Dao::Telemetry
         void beginCapture(std::filesystem::path const& outputPath) override;
         void endCapture() override;
 
-        void pollMain();
-        void exportMain();
-
         SmemPolicy const policies;
 
         private:
         std::thread pollThread_;
         std::thread exportThread_;
-        std::atomic<bool> run_;
+        std::atomic<bool> stopToken_;
         std::atomic<bool> capture_;
         std::mutex queueLock_;
         std::queue <QueueType> exportQueue_;
+        std::unique_ptr<ExportBackend> exporter_;
+        std::atomic<std::filesystem::path> outputDirectory_;
         IMAGE smem_;
 
-        void configureThread(Optional<CoreID> const core);
-        void smemConnect();
+        void configureThread(Optional<CoreID> const& core);
+        void createExporter();
+        void connectToSharedMemory();
+        void exportMain();
+        void pollMain();
+        void runSessionPoll();
+        void runSessionExport();
     };
 };

@@ -6,7 +6,7 @@
  * @ Description: Implements a file capture resource.
  */
 
-#include <captureResource.hpp>
+#include <record.hpp>
 #include <filesystem>
 
 namespace Dao::Telemetry
@@ -20,12 +20,11 @@ namespace Dao::Telemetry
     void FileCaptureResource::beginCapture(std::filesystem::path const& outputPath)
     {
         std::filesystem::path const fileSourcePath { policies.absPath };
-        std::string const fileOutputName = policies.saveAsName ? policies.saveAsName.value() : fileSourcePath.filename().string();
-        std::filesystem::path const fileOutputPath = outputPath / fileOutputName;
+        std::filesystem::path const fileOutputPath = outputPath / fileSourcePath.filename().string();
 
         try {
             std::filesystem::copy_file(fileSourcePath, fileOutputPath);
-            targetAchieved_ = true;
+            sampleGoalMet_ = true;
         } catch (std::exception const& e) {
             raiseCaptureError_();
             return;

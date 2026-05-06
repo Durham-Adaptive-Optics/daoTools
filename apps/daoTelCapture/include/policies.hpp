@@ -54,7 +54,6 @@ namespace Dao
         struct GeneralPolicies
         {
             Required<std::string> rootStorage;
-            Optional<bool> groupingEnabled { true };
             Optional<std::string> groupName;
         };
 
@@ -63,7 +62,6 @@ namespace Dao
         struct FilePolicy
         {
             Required<std::string> absPath;
-            Optional<std::string> saveAsName;
         };
 
         /* Shared-memory source policies.
@@ -71,7 +69,6 @@ namespace Dao
         struct SmemPolicy
         {
             Required<std::string> absPath;
-            Optional<std::string> saveAsName;
             Optional<bool> metadataOnly { false };
             Optional<size_t> nSamples;
             Required<ExportFormat> format;

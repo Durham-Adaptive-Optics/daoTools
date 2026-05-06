@@ -7,6 +7,7 @@
  */
 
 #include <server.hpp>
+#include <daoTools.h>
 
 namespace Dao::Telemetry
 {
@@ -75,13 +76,10 @@ namespace Dao::Telemetry
 
     void Server::startSession()
     {
-        std::filesystem::path sessionOutputDirectory(policies_->generalPolicies.rootStorage);
-        if (policies_->generalPolicies.groupingEnabled) {
-            sessionOutputDirectory = createSessionGroup();
-        }
+        std::filesystem::path const sessionDirectory = createSessionGroup();
 
         for (auto& res : captureResources_) {
-            res->beginCapture(sessionOutputDirectory);
+            res->beginCapture(sessionDirectory);
         }
     }
 
@@ -109,7 +107,7 @@ namespace Dao::Telemetry
     */
     void Server::captureErrorHandler()
     {
-        OnFailure();
+        OnFailure(); // @todo does this crash if we run on a capture thread and goto error destroys things?
     }
 
     // -- Server API Hooks -- 
@@ -135,7 +133,7 @@ namespace Dao::Telemetry
     }
 
     // -- Utility Methods -- 
-    std::string Server::genGroupName()
+    std::string Server::genGroupTimestamp()
     {
         std::stringstream ss;
         auto const& now = std::chrono::system_clock::now();
@@ -144,17 +142,37 @@ namespace Dao::Telemetry
         return ss.str();
     }
 
-    std::filesystem::path Server::createSessionGroup()
+    inline void createDirectory(std::filesystem::path const dirPath)
     {
-        std::string const groupName = policies_->generalPolicies.groupName ? genGroupName() : policies_->generalPolicies.groupName.value();
-        std::filesystem::path const rootPath(policies_->generalPolicies.rootStorage);
-        std::filesystem::path const groupPath = rootPath / groupName;
-
-        if (!std::filesystem::create_directory(groupPath)) {
+        if (!std::filesystem::create_directory(dirPath)) {
             throw std::runtime_error("failed to create session group directory");
         }
-
-        return groupPath;
     }
 
+    std::filesystem::path Server::createSessionGroup()
+    {
+        // create group subdirectory..
+        std::string const groupName = policies_->generalPolicies.groupName ? genGroupTimestamp() : policies_->generalPolicies.groupName.value();
+        std::filesystem::path const rootPath(policies_->generalPolicies.rootStorage);
+        std::filesystem::path const groupPath = rootPath / groupName;
+        createDirectory(groupPath);
+
+        // create folder structure..
+        for (auto const& smem : policies_->smemPolicies) {
+            if (smem.chunkSize) {
+                int buffLen {};
+                if (DAO_SUCCESS != daoToolsLocalName(smem.absPath.c_str(), nullptr, &buffLen))
+                    throw std::runtime_error("failed to extract shm local name length");
+
+                std::string smLocalName(buffLen, '\0');
+                if (DAO_SUCCESS != daoToolsLocalName(smem.absPath.c_str(), smLocalName.data(), nullptr))
+                    throw std::runtime_error("failed to extract shm local name");
+
+                createDirectory(groupPath / smLocalName);
+            }
+        }
+
+        //
+        return groupPath;
+    }
 };

@@ -77,14 +77,10 @@ namespace Dao::Telemetry
         load(ymlDoc);
     }
 
-    void CapturePolicies::loadFilePolicy(YAML::Node const& sourceNode, FilePolicy& policySet)
-    {
-        loadOptional(policySet.saveAsName, "save_as", sourceNode);
-    }
+    void CapturePolicies::loadFilePolicy(YAML::Node const& sourceNode, FilePolicy& policySet) {}
 
     void CapturePolicies::loadSmemPolicy(YAML::Node const& sourceNode, SmemPolicy& policySet)
     {
-        loadOptional(policySet.saveAsName, "save_as", sourceNode);
         loadOptional(policySet.metadataOnly, "metadata_only", sourceNode);
         loadOptional(policySet.nSamples, "samples", sourceNode);
         loadRequired(policySet.format, "format", sourceNode);
@@ -100,7 +96,6 @@ namespace Dao::Telemetry
         // load session policies..
         if (auto const& sessionNode = ymlDoc["session_policies"]; sessionNode) {
             loadRequired(generalPolicies.rootStorage, "root_storage", sessionNode);
-            loadOptional(generalPolicies.groupingEnabled, "group_outputs", sessionNode);
             loadOptional(generalPolicies.groupName, "group_name", sessionNode);
         }
         else {
@@ -148,21 +143,18 @@ namespace Dao::Telemetry
         // Session policies
         std::cout << "Session Policies:\n";
         std::cout << "  Root Storage:       " << generalPolicies.rootStorage << "\n";
-        std::cout << "  Grouping Enabled:   " << (generalPolicies.groupingEnabled ? "true" : "false") << "\n";
         std::cout << "  Group Name:         " << (generalPolicies.groupName ? generalPolicies.groupName.value() : "Timestamp") << "\n";
 
         // File policies
         std::cout << "\nFile Policies:\n";
         for (FilePolicy const& pol : filePolicies) {
             std::cout << "  - Absolute Path: " << pol.absPath << "\n";
-            std::cout << "    Save As:     " << (pol.saveAsName ? pol.saveAsName.value() : "Original") << "\n";
         }
 
         // Shared memory policies
         std::cout << "\nShared Memory Policies:\n";
         for (SmemPolicy const& pol : smemPolicies) {
             std::cout << "  - Absolute Path:        " << pol.absPath << "\n";
-            std::cout << "    Save As:     " << (pol.saveAsName ? pol.saveAsName.value() : "Original") << "\n";
             std::cout << "    Metadata Only:        " << (pol.metadataOnly ? "true" : "false") << "\n";
             std::cout << "    Samples:              " << (pol.nSamples ? std::to_string(pol.nSamples.value()) : "Unbounded") << "\n";
             std::cout << "    Export Format:        " << fmtToRepr.at(pol.format) << "\n";

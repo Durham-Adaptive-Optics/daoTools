@@ -32,13 +32,14 @@ int daoToolsLocalName(const char* shmPath, char* localName, int* len)
         return DAO_ERROR;
     }
 
-    int nCharsCopy = nameEnd - pathEnd - 1;
+    int nCharsCopy = nameEnd - pathEnd; // note: extra char for null-terminator.
 
     if (!localName && len) {
         *len = nCharsCopy;
     }
     else if (localName && !len) {
-        memcpy(localName, pathEnd + 1, nCharsCopy);
+        memcpy(localName, pathEnd + 1, nCharsCopy - 1);
+        localName[nCharsCopy - 1] = '\0';
     }
     else {
         return DAO_ERROR;
