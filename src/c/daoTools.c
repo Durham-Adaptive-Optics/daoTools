@@ -15,11 +15,43 @@
 #include <unistd.h>
 #include "daoTools.h"
 
+/* @brief Extracts the local name from a shared memory absolute path
+ * (format: '/.../<localName>.im.shm'). Pass NULL for 'localName' with
+ * valid 'len' to query required buffer size; then re-invoke with a
+ * correctly-sized buffer and NULL for 'len'.
+ *
+ * @shmPath Shared memory absolute path.
+ * @localName Output buffer for the local name (or NULL to query size).
+ * @len Output for required buffer length (or NULL when writing result).
+*/
+int daoToolsLocalName(const char* shmPath, char* localName, int* len)
+{
+    const char* pathEnd = strrchr(shmPath, '/');
+    const char* nameEnd = strchr(shmPath, '.');
+    if (!pathEnd || !nameEnd) {
+        return DAO_ERROR;
+    }
+
+    int nCharsCopy = nameEnd - pathEnd - 1;
+
+    if (!localName && len) {
+        *len = nCharsCopy;
+    }
+    else if (localName && !len) {
+        memcpy(localName, pathEnd + 1, nCharsCopy);
+    }
+    else {
+        return DAO_ERROR;
+    }
+
+    return DAO_SUCCESS;
+}
+
 /** Compute 32-bit XOR checksum over buffer
  */
-uint32_t daoComputeChecksum(const void *data, size_t length_bytes) 
+uint32_t daoComputeChecksum(const void* data, size_t length_bytes)
 {
-    const uint32_t *words = (const uint32_t *)data;
+    const uint32_t* words = (const uint32_t*)data;
     size_t num_words = length_bytes / 4;
     uint32_t checksum = 0;
 
@@ -33,11 +65,11 @@ uint32_t daoComputeChecksum(const void *data, size_t length_bytes)
 
 /**
  * @brief convert IP address (AAA.BBB.CCC.DDD) to integer
- * 
- * @param ip 
- * @return unsigned 
+ *
+ * @param ip
+ * @return unsigned
  */
-unsigned daoToolsIp2Int (const char * ip)
+unsigned daoToolsIp2Int(const char* ip)
 {
     daoTrace("\n");
     /* The return value. */
@@ -45,7 +77,7 @@ unsigned daoToolsIp2Int (const char * ip)
     /* The count of the number of bytes processed. */
     int i;
     /* A pointer to the next digit to process. */
-    const char * start;
+    const char* start;
 
     start = ip;
     for (i = 0; i < 4; i++) {
@@ -54,7 +86,7 @@ unsigned daoToolsIp2Int (const char * ip)
         /* The value of this byte. */
         int n = 0;
         while (1) {
-            c = * start;
+            c = *start;
             start++;
             if (c >= '0' && c <= '9') {
                 n *= 10;
@@ -80,22 +112,21 @@ unsigned daoToolsIp2Int (const char * ip)
 }
 
 /**
- * @brief 
- * 
- * @param base_string 
- * @param prefix 
- * @param suffix 
- * @param final_string 
+ * @brief
+ *
+ * @param base_string
+ * @param prefix
+ * @param suffix
+ * @param final_string
  */
-void daoToolsInsertShmNamePrefix(const char* base_string, const char* prefix, char* final_string) 
+void daoToolsInsertShmNamePrefix(const char* base_string, const char* prefix, char* final_string)
 {
     daoTrace("\n");
     const char* suffix = ".im.shm";
     size_t suffix_length = strlen(suffix);
     size_t base_string_length = strlen(base_string);
 
-    if (base_string_length <= suffix_length) 
-    {
+    if (base_string_length <= suffix_length) {
         printf("Invalid string format.\n");
         return;
     }
@@ -107,86 +138,66 @@ void daoToolsInsertShmNamePrefix(const char* base_string, const char* prefix, ch
 
 /**
  * @brief Calibrate an image by applying flatfield and background
- * 
- * @param inShm raw image 
+ *
+ * @param inShm raw image
  * @param ffShm flat field
  * @param bgShm background
  * @param calShm output calibrated image
- * @return int_fast8_t 
+ * @return int_fast8_t
  */
-int_fast8_t daoToolsShmCalibrate(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IMAGE *calShm)
+int_fast8_t daoToolsShmCalibrate(IMAGE* inShm, IMAGE* ffShm, IMAGE* bgShm, IMAGE* calShm)
 {
     daoTrace("\n");
     int k;
     int calSize = calShm[0].md[0].size[0] * calShm[0].md[0].size[1];
     calShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
-    if (inShm[0].md[0].atype == _DATATYPE_UINT8)
-    {
-        for (k = 0; k < calSize; k++)
-        {
+    if (inShm[0].md[0].atype == _DATATYPE_UINT8) {
+        for (k = 0; k < calSize; k++) {
             calShm[0].array.F[k] = ((float)inShm[0].array.UI8[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_INT8)
-    {
-        for (k = 0; k < calSize; k++)
-        {
+    else if (inShm[0].md[0].atype == _DATATYPE_INT8) {
+        for (k = 0; k < calSize; k++) {
             calShm[0].array.F[k] = ((float)inShm[0].array.SI8[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_UINT16)
-    {
-        for (k = 0; k < calSize; k++)
-        {
+    else if (inShm[0].md[0].atype == _DATATYPE_UINT16) {
+        for (k = 0; k < calSize; k++) {
             calShm[0].array.F[k] = ((float)inShm[0].array.UI16[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_INT16)
-    {
-        for (k = 0; k < calSize; k++)
-        {
+    else if (inShm[0].md[0].atype == _DATATYPE_INT16) {
+        for (k = 0; k < calSize; k++) {
             calShm[0].array.F[k] = ((float)inShm[0].array.SI16[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_UINT32)
-    {
-        for (k = 0; k < calSize; k++)
-        {
+    else if (inShm[0].md[0].atype == _DATATYPE_UINT32) {
+        for (k = 0; k < calSize; k++) {
             calShm[0].array.F[k] = ((float)inShm[0].array.UI32[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_INT32)
-    {
-        for (k = 0; k < calSize; k++)
-        {
+    else if (inShm[0].md[0].atype == _DATATYPE_INT32) {
+        for (k = 0; k < calSize; k++) {
             calShm[0].array.F[k] = ((float)inShm[0].array.SI32[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_UINT64)
-    {
-        for (k = 0; k < calSize; k++)
-        {
+    else if (inShm[0].md[0].atype == _DATATYPE_UINT64) {
+        for (k = 0; k < calSize; k++) {
             calShm[0].array.F[k] = ((float)inShm[0].array.UI64[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_INT64)
-    {
-        for (k = 0; k < calSize; k++)
-        {
+    else if (inShm[0].md[0].atype == _DATATYPE_INT64) {
+        for (k = 0; k < calSize; k++) {
             calShm[0].array.F[k] = ((float)inShm[0].array.SI64[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_FLOAT)
-    {
-        for (k = 0; k < calSize; k++)
-        {
+    else if (inShm[0].md[0].atype == _DATATYPE_FLOAT) {
+        for (k = 0; k < calSize; k++) {
             calShm[0].array.F[k] = ((float)inShm[0].array.F[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_DOUBLE)
-    {
-        for (k = 0; k < calSize; k++)
-        {
+    else if (inShm[0].md[0].atype == _DATATYPE_DOUBLE) {
+        for (k = 0; k < calSize; k++) {
             calShm[0].array.F[k] = ((float)inShm[0].array.D[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
         }
     }
@@ -197,215 +208,165 @@ int_fast8_t daoToolsShmCalibrate(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IMAGE
 
 /**
  * @brief Calibrate an image by applying flatfield and background to DOUBLE precision
- * 
- * @param inShm raw image 
+ *
+ * @param inShm raw image
  * @param ffShm flat field
  * @param bgShm background
  * @param calShm output calibrated image
- * @return int_fast8_t 
+ * @return int_fast8_t
  */
- int_fast8_t daoToolsShmCalibrate64(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IMAGE *calShm)
- {
-     daoTrace("\n");
-     int k;
-     int calSize = calShm[0].md[0].size[0] * calShm[0].md[0].size[1];
-     calShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
-     if (inShm[0].md[0].atype == _DATATYPE_UINT8)
-     {
-         for (k = 0; k < calSize; k++)
-         {
-             calShm[0].array.D[k] = ((double)inShm[0].array.UI8[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
-         }
-     }
-     else if (inShm[0].md[0].atype == _DATATYPE_INT8)
-     {
-         for (k = 0; k < calSize; k++)
-         {
-             calShm[0].array.D[k] = ((double)inShm[0].array.SI8[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
-         }
-     }
-     else if (inShm[0].md[0].atype == _DATATYPE_UINT16)
-     {
-         for (k = 0; k < calSize; k++)
-         {
-             calShm[0].array.D[k] = ((double)inShm[0].array.UI16[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
-         }
-     }
-     else if (inShm[0].md[0].atype == _DATATYPE_INT16)
-     {
-         for (k = 0; k < calSize; k++)
-         {
-             calShm[0].array.D[k] = ((double)inShm[0].array.SI16[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
-         }
-     }
-     else if (inShm[0].md[0].atype == _DATATYPE_UINT32)
-     {
-         for (k = 0; k < calSize; k++)
-         {
-             calShm[0].array.D[k] = ((double)inShm[0].array.UI32[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
-         }
-     }
-     else if (inShm[0].md[0].atype == _DATATYPE_INT32)
-     {
-         for (k = 0; k < calSize; k++)
-         {
-             calShm[0].array.D[k] = ((double)inShm[0].array.SI32[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
-         }
-     }
-     else if (inShm[0].md[0].atype == _DATATYPE_UINT64)
-     {
-         for (k = 0; k < calSize; k++)
-         {
-             calShm[0].array.D[k] = ((double)inShm[0].array.UI64[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
-         }
-     }
-     else if (inShm[0].md[0].atype == _DATATYPE_INT64)
-     {
-         for (k = 0; k < calSize; k++)
-         {
-             calShm[0].array.D[k] = ((double)inShm[0].array.SI64[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
-         }
-     }
-     else if (inShm[0].md[0].atype == _DATATYPE_FLOAT)
-     {
-         for (k = 0; k < calSize; k++)
-         {
-             calShm[0].array.D[k] = ((double)inShm[0].array.D[k] * ffShm[0].array.F[k]) - bgShm[0].array.D[k];
-         }
-     }
-     else if (inShm[0].md[0].atype == _DATATYPE_DOUBLE)
-     {
-         for (k = 0; k < calSize; k++)
-         {
-             calShm[0].array.D[k] = ((double)inShm[0].array.D[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
-         }
-     }
-     daoShmImagePart2ShmFinalize(&calShm[0]);
- 
-     return DAO_SUCCESS;
- }
+int_fast8_t daoToolsShmCalibrate64(IMAGE* inShm, IMAGE* ffShm, IMAGE* bgShm, IMAGE* calShm)
+{
+    daoTrace("\n");
+    int k;
+    int calSize = calShm[0].md[0].size[0] * calShm[0].md[0].size[1];
+    calShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
+    if (inShm[0].md[0].atype == _DATATYPE_UINT8) {
+        for (k = 0; k < calSize; k++) {
+            calShm[0].array.D[k] = ((double)inShm[0].array.UI8[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
+        }
+    }
+    else if (inShm[0].md[0].atype == _DATATYPE_INT8) {
+        for (k = 0; k < calSize; k++) {
+            calShm[0].array.D[k] = ((double)inShm[0].array.SI8[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
+        }
+    }
+    else if (inShm[0].md[0].atype == _DATATYPE_UINT16) {
+        for (k = 0; k < calSize; k++) {
+            calShm[0].array.D[k] = ((double)inShm[0].array.UI16[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
+        }
+    }
+    else if (inShm[0].md[0].atype == _DATATYPE_INT16) {
+        for (k = 0; k < calSize; k++) {
+            calShm[0].array.D[k] = ((double)inShm[0].array.SI16[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
+        }
+    }
+    else if (inShm[0].md[0].atype == _DATATYPE_UINT32) {
+        for (k = 0; k < calSize; k++) {
+            calShm[0].array.D[k] = ((double)inShm[0].array.UI32[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
+        }
+    }
+    else if (inShm[0].md[0].atype == _DATATYPE_INT32) {
+        for (k = 0; k < calSize; k++) {
+            calShm[0].array.D[k] = ((double)inShm[0].array.SI32[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
+        }
+    }
+    else if (inShm[0].md[0].atype == _DATATYPE_UINT64) {
+        for (k = 0; k < calSize; k++) {
+            calShm[0].array.D[k] = ((double)inShm[0].array.UI64[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
+        }
+    }
+    else if (inShm[0].md[0].atype == _DATATYPE_INT64) {
+        for (k = 0; k < calSize; k++) {
+            calShm[0].array.D[k] = ((double)inShm[0].array.SI64[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
+        }
+    }
+    else if (inShm[0].md[0].atype == _DATATYPE_FLOAT) {
+        for (k = 0; k < calSize; k++) {
+            calShm[0].array.D[k] = ((double)inShm[0].array.D[k] * ffShm[0].array.F[k]) - bgShm[0].array.D[k];
+        }
+    }
+    else if (inShm[0].md[0].atype == _DATATYPE_DOUBLE) {
+        for (k = 0; k < calSize; k++) {
+            calShm[0].array.D[k] = ((double)inShm[0].array.D[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
+        }
+    }
+    daoShmImagePart2ShmFinalize(&calShm[0]);
+
+    return DAO_SUCCESS;
+}
 
 /**
  * @brief Calibrate an image by applying flatfield and background
- * 
- * @param inShm raw image 
+ *
+ * @param inShm raw image
  * @param ffShm flat field
  * @param bgShm background
  * @param maskShm mask for the calibrated image
  * @param calShm output calibrated image
- * @return int_fast8_t 
+ * @return int_fast8_t
  */
-int_fast8_t daoToolsShmCalibratePws(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IMAGE *maskShm, IMAGE *calShm, IMAGE *fluxShm)
+int_fast8_t daoToolsShmCalibratePws(IMAGE* inShm, IMAGE* ffShm, IMAGE* bgShm, IMAGE* maskShm, IMAGE* calShm, IMAGE* fluxShm)
 {
     daoTrace("\n");
     int k;
     int inSize = inShm[0].md[0].size[0] * inShm[0].md[0].size[1];
     calShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
-    if (inShm[0].md[0].atype == _DATATYPE_UINT8)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-            if (maskShm[0].array.SI32[k] != -1)
-            {
+    if (inShm[0].md[0].atype == _DATATYPE_UINT8) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.SI32[k] != -1) {
                 calShm[0].array.F[maskShm[0].array.SI32[k]] = ((float)inShm[0].array.UI8[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
                 fluxShm[0].array.F[0] += calShm[0].array.F[maskShm[0].array.SI32[k]];
             }
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_INT8)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-            if (maskShm[0].array.SI32[k] != -1)
-            {
+    else if (inShm[0].md[0].atype == _DATATYPE_INT8) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.SI32[k] != -1) {
                 calShm[0].array.F[maskShm[0].array.SI32[k]] = ((float)inShm[0].array.SI8[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
                 fluxShm[0].array.F[0] += calShm[0].array.F[maskShm[0].array.SI32[k]];
             }
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_UINT16)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-            if (maskShm[0].array.SI32[k] != -1)
-            {
+    else if (inShm[0].md[0].atype == _DATATYPE_UINT16) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.SI32[k] != -1) {
                 calShm[0].array.F[maskShm[0].array.SI32[k]] = ((float)inShm[0].array.UI16[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
                 fluxShm[0].array.F[0] += calShm[0].array.F[maskShm[0].array.SI32[k]];
             }
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_INT16)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-            if (maskShm[0].array.SI32[k] != -1)
-            {
+    else if (inShm[0].md[0].atype == _DATATYPE_INT16) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.SI32[k] != -1) {
                 calShm[0].array.F[maskShm[0].array.SI32[k]] = ((float)inShm[0].array.SI16[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
                 fluxShm[0].array.F[0] += calShm[0].array.F[maskShm[0].array.SI32[k]];
             }
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_UINT32)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-            if (maskShm[0].array.SI32[k] != -1)
-            {
+    else if (inShm[0].md[0].atype == _DATATYPE_UINT32) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.SI32[k] != -1) {
                 calShm[0].array.F[maskShm[0].array.SI32[k]] = ((float)inShm[0].array.SI32[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
                 fluxShm[0].array.F[0] += calShm[0].array.F[maskShm[0].array.SI32[k]];
             }
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_INT32)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-            if (maskShm[0].array.SI32[k] != -1)
-            {
+    else if (inShm[0].md[0].atype == _DATATYPE_INT32) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.SI32[k] != -1) {
                 calShm[0].array.F[maskShm[0].array.SI32[k]] = ((float)inShm[0].array.UI32[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
                 fluxShm[0].array.F[0] += calShm[0].array.F[maskShm[0].array.SI32[k]];
             }
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_UINT64)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-            if (maskShm[0].array.SI32[k] != -1)
-            {
+    else if (inShm[0].md[0].atype == _DATATYPE_UINT64) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.SI32[k] != -1) {
                 calShm[0].array.F[maskShm[0].array.SI32[k]] = ((float)inShm[0].array.UI64[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
                 fluxShm[0].array.F[0] += calShm[0].array.F[maskShm[0].array.SI32[k]];
             }
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_INT64)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-            if (maskShm[0].array.SI32[k] != -1)
-            {
+    else if (inShm[0].md[0].atype == _DATATYPE_INT64) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.SI32[k] != -1) {
                 calShm[0].array.F[maskShm[0].array.SI32[k]] = ((float)inShm[0].array.SI64[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
                 fluxShm[0].array.F[0] += calShm[0].array.F[maskShm[0].array.SI32[k]];
             }
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_FLOAT)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-            if (maskShm[0].array.SI32[k] != -1)
-            {
+    else if (inShm[0].md[0].atype == _DATATYPE_FLOAT) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.SI32[k] != -1) {
                 calShm[0].array.F[maskShm[0].array.SI32[k]] = ((float)inShm[0].array.F[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
                 fluxShm[0].array.F[0] += calShm[0].array.F[maskShm[0].array.SI32[k]];
             }
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_DOUBLE)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-            if (maskShm[0].array.SI32[k] != -1)
-            {
+    else if (inShm[0].md[0].atype == _DATATYPE_DOUBLE) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.SI32[k] != -1) {
                 calShm[0].array.F[maskShm[0].array.SI32[k]] = ((float)inShm[0].array.D[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
                 fluxShm[0].array.F[0] += calShm[0].array.F[maskShm[0].array.SI32[k]];
             }
@@ -417,41 +378,37 @@ int_fast8_t daoToolsShmCalibratePws(IMAGE *inShm, IMAGE *ffShm, IMAGE *bgShm, IM
 }
 
 /**
- * @brief compute centroif of an image 
- * 
- * @param img 
- * @param height 
- * @param width 
- * @return int_fast8_t 
+ * @brief compute centroif of an image
+ *
+ * @param img
+ * @param height
+ * @param width
+ * @return int_fast8_t
  */
-int_fast8_t daoToolCog(float *img, int height, int width, float *centX, float *centY) 
+int_fast8_t daoToolCog(float* img, int height, int width, float* centX, float* centY)
 {
     daoTrace("\n");
-	float sumX=0;
-	float sumY=0;
-	float sumPix=0;
+    float sumX = 0;
+    float sumY = 0;
+    float sumPix = 0;
     float A;
-    int x,y;
+    int x, y;
 
-	for (y=0; y < height; y++) 
-    {
-		for (x=0; x < width; x++) 
-        {
-			A =  img[x*width + y];
-			sumPix += A;
-			sumX += (x * A);
-			sumY += (y * A);
-		}
-	}
-    if (sumPix != 0)
-    {
-        *centX = sumX/sumPix;
-        *centY = sumY/sumPix;
+    for (y = 0; y < height; y++) {
+        for (x = 0; x < width; x++) {
+            A = img[x * width + y];
+            sumPix += A;
+            sumX += (x * A);
+            sumY += (y * A);
+        }
+    }
+    if (sumPix != 0) {
+        *centX = sumX / sumPix;
+        *centY = sumY / sumPix;
         daoDebug("Center X: %d  Centroid X: %f\n", width / 2, sumX / sumPix);
         daoDebug("Center Y: %d  Centroid Y: %f\n", height / 2, sumY / sumPix);
     }
-    else
-    {
+    else {
         daoError("Not enought flux to compute centroid");
         return DAO_ERROR;
     }
@@ -462,19 +419,17 @@ int_fast8_t daoToolCog(float *img, int height, int width, float *centX, float *c
 /*
  * Apply 3rd order filter to command
  */
-int_fast8_t daoToolsCommandFilter(float *command, int nbVal, daoFilterHistory *filterHistory, float *servoFilter, float *commandOffset, float *filteredCommand)
+int_fast8_t daoToolsCommandFilter(float* command, int nbVal, daoFilterHistory* filterHistory, float* servoFilter, float* commandOffset, float* filteredCommand)
 {
     daoTrace("\n");
     // 
     float commandMoff[nbVal];
-    int c=0;
+    int c = 0;
     int pp;
-    for(pp = 0; pp < nbVal; pp++)
-    {
+    for (pp = 0; pp < nbVal; pp++) {
         // Check that values to filter are
         // number... safety check to stop propagating nan
-        if (isnan(command[pp]))
-        {
+        if (isnan(command[pp])) {
             command[pp] = 0.0;
         }
         // Substract command offset
@@ -486,29 +441,23 @@ int_fast8_t daoToolsCommandFilter(float *command, int nbVal, daoFilterHistory *f
     memcpy(filterHistory->dlRes[filterHistory->step], commandMoff, nbVal);
 
     filterHistory->step++;
-    if (filterHistory->step==FILTER_ORDER)
-    {
-        filterHistory->step=0;
+    if (filterHistory->step == FILTER_ORDER) {
+        filterHistory->step = 0;
     }
     // precomputation of servo loop filter for next filterHistory->step
     int i1, i2, i;
-    for (i=0;i<nbVal;i++)
-    {
+    for (i = 0;i < nbVal;i++) {
         i2 = 2 * FILTER_ORDER;
-        for (i1 = filterHistory->step; i1 < FILTER_ORDER; i1++, i2--)
-        {
+        for (i1 = filterHistory->step; i1 < FILTER_ORDER; i1++, i2--) {
             filterHistory->precal[i] -= servoFilter[i2] * filterHistory->dlCmd[i1][i];
         }
-        for (i1 = 0; i1 < filterHistory->step; i1++, i2--)
-        {
+        for (i1 = 0; i1 < filterHistory->step; i1++, i2--) {
             filterHistory->precal[i] -= servoFilter[i2] * filterHistory->dlCmd[i1][i];
         }
-        for (i1 = filterHistory->step; i1 < FILTER_ORDER; i1++, i2--)
-        {
+        for (i1 = filterHistory->step; i1 < FILTER_ORDER; i1++, i2--) {
             filterHistory->precal[i] += servoFilter[i2] * filterHistory->dlRes[i1][i];
         }
-        for (i1 = 0; i1 < filterHistory->step; i1++, i2--)
-        {
+        for (i1 = 0; i1 < filterHistory->step; i1++, i2--) {
             filterHistory->precal[i] += servoFilter[i2] * filterHistory->dlRes[i1][i];
         }
     }
@@ -519,18 +468,16 @@ int_fast8_t daoToolsCommandFilter(float *command, int nbVal, daoFilterHistory *f
 /*
  * Apply Integrator to command
  */
-int_fast8_t daoToolsLeakyIntegrator(float *command, int nbVal, float leaky, float gain, float *commandOffset, float *filteredCommand)
+int_fast8_t daoToolsLeakyIntegrator(float* command, int nbVal, float leaky, float gain, float* commandOffset, float* filteredCommand)
 {
     daoTrace("\n");
     // 
     float commandMoff[nbVal];
     int pp;
-    for(pp = 0; pp < nbVal; pp++)
-    {
+    for (pp = 0; pp < nbVal; pp++) {
         // Check that values to filter are
         // number... safety check to stop propagating nan
-        if (isnan(command[pp]))
-        {
+        if (isnan(command[pp])) {
             command[pp] = 0.0;
         }
         // Substract command offset
@@ -544,47 +491,43 @@ int_fast8_t daoToolsLeakyIntegrator(float *command, int nbVal, float leaky, floa
 /*
  * Apply Integrator to command double precision
  */
- int_fast8_t daoToolsLeakyIntegratorDouble(double *command, int nbVal, double leaky, double gain, double *commandOffset, double *filteredCommand)
- {
-     daoTrace("\n");
-     // 
-     double commandMoff[nbVal];
-     int pp;
-     for(pp = 0; pp < nbVal; pp++)
-     {
-         // Check that values to filter are
-         // number... safety check to stop propagating nan
-         if (isnan(command[pp]))
-         {
-             command[pp] = 0.0;
-         }
-         // Substract command offset
-         commandMoff[pp] = command[pp] - commandOffset[pp];
-         filteredCommand[pp] = leaky * filteredCommand[pp] - gain * commandMoff[pp]; // * mixingFactor;
-     }
- 
-     return DAO_SUCCESS;
- }
+int_fast8_t daoToolsLeakyIntegratorDouble(double* command, int nbVal, double leaky, double gain, double* commandOffset, double* filteredCommand)
+{
+    daoTrace("\n");
+    // 
+    double commandMoff[nbVal];
+    int pp;
+    for (pp = 0; pp < nbVal; pp++) {
+        // Check that values to filter are
+        // number... safety check to stop propagating nan
+        if (isnan(command[pp])) {
+            command[pp] = 0.0;
+        }
+        // Substract command offset
+        commandMoff[pp] = command[pp] - commandOffset[pp];
+        filteredCommand[pp] = leaky * filteredCommand[pp] - gain * commandMoff[pp]; // * mixingFactor;
+    }
+
+    return DAO_SUCCESS;
+}
 /*
  * Apply Integrator to modes
  */
-int_fast8_t daoToolsLeakyModalIntegrator(float *command, int nbVal, float *leaky, float *gain, float *commandOffset, float *filteredCommand)
+int_fast8_t daoToolsLeakyModalIntegrator(float* command, int nbVal, float* leaky, float* gain, float* commandOffset, float* filteredCommand)
 {
     daoTrace("\n");
     // 
     float commandMoff[nbVal];
     int pp;
-    for(pp = 0; pp < nbVal; pp++)
-    {
+    for (pp = 0; pp < nbVal; pp++) {
         // Check that values to filter are
         // number... safety check to stop propagating nan
-        if (isnan(command[pp]))
-        {
+        if (isnan(command[pp])) {
             command[pp] = 0.0;
         }
         // Substract command offset
         commandMoff[pp] = command[pp] - commandOffset[pp];
-        filteredCommand[pp] = leaky [pp]* filteredCommand[pp] - gain[pp] * commandMoff[pp]; // * mixingFactor;
+        filteredCommand[pp] = leaky[pp] * filteredCommand[pp] - gain[pp] * commandMoff[pp]; // * mixingFactor;
     }
 
     return DAO_SUCCESS;
@@ -593,27 +536,25 @@ int_fast8_t daoToolsLeakyModalIntegrator(float *command, int nbVal, float *leaky
 /*
  * Apply Integrator to modes double precision
  */
-int_fast8_t daoToolsLeakyModalIntegratorDouble(double *command, int nbVal, double *leaky, double *gain, double *commandOffset, double *filteredCommand)
- {
-     daoTrace("\n");
-     // 
-     double commandMoff[nbVal];
-     int pp;
-     for(pp = 0; pp < nbVal; pp++)
-     {
-         // Check that values to filter are
-         // number... safety check to stop propagating nan
-         if (isnan(command[pp]))
-         {
-             command[pp] = 0.0;
-         }
-         // Substract command offset
-         commandMoff[pp] = command[pp] - commandOffset[pp];
-         filteredCommand[pp] = leaky[pp] * filteredCommand[pp] - gain[pp] * commandMoff[pp]; // * mixingFactor;
-     }
- 
-     return DAO_SUCCESS;
- }
+int_fast8_t daoToolsLeakyModalIntegratorDouble(double* command, int nbVal, double* leaky, double* gain, double* commandOffset, double* filteredCommand)
+{
+    daoTrace("\n");
+    // 
+    double commandMoff[nbVal];
+    int pp;
+    for (pp = 0; pp < nbVal; pp++) {
+        // Check that values to filter are
+        // number... safety check to stop propagating nan
+        if (isnan(command[pp])) {
+            command[pp] = 0.0;
+        }
+        // Substract command offset
+        commandMoff[pp] = command[pp] - commandOffset[pp];
+        filteredCommand[pp] = leaky[pp] * filteredCommand[pp] - gain[pp] * commandMoff[pp]; // * mixingFactor;
+    }
+
+    return DAO_SUCCESS;
+}
 
 /**
  * @brief Compute spot centroids using center-of-mass with thresholding.
@@ -656,13 +597,13 @@ int_fast8_t daoToolsLeakyModalIntegratorDouble(double *command, int nbVal, doubl
  *
  * @return DAO_SUCCESS on success
  */
-int_fast8_t daoCentroidSpots(float *image,
-                              int imageSize,
-                              float *ref,
-                              int boxSize,
-                              int nSuba,
-                              float threshold,
-                              float *cent)
+int_fast8_t daoCentroidSpots(float* image,
+    int imageSize,
+    float* ref,
+    int boxSize,
+    int nSuba,
+    float threshold,
+    float* cent)
 {
     daoTrace("\n");
 
@@ -677,17 +618,16 @@ int_fast8_t daoCentroidSpots(float *image,
     float pixel;
 
     /* Reference arrays (SoA layout) */
-    float *refX = ref;
-    float *refY = ref + nSuba;
+    float* refX = ref;
+    float* refY = ref + nSuba;
 
     /* Output centroid arrays (SoA layout) */
-    float *cxOut = cent;
-    float *cyOut = cent + nSuba;
-    float *denOut = cent + 2 * nSuba;
+    float* cxOut = cent;
+    float* cyOut = cent + nSuba;
+    float* denOut = cent + 2 * nSuba;
 
     /* Iterate over all subapertures */
-    for (int s = 0; s < nSuba; ++s)
-    {
+    for (int s = 0; s < nSuba; ++s) {
         const float rx = refX[s];
         const float ry = refY[s];
 
@@ -703,15 +643,12 @@ int_fast8_t daoCentroidSpots(float *image,
         y2 = (unsigned int)roundf(ry) + boxSize / 2;
 
         /* Accumulate pixel intensities and first moments */
-        for (x = x1; x <= x2; x++)
-        {
-            for (y = y1; y <= y2; y++)
-            {
+        for (x = x1; x <= x2; x++) {
+            for (y = y1; y <= y2; y++) {
                 pixel = (float)image[y * imageSize + x];
 
                 /* Apply absolute threshold */
-                if (pixel < threshold)
-                {
+                if (pixel < threshold) {
                     pixel = 0.0f;
                 }
 
@@ -722,13 +659,11 @@ int_fast8_t daoCentroidSpots(float *image,
         }
 
         /* Compute relative centroid if flux is non-zero */
-        if (denominator != 0.0f)
-        {
+        if (denominator != 0.0f) {
             cxOut[s] = xNumerator / denominator - rx;
             cyOut[s] = yNumerator / denominator - ry;
         }
-        else
-        {
+        else {
             cxOut[s] = 0.0f;
             cyOut[s] = 0.0f;
         }
@@ -780,13 +715,13 @@ int_fast8_t daoCentroidSpots(float *image,
  *
  * @return DAO_SUCCESS on success
  */
-int_fast8_t daoCentroidSpotsRelative(float *image,
-                                     int imageSize,
-                                     float *ref,
-                                     int boxSize,
-                                     int nSuba,
-                                     float threshold,
-                                     float *cent)
+int_fast8_t daoCentroidSpotsRelative(float* image,
+    int imageSize,
+    float* ref,
+    int boxSize,
+    int nSuba,
+    float threshold,
+    float* cent)
 {
     daoTrace("\n");
 
@@ -797,17 +732,16 @@ int_fast8_t daoCentroidSpotsRelative(float *image,
     float xNumerator, yNumerator, denominator, pixel, flux, weight;
 
     /* Reference arrays (SoA layout) */
-    float *refX = ref;
-    float *refY = ref + nSuba;
+    float* refX = ref;
+    float* refY = ref + nSuba;
 
     /* Output arrays (SoA layout) */
-    float *cxOut = cent;
-    float *cyOut = cent + nSuba;
-    float *fluxOut = cent + 2 * nSuba;
-    float *wOut = cent + 3 * nSuba;
+    float* cxOut = cent;
+    float* cyOut = cent + nSuba;
+    float* fluxOut = cent + 2 * nSuba;
+    float* wOut = cent + 3 * nSuba;
 
-    for (int s = 0; s < nSuba; ++s)
-    {
+    for (int s = 0; s < nSuba; ++s) {
         const float rx = refX[s];
         const float ry = refY[s];
 
@@ -826,13 +760,10 @@ int_fast8_t daoCentroidSpotsRelative(float *image,
         y2 = (unsigned int)roundf(ry) + boxSize / 2;
 
         /* Compute local max in the subaperture (raw pixels) */
-        for (x = x1; x <= x2; x++)
-        {
-            for (y = y1; y <= y2; y++)
-            {
+        for (x = x1; x <= x2; x++) {
+            for (y = y1; y <= y2; y++) {
                 pixel = (float)image[y * imageSize + x];
-                if (pixel > localMax)
-                {
+                if (pixel > localMax) {
                     localMax = pixel;
                 }
             }
@@ -842,22 +773,18 @@ int_fast8_t daoCentroidSpotsRelative(float *image,
         relativeThreshold = threshold * localMax;
 
         /* Accumulate moments from thresholded/subtracted pixels */
-        for (x = x1; x <= x2; x++)
-        {
-            for (y = y1; y <= y2; y++)
-            {
+        for (x = x1; x <= x2; x++) {
+            for (y = y1; y <= y2; y++) {
                 pixel = (float)image[y * imageSize + x];
 
                 /* Raw flux always accumulates original pixel */
                 flux += pixel;
 
                 /* Apply relative threshold with subtraction */
-                if (pixel < relativeThreshold)
-                {
+                if (pixel < relativeThreshold) {
                     pixel = 0.0f;
                 }
-                else
-                {
+                else {
                     pixel = pixel - relativeThreshold;
                 }
 
@@ -872,13 +799,11 @@ int_fast8_t daoCentroidSpotsRelative(float *image,
         }
 
         /* Compute relative centroid if weight is non-zero */
-        if (denominator != 0.0f)
-        {
+        if (denominator != 0.0f) {
             cxOut[s] = xNumerator / denominator - rx;
             cyOut[s] = yNumerator / denominator - ry;
         }
-        else
-        {
+        else {
             cxOut[s] = 0.0f;
             cyOut[s] = 0.0f;
         }
@@ -894,32 +819,29 @@ int_fast8_t daoCentroidSpotsRelative(float *image,
 /**
  * compute slopes at CPU level.
  */
-int_fast8_t daoCentroidPws(float *im, float *slopes,
-                           float *slopesRef, int *wfsPixId, int *wfsPixIdMap,
-                           float *flux, int nbPix,
-                           int imSize, int pupSize)
+int_fast8_t daoCentroidPws(float* im, float* slopes,
+    float* slopesRef, int* wfsPixId, int* wfsPixIdMap,
+    float* flux, int nbPix,
+    int imSize, int pupSize)
 {
     daoTrace("\n");
-    float q1,q2,q3,q4;
+    float q1, q2, q3, q4;
     // Get our global thread ID
-    int id=0;
-    float avg=*flux/(4*nbPix);
+    int id = 0;
+    float avg = *flux / (4 * nbPix);
     daoDebug("avg = %.3f\n", avg);
     // do the comutation only if there is flux
-    for (id=0; id<pupSize; id++)
-    {    
-        if (*flux > 0)
-        {
-            if (wfsPixId[id] != -1)
-            {
+    for (id = 0; id < pupSize; id++) {
+        if (*flux > 0) {
+            if (wfsPixId[id] != -1) {
                 //daoInfo("id=%d, pixid[id]=%d, pixIdMap[id]=%d\n", id, wfsPixId[id], wfsPixIdMap[id]);
-                q1=im[wfsPixIdMap[id]];
-                q2=im[wfsPixIdMap[id]+imSize];
-                q3=im[wfsPixIdMap[id]+imSize*2*imSize];
-                q4=im[wfsPixIdMap[id]+imSize*2*imSize+imSize];
-                daoInfo("%f,%f,%f,%f\n", q1,q2,q3,q4);
-                slopes[wfsPixId[id]] =  (q1+q3-q2-q4) / avg - slopesRef[wfsPixId[id]];
-                slopes[wfsPixId[id]+nbPix] =  (q1+q2-q3-q4) / avg - slopesRef[wfsPixId[id]+nbPix];
+                q1 = im[wfsPixIdMap[id]];
+                q2 = im[wfsPixIdMap[id] + imSize];
+                q3 = im[wfsPixIdMap[id] + imSize * 2 * imSize];
+                q4 = im[wfsPixIdMap[id] + imSize * 2 * imSize + imSize];
+                daoInfo("%f,%f,%f,%f\n", q1, q2, q3, q4);
+                slopes[wfsPixId[id]] = (q1 + q3 - q2 - q4) / avg - slopesRef[wfsPixId[id]];
+                slopes[wfsPixId[id] + nbPix] = (q1 + q2 - q3 - q4) / avg - slopesRef[wfsPixId[id] + nbPix];
             }
         }
     }
@@ -929,9 +851,9 @@ int_fast8_t daoCentroidPws(float *im, float *slopes,
 
 /**
  * @brief Descrambles and processes an OCam2 image.
- * 
- * This function takes a flattened 8-bit image array (img), converts it to 
- * a 16-bit format, and then reorders its pixels according to a descrambler array. 
+ *
+ * This function takes a flattened 8-bit image array (img), converts it to
+ * a 16-bit format, and then reorders its pixels according to a descrambler array.
  * The output is a descrambled 16-bit image.
  *
  * @param img A pointer to the flattened 8-bit image array.
@@ -942,14 +864,13 @@ int_fast8_t daoCentroidPws(float *im, float *slopes,
  * @param descramblerSize The size of the descrambler array.
  * @param output A pointer to a pre-allocated array where the processed image data will be stored.
  */
-void daoDescrambleOcam2Image(uint8_t img[], int imgRows, int imgCols, uint16_t *img16[],
-                             int descrambler[], int descramblerSize, uint16_t output[])
+void daoDescrambleOcam2Image(uint8_t img[], int imgRows, int imgCols, uint16_t* img16[],
+    int descrambler[], int descramblerSize, uint16_t output[])
 {
     int img16Cols = imgCols / 2;
 
     // Convert flattened img to 16-bit img16
-    for (int i = 0; i < imgRows; i++) 
-    {
+    for (int i = 0; i < imgRows; i++) {
         for (int j = 0; j < imgCols; j += 2) \
         {
             // Combine two adjacent 8-bit values into one 16-bit value
@@ -958,8 +879,7 @@ void daoDescrambleOcam2Image(uint8_t img[], int imgRows, int imgCols, uint16_t *
     }
 
     // Use descrambler array to reorder the pixels in the output
-    for (int i = 0; i < descramblerSize; i++) 
-    {
+    for (int i = 0; i < descramblerSize; i++) {
         int row = descrambler[i] / img16Cols;
         int col = descrambler[i] % img16Cols;
         output[i] = img16[row][col];
@@ -968,127 +888,97 @@ void daoDescrambleOcam2Image(uint8_t img[], int imgRows, int imgCols, uint16_t *
 
 /**
  * @brief Extract an image by applying mask
- * 
- * @param inShm raw image 
+ *
+ * @param inShm raw image
  * @param maskShm flat field assumes uint32
  * @param outShm output extracted image as vector
- * @return int_fast8_t 
+ * @return int_fast8_t
  */
-int_fast8_t daoToolsShmExtract(IMAGE *inShm, IMAGE *maskShm, IMAGE *outShm)
+int_fast8_t daoToolsShmExtract(IMAGE* inShm, IMAGE* maskShm, IMAGE* outShm)
 {
     daoTrace("\n");
     int k;
     int inSize = inShm[0].md[0].size[0] * inShm[0].md[0].size[1];
     outShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
     int cnt = 0;
-    if (inShm[0].md[0].atype == _DATATYPE_UINT8)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-           if (maskShm[0].array.UI32[k] == 1)
-           {
-               outShm[0].array.UI8[cnt] = inShm[0].array.UI8[k];
-               cnt++; 
-           }
+    if (inShm[0].md[0].atype == _DATATYPE_UINT8) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                outShm[0].array.UI8[cnt] = inShm[0].array.UI8[k];
+                cnt++;
+            }
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_INT8)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-           if (maskShm[0].array.UI32[k] == 1)
-           {
-               outShm[0].array.SI8[cnt] = inShm[0].array.SI8[k];
-               cnt++; 
-           }
+    else if (inShm[0].md[0].atype == _DATATYPE_INT8) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                outShm[0].array.SI8[cnt] = inShm[0].array.SI8[k];
+                cnt++;
+            }
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_UINT16)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-           if (maskShm[0].array.UI32[k] == 1)
-           {
-               outShm[0].array.UI16[cnt] = inShm[0].array.UI16[k];
-               cnt++; 
-           }
+    else if (inShm[0].md[0].atype == _DATATYPE_UINT16) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                outShm[0].array.UI16[cnt] = inShm[0].array.UI16[k];
+                cnt++;
+            }
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_INT16)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-           if (maskShm[0].array.UI32[k] == 1)
-           {
-               outShm[0].array.SI16[cnt] = inShm[0].array.SI16[k];
-               cnt++; 
-           }
+    else if (inShm[0].md[0].atype == _DATATYPE_INT16) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                outShm[0].array.SI16[cnt] = inShm[0].array.SI16[k];
+                cnt++;
+            }
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_INT32)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-           if (maskShm[0].array.UI32[k] == 1)
-           {
-               outShm[0].array.SI32[cnt] = inShm[0].array.SI32[k];
-               cnt++; 
-           }
+    else if (inShm[0].md[0].atype == _DATATYPE_INT32) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                outShm[0].array.SI32[cnt] = inShm[0].array.SI32[k];
+                cnt++;
+            }
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_UINT32)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-           if (maskShm[0].array.UI32[k] == 1)
-           {
-               outShm[0].array.UI32[cnt] = inShm[0].array.UI32[k];
-               cnt++; 
-           }
+    else if (inShm[0].md[0].atype == _DATATYPE_UINT32) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                outShm[0].array.UI32[cnt] = inShm[0].array.UI32[k];
+                cnt++;
+            }
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_UINT64)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-           if (maskShm[0].array.UI32[k] == 1)
-           {
-               outShm[0].array.UI64[cnt] = inShm[0].array.UI64[k];
-               cnt++; 
-           }
+    else if (inShm[0].md[0].atype == _DATATYPE_UINT64) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                outShm[0].array.UI64[cnt] = inShm[0].array.UI64[k];
+                cnt++;
+            }
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_INT64)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-           if (maskShm[0].array.UI32[k] == 1)
-           {
-               outShm[0].array.SI64[cnt] = inShm[0].array.SI64[k];
-               cnt++; 
-           }
+    else if (inShm[0].md[0].atype == _DATATYPE_INT64) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                outShm[0].array.SI64[cnt] = inShm[0].array.SI64[k];
+                cnt++;
+            }
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_FLOAT)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-           if (maskShm[0].array.UI32[k] == 1)
-           {
-               outShm[0].array.F[cnt] = inShm[0].array.F[k];
-               cnt++; 
-           }
+    else if (inShm[0].md[0].atype == _DATATYPE_FLOAT) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                outShm[0].array.F[cnt] = inShm[0].array.F[k];
+                cnt++;
+            }
         }
     }
-    else if (inShm[0].md[0].atype == _DATATYPE_DOUBLE)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-           if (maskShm[0].array.UI32[k] == 1)
-           {
-               outShm[0].array.D[cnt] = inShm[0].array.D[k];
-               cnt++; 
-           }
+    else if (inShm[0].md[0].atype == _DATATYPE_DOUBLE) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                outShm[0].array.D[cnt] = inShm[0].array.D[k];
+                cnt++;
+            }
         }
     }
     daoShmImagePart2ShmFinalize(&outShm[0]);
@@ -1098,135 +988,105 @@ int_fast8_t daoToolsShmExtract(IMAGE *inShm, IMAGE *maskShm, IMAGE *outShm)
 
 /**
  * @brief Subastract and Extract an image by applying mask, assume same type for A and B
- * 
- * @param inAShm image 
+ *
+ * @param inAShm image
  * @param inBShm image  - to substract
  * @param maskShm flat field assumes uint32
  * @param outShm output extracted image as vector
- * @return int_fast8_t 
+ * @return int_fast8_t
  */
-int_fast8_t daoToolsShmSubstractExtract(IMAGE *inAShm, IMAGE *inBShm, IMAGE *maskShm, IMAGE *outShm)
+int_fast8_t daoToolsShmSubstractExtract(IMAGE* inAShm, IMAGE* inBShm, IMAGE* maskShm, IMAGE* outShm)
 {
     daoTrace("\n");
     int k;
     int inSize = inAShm[0].md[0].size[0] * inAShm[0].md[0].size[1];
     outShm[0].md[0].cnt2 = inAShm[0].md[0].cnt2;
     int cnt = 0;
-    if (inAShm[0].md[0].atype == _DATATYPE_UINT8)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-           if (maskShm[0].array.UI32[k] == 1)
-           {
-               outShm[0].array.UI8[cnt] = inAShm[0].array.UI8[k] - inBShm[0].array.UI8[k];
-               cnt++; 
-           }
+    if (inAShm[0].md[0].atype == _DATATYPE_UINT8) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                outShm[0].array.UI8[cnt] = inAShm[0].array.UI8[k] - inBShm[0].array.UI8[k];
+                cnt++;
+            }
         }
     }
-    else if (inAShm[0].md[0].atype == _DATATYPE_INT8)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-           if (maskShm[0].array.UI32[k] == 1)
-           {
-               outShm[0].array.SI8[cnt] = inAShm[0].array.SI8[k] - inBShm[0].array.SI8[k];
-               cnt++; 
-           }
+    else if (inAShm[0].md[0].atype == _DATATYPE_INT8) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                outShm[0].array.SI8[cnt] = inAShm[0].array.SI8[k] - inBShm[0].array.SI8[k];
+                cnt++;
+            }
         }
     }
-    else if (inAShm[0].md[0].atype == _DATATYPE_UINT16)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-           if (maskShm[0].array.UI32[k] == 1)
-           {
-               outShm[0].array.UI16[cnt] = inAShm[0].array.UI16[k] - inBShm[0].array.UI16[k];
-               cnt++; 
-           }
+    else if (inAShm[0].md[0].atype == _DATATYPE_UINT16) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                outShm[0].array.UI16[cnt] = inAShm[0].array.UI16[k] - inBShm[0].array.UI16[k];
+                cnt++;
+            }
         }
     }
-    else if (inAShm[0].md[0].atype == _DATATYPE_INT16)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-           if (maskShm[0].array.UI32[k] == 1)
-           {
-               outShm[0].array.SI16[cnt] = inAShm[0].array.SI16[k] - inBShm[0].array.SI16[k];
-               cnt++; 
-           }
+    else if (inAShm[0].md[0].atype == _DATATYPE_INT16) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                outShm[0].array.SI16[cnt] = inAShm[0].array.SI16[k] - inBShm[0].array.SI16[k];
+                cnt++;
+            }
         }
     }
-    else if (inAShm[0].md[0].atype == _DATATYPE_INT32)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-           if (maskShm[0].array.UI32[k] == 1)
-           {
-               outShm[0].array.SI32[cnt] = inAShm[0].array.SI32[k] - inBShm[0].array.SI32[k];
-               cnt++; 
-           }
+    else if (inAShm[0].md[0].atype == _DATATYPE_INT32) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                outShm[0].array.SI32[cnt] = inAShm[0].array.SI32[k] - inBShm[0].array.SI32[k];
+                cnt++;
+            }
         }
     }
-    else if (inAShm[0].md[0].atype == _DATATYPE_UINT32)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-           if (maskShm[0].array.UI32[k] == 1)
-           {
-               outShm[0].array.UI32[cnt] = inAShm[0].array.UI32[k] - inBShm[0].array.UI32[k];
-               cnt++; 
-           }
+    else if (inAShm[0].md[0].atype == _DATATYPE_UINT32) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                outShm[0].array.UI32[cnt] = inAShm[0].array.UI32[k] - inBShm[0].array.UI32[k];
+                cnt++;
+            }
         }
     }
-    else if (inAShm[0].md[0].atype == _DATATYPE_UINT64)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-           if (maskShm[0].array.UI32[k] == 1)
-           {
-               outShm[0].array.UI64[cnt] = inAShm[0].array.UI64[k] - inBShm[0].array.UI64[k];
-               cnt++; 
-           }
+    else if (inAShm[0].md[0].atype == _DATATYPE_UINT64) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                outShm[0].array.UI64[cnt] = inAShm[0].array.UI64[k] - inBShm[0].array.UI64[k];
+                cnt++;
+            }
         }
     }
-    else if (inAShm[0].md[0].atype == _DATATYPE_INT64)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-           if (maskShm[0].array.UI32[k] == 1)
-           {
-               outShm[0].array.SI64[cnt] = inAShm[0].array.SI64[k] - inBShm[0].array.SI64[k];
-               cnt++; 
-           }
+    else if (inAShm[0].md[0].atype == _DATATYPE_INT64) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                outShm[0].array.SI64[cnt] = inAShm[0].array.SI64[k] - inBShm[0].array.SI64[k];
+                cnt++;
+            }
         }
     }
-    else if (inAShm[0].md[0].atype == _DATATYPE_FLOAT)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-           if (maskShm[0].array.UI32[k] == 1)
-           {
-               outShm[0].array.F[cnt] = inAShm[0].array.F[k] - inBShm[0].array.F[k];
-               cnt++; 
-           }
+    else if (inAShm[0].md[0].atype == _DATATYPE_FLOAT) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                outShm[0].array.F[cnt] = inAShm[0].array.F[k] - inBShm[0].array.F[k];
+                cnt++;
+            }
         }
     }
-    else if (inAShm[0].md[0].atype == _DATATYPE_DOUBLE)
-    {
-        for (k = 0; k < inSize; k++)
-        {
-           if (maskShm[0].array.UI32[k] == 1)
-           {
-               outShm[0].array.D[cnt] = inAShm[0].array.D[k] - inBShm[0].array.D[k];
-               cnt++; 
-           }
+    else if (inAShm[0].md[0].atype == _DATATYPE_DOUBLE) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                outShm[0].array.D[cnt] = inAShm[0].array.D[k] - inBShm[0].array.D[k];
+                cnt++;
+            }
         }
     }
     daoShmImagePart2ShmFinalize(&outShm[0]);
 
     return DAO_SUCCESS;
 }
- 
+
 /**
  * @brief Applies a high-pass filter (HPF) to modal coefficients, Single precision.
  *
@@ -1254,21 +1114,20 @@ int_fast8_t daoToolsShmSubstractExtract(IMAGE *inAShm, IMAGE *inBShm, IMAGE *mas
  * @note It is assumed that all input arrays (`H`, `C`, `CPrev`, `HPrev`) have at least `size` elements.
  * @note Typically `HPrev` and `CPrev` are from the previous frame and need to be updated externally.
  */
-int_fast8_t daoToolsHighPassFilter(float *H,           
-                                   const float *C,  
-                                   const float *CPrev,
-                                   const float *HPrev,
-                                   float fCutoff, 
-                                   float fLoop,
-                                   int size)
+int_fast8_t daoToolsHighPassFilter(float* H,
+    const float* C,
+    const float* CPrev,
+    const float* HPrev,
+    float fCutoff,
+    float fLoop,
+    int size)
 {
     daoTrace("\n");
     float alpha = exp(-2.0 * M_PI * fCutoff / fLoop);
-    for (int i = 0; i < size; ++i) 
-    {
+    for (int i = 0; i < size; ++i) {
         H[i] = alpha * HPrev[i] + alpha * (C[i] - CPrev[i]);
     }
-    
+
     return DAO_SUCCESS;
 }
 
@@ -1299,92 +1158,76 @@ int_fast8_t daoToolsHighPassFilter(float *H,
  * @note It is assumed that all input arrays (`H`, `C`, `CPrev`, `HPrev`) have at least `size` elements.
  * @note Typically `HPrev` and `CPrev` are from the previous frame and need to be updated externally.
  */
-int_fast8_t daoToolsHighPassFilterDouble(double *H,           
-                                         const double *C,  
-                                         const double *CPrev,
-                                         const double *HPrev,
-                                         double fCutoff, 
-                                         double fLoop,
-                                         int size)
+int_fast8_t daoToolsHighPassFilterDouble(double* H,
+    const double* C,
+    const double* CPrev,
+    const double* HPrev,
+    double fCutoff,
+    double fLoop,
+    int size)
 {
     daoTrace("\n");
     double alpha = exp(-2.0 * M_PI * fCutoff / fLoop);
 
-    for (int i = 0; i < size; ++i) 
-    {
+    for (int i = 0; i < size; ++i) {
         H[i] = alpha * HPrev[i] + alpha * (C[i] - CPrev[i]);
     }
 
     return DAO_SUCCESS;
 }
 
-int_fast8_t daoDmCombine(IMAGE **imageCube, IMAGE *image, int nbChannel, int nbVal, int removePiston, double clipping)
+int_fast8_t daoDmCombine(IMAGE** imageCube, IMAGE* image, int nbChannel, int nbVal, int removePiston, double clipping)
 {
     daoTrace("\n");
     int pp;
     int k;
     image->md[0].write = 1;
-    
-    if (image->md[0].atype == _DATATYPE_FLOAT)
-    {
+
+    if (image->md[0].atype == _DATATYPE_FLOAT) {
         float sum = 0.0;
-        for (pp=0; pp<nbVal; pp++)
-        {   
+        for (pp = 0; pp < nbVal; pp++) {
             image[0].array.F[pp] = 0;
-            for(k=0;k<nbChannel;k++) 
-            {
-                if (imageCube[k][0].array.F[pp] > clipping)
-                {
+            for (k = 0;k < nbChannel;k++) {
+                if (imageCube[k][0].array.F[pp] > clipping) {
                     image[0].array.F[pp] = (float)clipping;
                 }
-                else if (imageCube[k][0].array.F[pp] < -clipping)
-                {
+                else if (imageCube[k][0].array.F[pp] < -clipping) {
                     image[0].array.F[pp] = -(float)clipping;
                 }
-                else
-                {
+                else {
                     image[0].array.F[pp] = imageCube[k][0].array.F[pp];
                 }
                 sum += image[0].array.F[pp];
             }
-            if (removePiston)
-            {
-                for(k=0;k<nbChannel;k++) 
-                {
+            if (removePiston) {
+                for (k = 0;k < nbChannel;k++) {
                     image[0].array.F[pp] -= sum / nbChannel;
                 }
             }
         }
     }
-    else if (image->md[0].atype == _DATATYPE_DOUBLE)
-    {
+    else if (image->md[0].atype == _DATATYPE_DOUBLE) {
         double sum = 0.0;
-        for (pp=0; pp<nbVal; pp++)
-        {   
+        for (pp = 0; pp < nbVal; pp++) {
             image[0].array.D[pp] = 0;
-            if (imageCube[k][0].array.D[pp] > clipping)
-            {
+            if (imageCube[k][0].array.D[pp] > clipping) {
                 image[0].array.D[pp] = clipping;
             }
-            else if (imageCube[k][0].array.D[pp] < -clipping)
-            {
+            else if (imageCube[k][0].array.D[pp] < -clipping) {
                 image[0].array.D[pp] = -clipping;
             }
-            else
-            {
+            else {
                 image[0].array.D[pp] = imageCube[k][0].array.D[pp];
             }
             sum += image[0].array.D[pp];
         }
-        if (removePiston)
-        {
-            for(k=0;k<nbChannel;k++) 
-            {
+        if (removePiston) {
+            for (k = 0;k < nbChannel;k++) {
                 image[0].array.D[pp] -= sum / nbChannel;
             }
         }
     }
-	
+
     daoShmImagePart2ShmFinalize(image);
 
     return DAO_SUCCESS;
@@ -1392,30 +1235,27 @@ int_fast8_t daoDmCombine(IMAGE **imageCube, IMAGE *image, int nbChannel, int nbV
 
 
 
-int_fast8_t daoShmCopyToPosition(IMAGE *imageIn, IMAGE *imageOut,
-                                 int nbVal, int position, int finalize)
+int_fast8_t daoShmCopyToPosition(IMAGE* imageIn, IMAGE* imageOut,
+    int nbVal, int position, int finalize)
 {
     daoTrace("\n");
 
     imageOut->md[0].write = 1;
 
-    if (imageIn->md[0].atype == _DATATYPE_FLOAT)
-    {
+    if (imageIn->md[0].atype == _DATATYPE_FLOAT) {
         memcpy(&imageOut[0].array.F[position],
-               &imageIn[0].array.F[0],
-               (size_t)nbVal * sizeof(float));
+            &imageIn[0].array.F[0],
+            (size_t)nbVal * sizeof(float));
     }
-    else if (imageIn->md[0].atype == _DATATYPE_DOUBLE)
-    {
+    else if (imageIn->md[0].atype == _DATATYPE_DOUBLE) {
         memcpy(&imageOut[0].array.D[position],
-               &imageIn[0].array.D[0],
-               (size_t)nbVal * sizeof(double));
+            &imageIn[0].array.D[0],
+            (size_t)nbVal * sizeof(double));
     }
 
     imageOut->md[0].write = 0;
 
-    if (finalize == 1)
-    {
+    if (finalize == 1) {
         daoShmImagePart2ShmFinalize(imageOut);
     }
 
@@ -1430,9 +1270,10 @@ int_fast8_t daoShmCopyToPosition(IMAGE *imageIn, IMAGE *imageOut,
 #include <sys/time.h>
 
 // Fallback for sched_setscheduler
-int sched_setscheduler(pid_t pid, int policy, const struct sched_param *param) {
-    // macOS does not support real-time policies (SCHED_FIFO, etc.)
-    // Just log and return success as a no-op
+int sched_setscheduler(pid_t pid, int policy, const struct sched_param* param)
+{
+// macOS does not support real-time policies (SCHED_FIFO, etc.)
+// Just log and return success as a no-op
     (void)pid;
     (void)policy;
     (void)param;
@@ -1441,7 +1282,8 @@ int sched_setscheduler(pid_t pid, int policy, const struct sched_param *param) {
 }
 
 // Fallback for clock_nanosleep
-int clock_nanosleep(clockid_t clock_id, int flags, const struct timespec *request, struct timespec *remain) {
+int clock_nanosleep(clockid_t clock_id, int flags, const struct timespec* request, struct timespec* remain)
+{
     if (flags == TIMER_ABSTIME) {
         // Absolute time mode: wait until the specified time
         struct timespec now;
@@ -1461,8 +1303,9 @@ int clock_nanosleep(clockid_t clock_id, int flags, const struct timespec *reques
 
         struct timespec delay = { sec_diff, nsec_diff };
         return nanosleep(&delay, remain);
-    } else {
-        // Relative sleep
+    }
+    else {
+     // Relative sleep
         return nanosleep(request, remain);
     }
 }
@@ -1476,8 +1319,7 @@ void daoRtSetup(int rt_priority)
     int cur_prio;
 
     /* Lock memory to avoid major page-fault jitter */
-    if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0)
-    {
+    if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0) {
         daoTrace("mlockall failed: %s\n", strerror(errno));
     }
 
@@ -1485,10 +1327,9 @@ void daoRtSetup(int rt_priority)
     memset(&sp, 0, sizeof(sp));
     sp.sched_priority = rt_priority;
 
-    if (sched_setscheduler(0, SCHED_FIFO, &sp) != 0)
-    {
+    if (sched_setscheduler(0, SCHED_FIFO, &sp) != 0) {
         daoTrace("sched_setscheduler(SCHED_FIFO,%d) failed: %s\n",
-                 rt_priority, strerror(errno));
+            rt_priority, strerror(errno));
         return;
     }
 
