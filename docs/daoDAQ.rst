@@ -308,15 +308,67 @@ TODO: Document error state handling, recovery procedures, and diagnostic steps.
 API.Recover() # asks tool to undergo recovery.
 API.Recover(force=true) # reboot tool process.
 
-Python API Reference
-====================
+DAQ Client Library
+==================
 
-TODO: Document Python API Reference
+The **daoDAQ** Python module provides a high-level client library that abstracts away 
+the details of communicating with the Dao DAQ server.
 
-Command-Line API Reference
-==========================
+.. note::
+   
+   All client methods will raise an exception if the tasks fails for any reason.
 
-The **daoDAQClient** tool exposes the Python API on the command line, suitable for manual control.
+Example Usage
+-------------
+
+.. code-block:: python
+
+   from daoDAQ import DAQClient
+   import yaml
+   
+   # Connect to the server
+   client = DAQClient(daq_host_addr="localhost", daq_host_port=73000)
+   client.ping()  # Verify connectivity
+   
+   # Load and apply configuration
+   with open("daq-config.yaml", "r") as f:
+       config = yaml.safe_load(f)
+   client.daq_session_configure(yaml.dump(config))
+   
+   # Begin acquisition
+   client.daq_session_begin()
+   
+   # For bounded acquisitions (all sources specify samples limit), await completion
+   client.daq_session_await_finish()
+   
+   # For unbounded acquisitions, manually stop
+   # client.daq_session_finish()
+
+Command-Line Interface
+======================
+
+The **daoDAQClient** tool provides stateless CLI access to all DAQ operations, suitable for shell scripts and manual control.
+
+Basic workflow:
+
+.. code-block:: bash
+
+   # Check a DAQ server is present and reachable
+   daoDAQClient --host <addr> --port <port> ping # Specify host IP and/or port
+   daoDAQClient ping # Use localhost and default port.
+
+   # Configure the session
+   daoDAQClient configure /path/to/daq-config.yaml
+   
+   # Start acquisition
+   daoDAQClient aquire
+   daoDAQClient aquire --wait # for use with bounded session to block until they finish.
+   
+   # Or start and manage manually
+   daoDAQClient aquire
+   daoDAQClient finish
+
+For a complete list of available commands and options:
 
 .. code-block:: bash
 
