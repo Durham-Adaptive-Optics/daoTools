@@ -38,7 +38,7 @@ Custom port:
 
    daoDAQ --port 73000
 
-Log output to file:
+Log output to file instead of standard output:
 
 .. code-block:: bash
 
@@ -280,8 +280,15 @@ To change the DAQ configuration:
 2. Upload a new configuration via the API
 3. Start a new session with the updated configuration
 
+Session Outputs
+---------------
 
-After a session completes, the ``root_storage`` directory contains:
+After a session completes, the ``root_storage`` directory contains a new subdirectory that holds
+all of the datafiles aquired during the DAQ session.
+
+Each shared memory source with ``file_rollover`` specified creates its own subdirectory within the 
+session directory to organize its split datafiles; sources without rollover store their single 
+datafile directly in the session directory.
 
 .. code-block:: text
 
@@ -293,9 +300,6 @@ After a session completes, the ``root_storage`` directory contains:
            ├── rolled_smem_0.npy
            ├── rolled_smem_1.npy
            └── ...
-
-Each shared memory source with ``file_rollover`` specified creates its own subdirectory to organize its 
-various split datafiles. Sources without rollover store their single datafile directly in the session directory.
 
 Error Handling
 ==============
@@ -312,14 +316,11 @@ TODO: Document Python API Reference
 Command-Line API Reference
 ==========================
 
-The **daoDAQClient** tool exposes the Python API on the command line, suitable for shell scripts or manual control.
+The **daoDAQClient** tool exposes the Python API on the command line, suitable for manual control.
 
 .. code-block:: bash
 
    daoDAQClient --help
-
-All Python API functions are available as command-line subcommands with equivalent behavior.
-
 
 User Support & Feedback
 =======================
