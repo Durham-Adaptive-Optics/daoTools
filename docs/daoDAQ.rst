@@ -1,30 +1,27 @@
-========
-daoDAQ
-========
+================
+daoDAQ  v2.0.0
+================
 
-Dao Data Acquisition Tool (v2.0.0)
+The DAO Data Acquisition tool, named daoDAQ and referred to simply as DAQ throughout this document, is a server application designed to facilitate
+data acquisition within high-throughput DAO RTC systems, supporting capture from sources such as DAO shared memory and data files.
 
-**daoDAQ** is a real-time data acquisition tool that persists data from various sources within an RTC system. 
-It acquires from files and shared memory, with flexible output formats and performance tuning for high-throughput 
-systems.
-
-Installation & Verification
-============================
-
-To verify the tool is installed, run:
+The tool ships with the ``daoTools`` package; 
+check the latest version of the tool is installed on your system 
+by running the following
 
 .. code-block:: bash
 
    daoDAQ --version
 
 
-Getting Started
-===============
+Running a DAQ Server
+======================
 
-The daoDAQ tool runs as a server on your RTC system. By default, it listens on port 62000.
+First you must run an instance of the Dao DAQ tool on your system. This
+hosts a communication server allowing you to provide configurations and
+and command DAQ sessions where you can capture your data.
 
-Starting the Server
--------------------
+By default the tool's server is hosted locally on port ``62000`` and logs are emitted to standard output.
 
 Basic launch:
 
@@ -52,33 +49,27 @@ For all available options:
 
 
 DAQ Configuration
-=================
+==================
 
-Before you can acquire data, you must provide the tool with a **DAQ configuration**—a YAML 1.2 document that specifies
-what sources to aquire from, how to aquire from them, and how the aquired data should be persisted to the disk.
+Before you can capture data from the RTC, you must first provide the tool with a 
+configuration that informs it what data to capture and how, at which point you
+can proceed to carrying out DAQ sessions whereby the data is captured and stored
+according to your provided configuration.
 
-Configuration can be supplied in two ways:
-
-1. **At tool launch** (configuration does not change):
-
-   .. code-block:: bash
-
-      daoDAQ --daq-configuration /path/to/daq-config.yaml
-
-2. **Via API after launch** (configuration can be updated between sessions):
-
-   .. code-block:: python
-
-      api = daoDAQ.API()
-      api.upload_configuration(yaml_config_string)
+DAQ session configuration is specified using a YAML v1.2 document. The following
+describes the structure of a valid DAQ configuration.
 
 Configuration Structure
 -----------------------
 
 A DAQ configuration contains two main sections:
 
-- **Session parameters**: General settings for the acquisition session
-- **Sources**: List of sources to aquire from
+- **Session parameters**: General settings for the DAQ session
+- **Sources**: List of sources to acquire data from
+
+.. important::
+
+   All required parameters must be correctly specified. Omission or invalid values will cause a parse error and transition the tool to the Error state.
 
 Session Parameters
 ~~~~~~~~~~~~~~~~~~
@@ -107,11 +98,6 @@ Session parameters are specified at the YAML root level:
      - Timestamp (e.g., 2026-04-22_14-30-45)
      - Name of the session's group subdirectory. If omitted, a timestamp is used.
 
-.. warning::
-
-   All required parameters must be correctly specified. Omission or invalid values will cause a parse error and transition the tool to the Error state.
-
-
 Data Sources
 ~~~~~~~~~~~~
 
@@ -139,7 +125,7 @@ Copies a file from disk to the session output directory when the session begins.
 
 **2. Shared Memory Source**
 
-Acquires data samples in real-time from shared memory and writes them to output datafiles.
+Acquires data samples in real-time from dao shared memory and writes them to output datafiles on the disk.
 
 .. list-table::
    :widths: 20 15 15 20 40
@@ -220,65 +206,72 @@ Configuration Example
        sink_affinity: 7
        buffer_limit: 900
 
+Providing a Configuration
+-------------------------
+
+A DAQ configuration can be provided to the tool in two ways:
+
+1. **At tool launch** (configuration does not change):
+
+   .. code-block:: bash
+
+      daoDAQ --daq-configuration /path/to/daq-config.yaml
+
+2. **Via API after launch** (configuration can be updated anytime):
+
+   .. code-block:: python
+
+      from daoDAQ import DAQClient
+      client = DAQClient()
+      with open("path/to/config-file.yml", "r") as daq_config_file:
+         daq_config = daq_config_file.read()
+         client.daq_session_configure_upload(daq_config)
+         client.daq_session_configure_apply()
+
 DAQ Sessions
 ============
 
 Starting a Session
 ------------------
 
-First, ensure a DAQ configuration has been provided to the tool. Then use the Python API to begin acquisition:
+.. code-block:: python
+
+    from daoDAQ import DAQClient
+
+    client = DAQClient()
+    ...
+    client.daq_session_begin()
+
+DAQ sessions will automatically finish once all data sources have been fully captured.  
+For example, in sessions that involve only files or shared memory with a finite number of samples, 
+the session will complete automatically once all samples have been acquired from all sources.  
+
+You can wait for such sessions to finish using:
 
 .. code-block:: python
 
-   api = daoDAQ.API()
-   api.start_session()
+    from daoDAQ import DAQClient
 
-By default, this call returns immediately. To block until the session completes (useful for bounded acquisitions):
+    client = DAQClient()
+    ...
+    client.daq_session_await_finish()
 
-.. code-block:: python
+Finishing a Session
+-------------------
 
-   api = daoDAQ.API()
-   api.start_session(block=True)
-
-Alternatively, start the session asynchronously and poll for completion:
-
-.. code-block:: python
-
-   api = daoDAQ.API()
-   api.start_session()
-   api.await_session_completion()
-
-Ending a Session
-----------------
-
-To manually stop an acquisition session:
+If at least one data source can capture data indefinitely, the DAQ session will **not** finish automatically 
+and must be ended manually. You can do this using:
 
 .. code-block:: python
 
-   api = daoDAQ.API()
-   api.end_session()
+    from daoDAQ import DAQClient
 
-Automatic Completion
-~~~~~~~~~~~~~~~~~~~~~
+    client = DAQClient()
+    ...
+    client.daq_session_finish()
 
-If all shared memory sources in the configuration specify a bounded ``samples`` parameter, the tool will automatically end the session once all samples have been acquired and written to disk. In such cases, simply await completion:
-
-.. code-block:: python
-
-   api = daoDAQ.API()
-   api.start_session()
-   api.await_session_completion()  # Blocks until auto-end
-
-Multiple Sessions
------------------
-
-After a session completes successfully, you can immediately run another acquisition session using the same configuration. Sessions are stored in independent subdirectories under ``root_storage``.
-
-To change the DAQ configuration:
-
-1. End the currently active session (if running)
-2. Upload a new configuration via the API
-3. Start a new session with the updated configuration
+After a session completes successfully, you can immediately start a new session using the same DAQ configuration.  
+Alternatively, you can upload a new DAQ configuration to run a completely different set of sessions.
 
 Session Outputs
 ---------------
@@ -301,78 +294,83 @@ datafile directly in the session directory.
            ├── rolled_smem_1.npy
            └── ...
 
-Error Handling
-==============
 
-TODO: Document error state handling, recovery procedures, and diagnostic steps.
-API.Recover() # asks tool to undergo recovery.
-API.Recover(force=true) # reboot tool process.
+Recovering from Errors
+======================
+
+In the case where the DAQ tool encounters a serious issue at anytime
+during its operation, it will enter into the Error state. 
+
+In such state the tool will ensure any DAQ session that was in-progess at the time
+of the error is gracefully stopped and any resources allocated for
+carrying out DAQ sessions will be destroyed. 
+
+The logs must be consulted to understand the root cause
+of the error. Once the issue has been resolved, 
+then recovery can be attempted.
+
+Recovery will attempt to bring the tool back into a state where
+it can carry out DAQ sessions. Therefore a valid DAQ configuration
+must be applied before recovery is attempted.
+
+The following demonstrates how to attempt a recovery.
+
+.. code-block:: python
+
+   from daoDAQ import DAQClient
+   client = DAQClient()
+   client.recover()
+
+If recovery proves unsuccessful, the last resort is to simply terminate the DAQ server 
+instance and re-launch it. For example, on Linux systems the following will forcefully terminate
+any and all DAQ server instances:
+
+.. code:: bash
+
+   kill -9 $(pgrep daoDAQ) 
 
 DAQ Client Library
 ==================
 
 The **daoDAQ** Python module provides a high-level client library that abstracts away 
-the details of communicating with the Dao DAQ server.
+the details of communicating with the DAQ server.
 
 .. note::
    
    All client methods will raise an exception if the tasks fails for any reason.
 
-Example Usage
--------------
+The following demonstrates a simple use-case of the client library, creating
+a connection to the DAQ server (default endpoint), uploads a DAQ configuration
+from a file on disk, and then performs a three second capture session. 
 
 .. code-block:: python
 
    from daoDAQ import DAQClient
-   import yaml
-   
-   # Connect to the server
-   client = DAQClient(daq_host_addr="localhost", daq_host_port=73000)
-   client.ping()  # Verify connectivity
-   
-   # Load and apply configuration
-   with open("daq-config.yaml", "r") as f:
-       config = yaml.safe_load(f)
-   client.daq_session_configure(yaml.dump(config))
-   
-   # Begin acquisition
+
+   client = DAQClient()
+   with open("/path/to/daq-config.yaml", "r") as file:
+      daq_config: str = file.read()
+      client.daq_session_configure_upload(daq_config)
+      client.daq_session_configure_apply()
+
    client.daq_session_begin()
-   
-   # For bounded acquisitions (all sources specify samples limit), await completion
-   client.daq_session_await_finish()
-   
-   # For unbounded acquisitions, manually stop
-   # client.daq_session_finish()
+   sleep(3)
+   client.daq_session_finish()
+
+For more details see ``daoDAQClient.py`` for a detailed reference of the client
+API and examples on how to use it.
 
 Command-Line Interface
 ======================
 
-The **daoDAQClient** tool provides stateless CLI access to all DAQ operations, suitable for shell scripts and manual control.
-
-Basic workflow:
-
-.. code-block:: bash
-
-   # Check a DAQ server is present and reachable
-   daoDAQClient --host <addr> --port <port> ping # Specify host IP and/or port
-   daoDAQClient ping # Use localhost and default port.
-
-   # Configure the session
-   daoDAQClient configure /path/to/daq-config.yaml
-   
-   # Start acquisition
-   daoDAQClient aquire
-   daoDAQClient aquire --wait # for use with bounded session to block until they finish.
-   
-   # Or start and manage manually
-   daoDAQClient aquire
-   daoDAQClient finish
+The **daoDAQClient** tool provides stateless CLI access to all DAQ operations, suitable for shell scripts and manual control;
+built on top of the aforementioned client library.
 
 For a complete list of available commands and options:
 
 .. code-block:: bash
 
-   daoDAQClient --help
+   python daoDAQClient.py --help
 
 User Support & Feedback
 =======================

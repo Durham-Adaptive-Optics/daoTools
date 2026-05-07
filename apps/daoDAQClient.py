@@ -53,13 +53,25 @@ class DAQClient:
         
         return stateMap.get(stateName)
     
-    def daq_session_configure(self, daq_config: str):
-        if self.state() != DAQState.Unconfigured:
-            raise RuntimeError("DAQ not accepting new configurations")
+    def recover(self):
+        if self.state() != DAQState.Error:
+            raise RuntimeError("No recovery needed")
+           
+        status, _ = self.api.Exec("Recover")
+        if status != 0 or self.state() != DAQState.Ready:
+            raise RuntimeError("failed to recover DAQ server")
+    
+    def daq_session_configure_upload(self, daq_config: str):
+        if self.state() not in (DAQState.Unconfigured, DAQState.Error):
+            raise RuntimeError("DAQ will not accept new configuration in current state")
         
         status, _ = self.api.Other(daq_config)
         if status != 0:
             raise RuntimeError("failed to upload DAQ configuration")
+        
+    def daq_session_configure_apply(self):
+        if self.state() != DAQState.Unconfigured:
+            raise RuntimeError("DAQ not accepting new configurations")
         
         status, _ = self.api.Exec("Init")
         if status != 0 or self.state() != DAQState.Configured:
@@ -105,7 +117,6 @@ class DAQClient:
 """ CLI Utility """
 if __name__ == "__main__":
     import click
-    import yaml
 
     def cli_error(msg: str):
         click.echo(
@@ -148,18 +159,44 @@ if __name__ == "__main__":
             )
         except Exception as e:
             cli_error(e)
+
+    @cli.command()
+    @click.pass_obj
+    def recover(obj):
+        """ Attempt to recover a DAQ server instance"""
+        try:
+            client = DAQClient(obj['daq_host'], obj['daq_port'])
+            client.recover()
+            click.echo(click.style("DAQ server recovery successful", fg='green'))
+            click.echo(
+                click.style(f"DAQ State: ") + 
+                click.style(client.state().name, bold=True)
+            )
+        except Exception as e:
+            cli_error(e)
         
     @cli.command()
     @click.pass_obj
     @click.argument('daq_config_path')
-    def configure(obj, daq_config_path: str):
-        """ Upload and apply new DAQ configuration """
+    def upload(obj, daq_config_path: str):
+        """ Upload new DAQ configuration """
         try:
             with open(daq_config_path, "r") as daq_config_file:
                 client = DAQClient(obj['daq_host'], obj['daq_port'])
-                daq_config = yaml.safe_load(daq_config_file)
-                client.daq_session_configure(daq_config)
-                click.echo(click.style("DAQ configuration successfully applied", fg="green"))
+                daq_config = daq_config_file.read()
+                client.daq_session_configure_upload(daq_config)
+                click.echo(click.style("DAQ configuration successfully uploaded", fg="green"))
+        except Exception as e:
+            cli_error(e)
+    
+    @cli.command()
+    @click.pass_obj
+    def apply(obj):
+        """ Apply active DAQ configuration """
+        try:
+            client = DAQClient(obj['daq_host'], obj['daq_port'])
+            client.daq_session_configure_apply()
+            click.echo(click.style("DAQ configuration successfully applied", fg="green"))
         except Exception as e:
             cli_error(e)
     
