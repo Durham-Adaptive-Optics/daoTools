@@ -21,7 +21,8 @@ First you must run an instance of the Dao DAQ tool on your system. This
 hosts a communication server allowing you to provide configurations and
 and command DAQ sessions where you can capture your data.
 
-By default the tool's server is hosted locally on port ``62000`` and logs are emitted to standard output.
+By default the tool's server is hosted locally on port ``62000`` and logs are emitted
+to a file named ``daoDAQ.logs`` under the working directory of the program instance.
 
 Basic launch:
 
@@ -35,11 +36,11 @@ Custom port:
 
    daoDAQ --port 73000
 
-Log output to file instead of standard output:
+Log to standard output instead of a log file:
 
 .. code-block:: bash
 
-   daoDAQ --log-file /var/log/daoDAQ.log
+   daoDAQ --stdout-logging
 
 For all available options:
 
@@ -74,7 +75,7 @@ A DAQ configuration contains two main sections:
 Session Parameters
 ~~~~~~~~~~~~~~~~~~
 
-Session parameters are specified at the YAML root level:
+Session parameters are specified at the YAML root level under ``session_parameters``:
 
 .. list-table::
    :widths: 20 15 15 20 40
@@ -185,6 +186,11 @@ Acquires data samples in real-time from dao shared memory and writes them to out
      - Unbounded
      - Maximum number of samples the DAQ buffer can hold before dropping new samples.
 
+   * - ``eager_start``
+     - Optional
+     - Boolean
+     - True
+     - An eager start captures the sample already present in shared memory when the session begins; a non-eager start waits for the next sample to arrive.
 
 Configuration Example
 ~~~~~~~~~~~~~~~~~~~~~
@@ -205,6 +211,7 @@ Configuration Example
        daq_affinity: 2
        sink_affinity: 7
        buffer_limit: 900
+       eager_start: true
 
 Providing a Configuration
 -------------------------
@@ -322,12 +329,12 @@ The following demonstrates how to attempt a recovery.
    client.recover()
 
 If recovery proves unsuccessful, the last resort is to simply terminate the DAQ server 
-instance and re-launch it. For example, on Linux systems the following will forcefully terminate
+instance and re-launch it. For example, on Linux systems the following will gracefully terminate
 any and all DAQ server instances:
 
 .. code:: bash
 
-   kill -9 $(pgrep daoDAQ) 
+   kill -2 $(pgrep daoDAQ) 
 
 DAQ Client Library
 ==================

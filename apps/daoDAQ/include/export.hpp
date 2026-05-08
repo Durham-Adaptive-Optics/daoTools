@@ -9,22 +9,36 @@
 #pragma once
 
 #include <unordered_map>
-#include <policies.hpp>
 #include <filesystem>
 #include <daoShm.h>
 #include <fitsio.h>
 #include <utility>
 #include <memory>
 
-namespace Dao::Telemetry
+namespace Dao::DAQ
 {
+    enum class ExportFormat {
+        FITS,
+        NUMPY
+    };
+
+    inline static std::unordered_map<ExportFormat, std::string> const fmtToRepr
+    {
+        { ExportFormat::FITS, "fits" },
+        { ExportFormat::NUMPY, "numpy" }
+    };
+
+    inline static std::unordered_map<std::string, ExportFormat> const ReprToFmt
+    {
+        { "fits", ExportFormat::FITS },
+        { "numpy", ExportFormat::NUMPY }
+    };
+
     using QueueType = std::pair<IMAGE_METADATA, std::unique_ptr<std::byte[]>>;
 
-    struct ExportBackend
-    {
-        ExportBackend(SmemPolicy const& policies)
-            : policies_(policies), outputDirectory_()
-        {
+    struct ExportBackend {
+        ExportBackend(SmemParameters const& policies)
+            : policies_(policies), outputDirectory_() {
         }
 
         virtual void reset(std::filesystem::path const& output) = 0;
@@ -33,13 +47,12 @@ namespace Dao::Telemetry
         virtual ~ExportBackend() = default;
 
         protected:
-        SmemPolicy const& policies_;
+        SmemParameters const& policies_;
         std::filesystem::path outputDirectory_;
     };
 
-    struct FitsExporter : public ExportBackend
-    {
-        FitsExporter(SmemPolicy const& policies, IMAGE_METADATA const& smInfo);
+    struct FitsExporter : public ExportBackend {
+        FitsExporter(SmemParameters const& policies, IMAGE_METADATA const& smInfo);
 
         void reset(std::filesystem::path const& output) override;
         void put(QueueType const& sample) override;

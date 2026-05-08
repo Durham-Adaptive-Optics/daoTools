@@ -33,6 +33,11 @@ def configure(conf):
 				uselib_store='cfitsio'
 				)
  
+	conf.check_cfg( package='fmt',
+				args='--cflags --libs',
+				uselib_store='fmt'
+				)
+ 
 	# Check for ZeroMQ
 	conf.check_cfg(package='libzmq',
 				args='--cflags --libs',

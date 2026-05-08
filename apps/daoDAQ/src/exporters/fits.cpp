@@ -8,7 +8,7 @@
 
 #include <exporters.hpp>
 
-namespace Dao::Telemetry
+namespace Dao::DAQ
 {
     FitsExporter::FitsExporter(SmemPolicy const& policies, IMAGE_METADATA const& smInfo) :
         ExportBackend(policies),

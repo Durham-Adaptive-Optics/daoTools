@@ -3,80 +3,110 @@
  * @ Company: Centre for Advanced Instrumentation, Durham University
  * @ Contact: thomas.n.davies@durham.ac.uk
  * @ Create Time: 2025-09-12 16:02:50
- * @ Description: Telemetry Capture Tool Entry Point.
+ * @ Description: Dao Data Acquisition (DAQ) Software
  */
 
-#define APP_NAME            "daoTelCapture"
+/* ---------------------------------------------------------------- */
+
+#define APP_NAME            "daoDAQ"
 #define APP_VERSION_TAG     "v2.0.0"
+#define DEFAULT_LOGFILE     "daoDAQ.logs"
 #define DEFAULT_TCP_PORT    62000
 
+/* ---------------------------------------------------------------- */
+
 #include <CLI/CLI.hpp>
-#include <daoLog.hpp>
 #include <server.hpp>
+#include <log.hpp>
 #include <fstream>
+#include <csignal>
 #include <string>
 
-bool terminateRuntime {};
+/* ---------------------------------------------------------------- */
 
-void endme([[maybe_unused]] int signal)
+/* Read in a DAQ configuration from a file and provide it to the DAQ server instance.
+ * If doing so fails for whatever reason, a log message is emitted.
+*/
+void uploadDAQConfig(Dao::DAQ::DAQServer& daqServer, std::string const& filePath, Dao::Log::Logger& log)
 {
-    terminateRuntime = true;
+    try {
+        if (filePath.length()) {
+            std::ifstream daqConfigFile(filePath);
+            std::string const daqConfig { std::istreambuf_iterator<char>(daqConfigFile), std::istreambuf_iterator<char>() };
+            daqServer.uploadDAQConfig(daqConfig);
+        }
+    } catch (std::exception const& e) {
+        log.Warning(
+            LOGFMT("failed to provide initial DAQ configuration to DAQ server because {}", e.what())
+        );
+    }
 }
+
+/* ---------------------------------------------------------------- */
 
 int main(int argc, char* argv[])
 {
-    //
+    // cli parsing ..
     std::uint16_t tcpPort { DEFAULT_TCP_PORT };
-    std::string policyFilePath {};
-    std::string logsFilePath {};
+    std::string daqConfigPath {};
+    bool verboseLogging {};
+    bool stdoutLogging {};
 
-    CLI::App app("Dao Telemetry Capture Tool", APP_NAME);
+    CLI::App app("Dao Data Acquisition (DAQ) Software", APP_NAME);
 
     app.add_flag_callback("--version, -v", []() {
-        std::cout << "daoTelCapture " << APP_VERSION_TAG << std::endl;
+        std::cout << APP_NAME << " " << APP_VERSION_TAG << std::endl;
         throw CLI::Success();
     });
 
     app.add_option(
         "--daq-configuration, -c",
-        policyFilePath,
-        "Specify a DAQ session configuration file (default: None)"
-    );
-
-    app.add_option(
-        "--log-file, -l",
-        logsFilePath,
-        "Specify path to file where logs shall be written (default: stdout)"
+        daqConfigPath,
+        "Provide initial DAQ session configuration from a file."
     );
 
     app.add_option(
         "--port, -p",
         tcpPort,
-        std::string("Specify service host port (default: ") + std::to_string(DEFAULT_TCP_PORT) + ")"
+        std::string("Specify DAQ server host port (default: ") + std::to_string(DEFAULT_TCP_PORT) + ")."
+    );
+
+    app.add_flag(
+        "--stdout-logging, -s",
+        stdoutLogging,
+        "Log to standard output instead of a log file."
+    );
+
+    app.add_flag(
+        "--verbose-logging, -v",
+        verboseLogging,
+        "Increase verbosity of logs."
     );
 
     CLI11_PARSE(app, argc, argv);
 
-    // create logger ..
-    auto const logSink = logsFilePath.length() ? Dao::Log::Logger::DESTINATION::FILE : Dao::Log::Logger::DESTINATION::SCREEN;
-    Dao::Log::Logger logger(APP_NAME, logSink, logsFilePath);
-    logger.SetLevel(Dao::Log::LEVEL::DEBUG);
+    // setup application logger ..
+    auto const logSink = stdoutLogging ? Dao::Log::Logger::DESTINATION::SCREEN : Dao::Log::Logger::DESTINATION::FILE;
+    auto const logVerbosity = verboseLogging ? Dao::Log::LEVEL::TRACE : Dao::Log::LEVEL::INFO;
+    Dao::Log::Logger log(APP_NAME, logSink, DEFAULT_LOGFILE);
+    log.SetLevel(logVerbosity);
 
-    // run service ..
-    Dao::Telemetry::Server service(logger, DEFAULT_TCP_PORT);
+    // setup the application ..
+    Dao::DAQ::DAQServer daqServer(DEFAULT_TCP_PORT, log);
+    if (daqConfigPath.length())
+        uploadDAQConfig(daqServer, daqConfigPath, log);
 
-    try {
-        if (policyFilePath.length()) {
-            std::ifstream policyFile(policyFilePath);
-            std::string const fileContents { std::istreambuf_iterator<char>(policyFile), std::istreambuf_iterator<char>() };
-            service.storePolicyDocument(fileContents);
-        }
-    } catch (std::exception const& e) {
-        std::string const err { e.what() };
-        std::string const msg = "failed to load initial policy file from disk: " + err;
-        logger.Error(msg.c_str());
-    }
+    /* Blocks the application main thread until designated termination signals
+     * are received from the OS; at which point the thread is unblocked and
+     * the application can proceed to terminate gracefully.
+    */
+    int signum;
+    sigset_t sigset;
+    sigemptyset(&sigset);
+    sigaddset(&sigset, SIGINT);
+    pthread_sigmask(SIG_BLOCK, &sigset, nullptr);
+    sigwait(&sigset, &signum);
 
-    service.runHousekeeping(terminateRuntime);
+    log.Info(LOGFMT("Designated termination signal received ({}); process terminating gracefully", strsignal(signum)));
 }
 

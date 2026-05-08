@@ -3,138 +3,180 @@
  * @ Company: Centre for Advanced Instrumentation, Durham University
  * @ Contact: thomas.n.davies@durham.ac.uk
  * @ Create Time: 2026-04-29 10:07:25
- * @ Description: Implementation of application server.
+ * @ Description: DAQ server implementation.
  */
+
+ /* ---------------------------------------------------------------- */
 
 #include <server.hpp>
 #include <daoTools.h>
+#include <log.hpp>
 
-namespace Dao::Telemetry
+/* ---------------------------------------------------------------- */
+
+namespace Dao::DAQ
 {
-    Server::Server(Dao::Log::Logger& logger, size_t const tcpPort) :
-        Component("telCapture", logger, "", tcpPort)
-    {
+    DAQServer::DAQServer(std::uint16_t const tcpPort, Dao::Log::Logger& log) :
+        Dao::Component("DAQServer", log, "", tcpPort) {
+        m_log.Info(LOGFMT("DAQ server available on port {}", m_port));
     }
 
-    // -- Session Management Methods --
-    void Server::runHousekeeping(bool const& runtimeTerminated)
-    {
-        using namespace std::chrono_literals;
+    /* ---------------------------------------------------------------- */
 
-        while (!runtimeTerminated) {
-            std::this_thread::sleep_for(250ms);
-
-            if ("Running" == currentState()) {
-                size_t numFinished {};
-                for (auto const& res : captureResources_) {
-                    if (res->targetAchieved())
-                        ++numFinished;
-                }
-
-                if (numFinished == captureResources_.size())
-                    Idle();
-            }
-        }
-
-        // ensure session is finished and all resources cleaned up
-        // before the program exits.
-        Idle();
-        Disable();
-        Stop();
-    }
-
-    void Server::storePolicyDocument(std::string const& ymlPolicyDocument)
-    {
-        if ("Off" == currentState() || "Error" == currentState()) {
-            policyDocument_ = ymlPolicyDocument;
+    /* Takes the supplied DAQ YAML configuration string and saves it
+     * internally for later use.
+    */
+    void DAQServer::uploadDAQConfig(std::string const& daqConfig) {
+        auto const currentStateName = currentState();
+        if ("Off" == currentStateName || "Error" == currentStateName) {
+            daqRawConfig_ = daqConfig;
+            m_log.Info("Successfully uploaded DAQ configuration");
         }
         else {
-            m_log.Warning("New session policy document was ignored as you must be in Off state first");
-            return;
+            m_log.Error(LOGFMT("Could not upload new DAQ configuration due to invalid server state of {}", currentStateName));
         }
     }
 
-    void Server::loadPolicyFromDocument()
-    {
-        policies_ = std::make_unique<CapturePolicies>(policyDocument_);
-    }
-
-    void Server::createSessionResources()
-    {
-        for (auto const& policy : policies_->filePolicies) {
-            captureResources_.push_back(
-                std::make_unique<FileCaptureResource>(policy, [this]() { captureErrorHandler(); })
-            );
-        }
-
-        for (auto const& policy : policies_->smemPolicies) {
-            captureResources_.push_back(
-                std::make_unique<SmemCaptureResource>(policy, [this]() { captureErrorHandler(); })
-            );
-        }
-    }
-
-    void Server::startSession()
-    {
-        std::filesystem::path const sessionDirectory = createSessionGroup();
-
-        for (auto& res : captureResources_) {
-            res->beginCapture(sessionDirectory);
-        }
-    }
-
-    void Server::endSession()
-    {
-        for (auto& res : captureResources_) {
-            res->endCapture();
-        }
-    }
-
-    void Server::freeSessionResources()
-    {
-        captureResources_.clear();
-    }
-
-    void Server::clearSessionPolicy()
-    {
-        policies_.reset();
-    }
-
-    /* Callback passed to all capture resources upon their construction
-     * enabling them to inform the server of an issue
-     * during capture; this triggers an error state whereby the
-     * capture session is ended.
+    /* Parses the currently saved DAQ configuration string; if an issue occurs during the
+     * parse an exception is thrown.
     */
-    void Server::captureErrorHandler()
-    {
-        OnFailure(); // @todo does this crash if we run on a capture thread and goto error destroys things?
+    void DAQServer::applyDAQConfig() {
+        daqConfig_ = std::make_unique<CapturePolicies>(daqRawConfig_);
+
+        if (!daqConfig_->numResources()) {
+            m_log.Warning("DAQ configuration specifies no data sources");
+        }
     }
 
-    // -- Server API Hooks -- 
-    void Server::PROCESS_OTHER(std::string ymlPolicyDocument) { storePolicyDocument(ymlPolicyDocument); }
-    void Server::transition_Off_Standby() { loadPolicyFromDocument(); }
-    void Server::transition_Standby_Idle() { createSessionResources(); }
-    void Server::transition_Idle_Running() { startSession(); }
-    void Server::transition_Running_Idle() { endSession(); }
-    void Server::transition_Idle_Standby() { freeSessionResources(); }
-    void Server::transition_Standby_Off() { clearSessionPolicy(); }
-    void Server::transition_Running_Error() { endSession(); }
-
-    void Server::entry_Error()
-    {
-        freeSessionResources();
-        clearSessionPolicy();
+    /* Clears the currently active DAQ configuration; the saved raw
+     * DAQ configuration is untouched.
+    */
+    void DAQServer::resetDAQConfig() {
+        daqConfig_.reset();
     }
 
-    void Server::transition_Error_Idle()
-    {
-        loadPolicyFromDocument();
-        createSessionResources();
+    /* ---------------------------------------------------------------- */
+
+    /* Prepares any resources required to carry out DAQ sessions
+     * according to the current DAQ configuration.
+    */
+    void DAQServer::prepareDAQResources() {
+        /* In the event a DAQ resource has finished its capture
+         * for the current DAQ session, it will invoke this
+         * callback to inform the DAQ server of its completion.
+         *
+         * Within this callback the server will track how many
+         * of the DAQ resources have finished up to that point
+         * and in the case all have finished, the server will
+         * automatically end the DAQ session.
+        */
+        auto doneCallback = [this]() -> void {
+            auto const nDaqResources = daqResources_.size() - 1;
+            auto const priorDoneTotal = daqResourcesDone_.fetch_add(1);
+            this->m_log.Debug(LOGFMT("DAQ resource finished capture ({} / {} done)", priorDoneTotal + 1, nDaqResources));
+
+            if (priorDoneTotal == nDaqResources) {
+                this->m_log.Info(LOGFMT("All DAQ resources have finished capturing ({} done)", nDaqResources));
+                this->Idle();
+            }
+        };
+
+        /* In the event a DAQ resource has encounters and error
+         * during its capture, it will invoke this callback
+         * to inform the DAQ server of the issue.
+         *
+         * Within this callback the server will transition
+         * to the Error state.
+        */
+        auto errorCallback = [this]() -> void {
+            this->m_log.Info("DAQ server has been informed that a DAQ resource has experienced an error");
+            this->OnFailure();
+        };
+
+        /*
+        */
+        for (auto const& config : daqConfig_->filePolicies) {
+            daqResources_.push_back(
+                std::make_unique<FileDAQ>(config, doneCallback, errorCallback)
+            );
+        }
+
+        for (auto const& config : daqConfig_->smemPolicies) {
+            daqResources_.push_back(
+                std::make_unique<SmemCaptureResource>(config, doneCallback, errorCallback)
+            );
+        }
+
+        /*
+        */
+        m_log.Info("DAQ resources have been prepared");
     }
 
-    // -- Utility Methods -- 
-    std::string Server::genGroupTimestamp()
-    {
+    /* Frees any resources that have been created to carry out DAQ sessions.
+    */
+    void DAQServer::freeDAQResources() {
+        daqResources_.clear();
+        m_log.Info("DAQ resources have been freed");
+    }
+
+    /* ---------------------------------------------------------------- */
+
+    /* Prepares a new DAQ session context and informs all DAQ resources
+     * to begin capture.
+    */
+    void DAQServer::startDAQSession() {
+        daqResourcesDone_.store(0);
+
+        std::filesystem::path const sessionDirectory = prepareOutputDirectory();
+        m_log.Info(LOGFMT("Output directory has been prepared for the new DAQ session: {}", sessionDirectory.string()));
+
+        for (auto& res : daqResources_) {
+            res->startCapture(sessionDirectory);
+        }
+    }
+
+    /* Enumerates all DAQ resources and informs them to finish capture
+     * of their in-progress DAQ session context.
+    */
+    void DAQServer::finishDAQSession() {
+        for (auto& res : daqResources_) {
+            res->finishCapture();
+        }
+    }
+
+    /* ---------------------------------------------------------------- */
+
+    /* The following methods provide overrides for the inherited component state-machine.
+     * They link state hooks to DAQ configuration and session management routines so that
+     * the user can configure and operate the DAQ server.
+    */
+    void DAQServer::PROCESS_OTHER(std::string daqRawConfig) { uploadDAQConfig(daqRawConfig); }
+    void DAQServer::transition_Off_Standby() { applyDAQConfig(); }
+    void DAQServer::transition_Standby_Idle() { prepareDAQResources(); }
+    void DAQServer::transition_Idle_Running() { startDAQSession(); }
+
+    void DAQServer::transition_Running_Idle() { finishDAQSession(); }
+    void DAQServer::transition_Idle_Standby() { freeDAQResources(); }
+    void DAQServer::transition_Standby_Off() { resetDAQConfig(); }
+
+    void DAQServer::transition_Running_Error() {
+        m_log.Info("Resetting DAQ server state before entering Error");
+        finishDAQSession();
+        freeDAQResources();
+    }
+
+    void DAQServer::transition_Error_Idle() {
+        m_log.Info("Attempting recovery of DAQ server state");
+        applyDAQConfig();
+        prepareDAQResources();
+    }
+
+    /* ---------------------------------------------------------------- */
+
+    /* Helper method for generating a formatted timestamp for use
+     * in naming a new DAQ session output directory.
+    */
+    std::string DAQServer::timestamp() {
         std::stringstream ss;
         auto const& now = std::chrono::system_clock::now();
         auto const& time = std::chrono::system_clock::to_time_t(now);
@@ -142,23 +184,26 @@ namespace Dao::Telemetry
         return ss.str();
     }
 
-    inline void createDirectory(std::filesystem::path const dirPath)
-    {
+    /* Helper method for creating a new filesystem directory; throws
+     * an exception if creation fails.
+    */
+    void createDirectory(std::filesystem::path const dirPath) {
         if (!std::filesystem::create_directory(dirPath)) {
             throw std::runtime_error("failed to create session group directory");
         }
     }
 
-    std::filesystem::path Server::createSessionGroup()
-    {
-        // create group subdirectory..
-        std::string const groupName = policies_->generalPolicies.groupName ? genGroupTimestamp() : policies_->generalPolicies.groupName.value();
-        std::filesystem::path const rootPath(policies_->generalPolicies.rootStorage);
+    /* Creates and prepares the output directory for a new DAQ session;
+     * if an issue is encountered then an exception is raised.
+     * @return The absolute path to the freshly prepared directory.
+    */
+    std::filesystem::path DAQServer::prepareOutputDirectory() {
+        std::string const groupName = daqConfig_->generalPolicies.groupName ? timestamp() : daqConfig_->generalPolicies.groupName.value();
+        std::filesystem::path const rootPath(daqConfig_->generalPolicies.rootStorage);
         std::filesystem::path const groupPath = rootPath / groupName;
         createDirectory(groupPath);
 
-        // create folder structure..
-        for (auto const& smem : policies_->smemPolicies) {
+        for (auto const& smem : daqConfig_->smemPolicies) {
             if (smem.fileRollover) {
                 int buffLen {};
                 if (DAO_SUCCESS != daoToolsLocalName(smem.absPath.c_str(), nullptr, &buffLen))
@@ -172,7 +217,6 @@ namespace Dao::Telemetry
             }
         }
 
-        //
         return groupPath;
     }
 };
