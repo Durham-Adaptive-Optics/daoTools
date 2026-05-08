@@ -6,7 +6,7 @@
  * @ Description: Dao Data Acquisition (DAQ) Software
  */
 
-/* ---------------------------------------------------------------- */
+ /* ---------------------------------------------------------------- */
 
 #define APP_NAME            "daoDAQ"
 #define APP_VERSION_TAG     "v2.0.0"
@@ -27,12 +27,14 @@
 /* Read in a DAQ configuration from a file and provide it to the DAQ server instance.
  * If doing so fails for whatever reason, a log message is emitted.
 */
-void uploadDAQConfig(Dao::DAQ::DAQServer& daqServer, std::string const& filePath, Dao::Log::Logger& log)
-{
+void uploadDAQConfig(Dao::DAQ::DAQServer& daqServer, std::string const& filePath, Dao::Log::Logger& log) {
     try {
         if (filePath.length()) {
             std::ifstream daqConfigFile(filePath);
-            std::string const daqConfig { std::istreambuf_iterator<char>(daqConfigFile), std::istreambuf_iterator<char>() };
+            std::string const daqConfig {
+                std::istreambuf_iterator<char>(daqConfigFile),
+                std::istreambuf_iterator<char>()
+            };
             daqServer.uploadDAQConfig(daqConfig);
         }
     } catch (std::exception const& e) {
@@ -44,8 +46,7 @@ void uploadDAQConfig(Dao::DAQ::DAQServer& daqServer, std::string const& filePath
 
 /* ---------------------------------------------------------------- */
 
-int main(int argc, char* argv[])
-{
+int main(int argc, char* argv[]) {
     // cli parsing ..
     std::uint16_t tcpPort { DEFAULT_TCP_PORT };
     std::string daqConfigPath {};
@@ -55,7 +56,7 @@ int main(int argc, char* argv[])
     CLI::App app("Dao Data Acquisition (DAQ) Software", APP_NAME);
 
     app.add_flag_callback("--version, -v", []() {
-        std::cout << APP_NAME << " " << APP_VERSION_TAG << std::endl;
+        std::cout << fmt::format("{} {}", APP_NAME, APP_VERSION_TAG) << std::endl;
         throw CLI::Success();
     });
 
@@ -68,7 +69,7 @@ int main(int argc, char* argv[])
     app.add_option(
         "--port, -p",
         tcpPort,
-        std::string("Specify DAQ server host port (default: ") + std::to_string(DEFAULT_TCP_PORT) + ")."
+        fmt::format("Specify DAQ server host port (default: {}", DEFAULT_TCP_PORT)
     );
 
     app.add_flag(
@@ -91,7 +92,7 @@ int main(int argc, char* argv[])
     Dao::Log::Logger log(APP_NAME, logSink, DEFAULT_LOGFILE);
     log.SetLevel(logVerbosity);
 
-    // setup the application ..
+    // setup and run the application server ..
     Dao::DAQ::DAQServer daqServer(DEFAULT_TCP_PORT, log);
     if (daqConfigPath.length())
         uploadDAQConfig(daqServer, daqConfigPath, log);
@@ -107,6 +108,6 @@ int main(int argc, char* argv[])
     pthread_sigmask(SIG_BLOCK, &sigset, nullptr);
     sigwait(&sigset, &signum);
 
-    log.Info(LOGFMT("Designated termination signal received ({}); process terminating gracefully", strsignal(signum)));
+    log.Info(LOGFMT("Termination signal received ({}); process terminating gracefully", strsignal(signum)));
 }
 

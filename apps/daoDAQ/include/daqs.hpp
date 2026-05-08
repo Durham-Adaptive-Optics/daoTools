@@ -3,12 +3,13 @@
  * @ Company: Centre for Advanced Instrumentation, Durham University
  * @ Contact: thomas.n.davies@durham.ac.uk
  * @ Create Time: 2026-04-29 13:55:06
- * @ Description: DAQ Resource Definitions.
+ * @ Description: Definitions of all supported DAQ resources.
  */
 
 #pragma once
 
 #include <configuration.hpp>
+#include <condition_variable>
 #include <unordered_map>
 #include <filesystem>
 #include <functional>
@@ -17,6 +18,7 @@
 #include <thread>
 #include <queue>
 #include <mutex>
+#include <log.hpp>
 
 namespace Dao::DAQ
 {
@@ -26,27 +28,28 @@ namespace Dao::DAQ
      * interface with them.
     */
     struct IDAQ {
-        IDAQ(std::function<void()> doneCallback, std::function<void()> errorCallback)
-            : doneCallback_(doneCallback), errorCallback_(errorCallback) {
+        IDAQ(std::function<void()> doneCallback, std::function<void()> errorCallback, Dao::Log::Logger& log)
+            : doneCallback_(doneCallback), errorCallback_(errorCallback), log_(log) {
         }
 
         virtual ~IDAQ() = default;
 
-        virtual void startCapture(std::filesystem::path const& outputPath) = 0;
-        virtual void finishCapture() = 0;
+        virtual void beginDAQSession(std::filesystem::path const& outputPath) = 0;
+        virtual void finishDAQSession() = 0;
 
         protected:
         std::function<void()> doneCallback_;
         std::function<void()> errorCallback_;
+        Dao::Log::Logger& log_;
     };
 
-    /* DAQ resource for capturing files.
+    /* File DAQ Resource.
     */
     struct FileDAQ final : public IDAQ {
-        FileDAQ(FileParameters const& params, std::function<void()> doneCallback, std::function<void()> errorCallback);
+        FileDAQ(FileParameters const& params, std::function<void()> doneCallback, std::function<void()> errorCallback, Dao::Log::Logger& log);
 
-        void startCapture(std::filesystem::path const& outputPath) override;
-        void finishCapture() override;
+        void beginDAQSession(std::filesystem::path const& outputPath) override;
+        void finishDAQSession() override;
 
         auto const& params() const { return params_; }
 
@@ -54,45 +57,43 @@ namespace Dao::DAQ
         FileParameters const params_;
     };
 
-    /* DAQ resource for capturing samples from Dao shared memory.
+    /* Shared Memory (SMEM) DAQ Resource.
     */
     struct SmemDAQ final : public IDAQ {
         using QueueType = std::pair<IMAGE_METADATA, std::unique_ptr<std::byte[]>>;
 
         SmemDAQ(SmemParameters const& params, std::function<void()> doneCallback, std::function<void()> errorCallback);
-        SmemDAQ(SmemDAQ const&) = delete;
-        SmemDAQ(SmemDAQ&&) = delete;
         SmemDAQ& operator=(SmemDAQ const&) = delete;
         SmemDAQ& operator=(SmemDAQ&&) = delete;
+        SmemDAQ(SmemDAQ const&) = delete;
+        SmemDAQ(SmemDAQ&&) = delete;
         ~SmemDAQ();
 
-        void startCapture(std::filesystem::path const& outputPath) override;
-        void finishCapture() override;
+        void beginDAQSession(std::filesystem::path const& outputPath) override;
+        void finishDAQSession() override;
 
         auto const& params() const { return params_; }
 
         private:
         SmemParameters const params_;
-        std::thread pollThread_;
-        std::thread exportThread_;
-        std::atomic<bool> stopThreads_;
-        std::atomic<bool> stopSession_;
-        std::atomic<size_t> nExportedSamples_;
-        std::mutex queueLock_;
-        std::queue <QueueType> exportQueue_;
-        std::unique_ptr<ExportBackend> exporter_;
-        std::atomic<std::filesystem::path> outputDirectory_;
+        std::atomic<bool> stopToken_;
+        std::atomic<bool> runSession_;
+        std::thread daqThread_;
+        std::thread sinkThread_;
+        std::mutex bLock_;
+        std::mutex qLock_;
+        std::condition_variable bSignal_;
+        std::queue<QueueType> queue_;
         IMAGE smem_;
-        IMAGE_METADATA const volatile* smInfo_;
-        size_t sampleByteSize_;
+        size_t sampleMemSize_;
 
-
+        void establishResourceConnection();
         void configureThread(Optional<CoreID> const& core);
-        void createExporter();
-        void connectToSharedMemory();
-        void serviceExportQueue();
-        void DAQThreadEntry();
-        void serviceDAQSession();
-        void runSessionExport();
+
+        void daqThreadEntry();
+        void sinkThreadEntry();
+        void runSessionDAQ();
+        void runSessionSink();
+        void endThreads();
     };
 };

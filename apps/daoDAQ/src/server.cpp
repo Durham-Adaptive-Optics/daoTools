@@ -6,13 +6,9 @@
  * @ Description: DAQ server implementation.
  */
 
- /* ---------------------------------------------------------------- */
-
 #include <server.hpp>
 #include <daoTools.h>
 #include <log.hpp>
-
-/* ---------------------------------------------------------------- */
 
 namespace Dao::DAQ
 {
@@ -20,8 +16,6 @@ namespace Dao::DAQ
         Dao::Component("DAQServer", log, "", tcpPort) {
         m_log.Info(LOGFMT("DAQ server available on port {}", m_port));
     }
-
-    /* ---------------------------------------------------------------- */
 
     /* Takes the supplied DAQ YAML configuration string and saves it
      * internally for later use.
@@ -54,8 +48,6 @@ namespace Dao::DAQ
     void DAQServer::resetDAQConfig() {
         daqConfig_.reset();
     }
-
-    /* ---------------------------------------------------------------- */
 
     /* Prepares any resources required to carry out DAQ sessions
      * according to the current DAQ configuration.
@@ -119,8 +111,6 @@ namespace Dao::DAQ
         m_log.Info("DAQ resources have been freed");
     }
 
-    /* ---------------------------------------------------------------- */
-
     /* Prepares a new DAQ session context and informs all DAQ resources
      * to begin capture.
     */
@@ -131,7 +121,7 @@ namespace Dao::DAQ
         m_log.Info(LOGFMT("Output directory has been prepared for the new DAQ session: {}", sessionDirectory.string()));
 
         for (auto& res : daqResources_) {
-            res->startCapture(sessionDirectory);
+            res->beginDAQSession(sessionDirectory);
         }
     }
 
@@ -140,11 +130,9 @@ namespace Dao::DAQ
     */
     void DAQServer::finishDAQSession() {
         for (auto& res : daqResources_) {
-            res->finishCapture();
+            res->finishDAQSession();
         }
     }
-
-    /* ---------------------------------------------------------------- */
 
     /* The following methods provide overrides for the inherited component state-machine.
      * They link state hooks to DAQ configuration and session management routines so that
@@ -154,7 +142,6 @@ namespace Dao::DAQ
     void DAQServer::transition_Off_Standby() { applyDAQConfig(); }
     void DAQServer::transition_Standby_Idle() { prepareDAQResources(); }
     void DAQServer::transition_Idle_Running() { startDAQSession(); }
-
     void DAQServer::transition_Running_Idle() { finishDAQSession(); }
     void DAQServer::transition_Idle_Standby() { freeDAQResources(); }
     void DAQServer::transition_Standby_Off() { resetDAQConfig(); }
@@ -170,8 +157,6 @@ namespace Dao::DAQ
         applyDAQConfig();
         prepareDAQResources();
     }
-
-    /* ---------------------------------------------------------------- */
 
     /* Helper method for generating a formatted timestamp for use
      * in naming a new DAQ session output directory.

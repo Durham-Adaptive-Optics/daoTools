@@ -89,7 +89,6 @@ namespace Dao::DAQ
         loadOptional(policySet.metadataOnly, "metadata_only", sourceNode);
         loadOptional(policySet.nSamples, "samples", sourceNode);
         loadRequired(policySet.format, "format", sourceNode);
-
         loadOptional(policySet.fileRollover, "file_rollover", sourceNode);
         loadOptional(policySet.daqThreadAffinity, "daq_affinity", sourceNode);
         loadOptional(policySet.sinkThreadAffinity, "sink_affinity", sourceNode);

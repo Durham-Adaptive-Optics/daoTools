@@ -96,6 +96,17 @@ namespace Dao::DAQ
     void SmemDAQ::DAQThreadEntry() {
         configureThread(params_.daqThreadAffinity);
 
+        /* @todo do something like...
+            while(1) {
+                cv.wait()
+                if(stopToken)
+                    break; // thread terminates.
+                sessionSetup();
+                sessionDo();
+                sessionCleanup();
+            }
+        */
+
         while (stopThreads_.load()) {
             try {
                 serviceDAQSession();
@@ -139,17 +150,6 @@ namespace Dao::DAQ
             sampleAvailable = (smInfo_->cnt0 > lastSampleId);
         }
     }
-
-    /*
-    */
-    void SmemDAQ::serviceExportQueue() {
-        configureThread(params_.sinkThreadAffinity);
-
-        while (stopThreads_.load()) {
-
-        }
-    }
-
 
     /* Entry-point for the smem export thread.
      * The thread terminates when the stop token is set.

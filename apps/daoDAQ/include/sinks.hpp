@@ -3,7 +3,7 @@
  * @ Company: Centre for Advanced Instrumentation, Durham University
  * @ Contact: thomas.n.davies@durham.ac.uk
  * @ Create Time: 2026-05-05 21:56:55
- * @ Description: Export Backend Header
+ * @ Description: Sink Definitions.
  */
 
 #pragma once
