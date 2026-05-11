@@ -18,9 +18,8 @@ SmemDAQ::SmemDAQ(SmemParameters const& params, std::function<void()> doneCallbac
     runSession_(false),
     daqThread_([this]() { this->daqThreadEntry(); }),
     sinkThread_([this]() { this->sinkThreadEntry(); }),
-    smem_ {},
-    sampleMemSize_ {} {
-
+    smem_ {} {
+    //
     establishResourceConnection();
 }
 
@@ -160,7 +159,7 @@ void SmemDAQ::acquire() {
             };
             std::memcpy(&qSample.first, smem_.md, sizeof(IMAGE_METADATA));
             std::memcpy(qSample.second.get(), smem_.array.V, sampleMemSize_);
-            bool const copyInterupted = (1 == smInfo_->write || smInfo_->cnt0 > sampleId);
+            bool const copyInterupted = (smInfo_->cnt0 > sampleId || 1 == smInfo_->write);
 
             std::lock_guard qGuard(qLock_);
             bool const queueHasSpace = params_.bufferLimit ? (queue_.size() < params_.bufferLimit.value()) : true;
