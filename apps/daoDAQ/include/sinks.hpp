@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <configuration.hpp>
 #include <unordered_map>
 #include <filesystem>
 #include <daoShm.h>
@@ -36,46 +37,43 @@ namespace Dao::DAQ
 
     using QueueType = std::pair<IMAGE_METADATA, std::unique_ptr<std::byte[]>>;
 
-    struct ExportBackend {
-        ExportBackend(SmemParameters const& policies)
-            : policies_(policies), outputDirectory_() {
+    struct ISampleWriter {
+        ISampleWriter(SmemParameters const& params, std::filesystem::path const& sessionOutputDir) :
+            params_(params),
+            sessionOutputDir_(sessionOutputDir) {
         }
 
         virtual void reset(std::filesystem::path const& output) = 0;
-        virtual void put(QueueType const& sample) = 0;
-        virtual void finish() = 0;
-        virtual ~ExportBackend() = default;
+        virtual void write(QueueType const& sample) = 0;
+        virtual ~ISampleWriter() = default;
 
         protected:
-        SmemParameters const& policies_;
-        std::filesystem::path outputDirectory_;
+        SmemParameters const& params_;
+        std::filesystem::path sessionOutputDir_;
     };
 
-    struct FitsExporter : public ExportBackend {
-        FitsExporter(SmemParameters const& policies, IMAGE_METADATA const& smInfo);
+    struct FitsWriter : public ISampleWriter {
+        FitsWriter(SmemParameters const& params, std::filesystem::path const& sessionOutputDir, IMAGE_METADATA const& smInfo);
 
+        void write(QueueType const& sample) override;
         void reset(std::filesystem::path const& output) override;
-        void put(QueueType const& sample) override;
-        void finish() override;
 
         private:
-        fitsfile* store_;
-        size_t nSamplesStored_;
-        std::string storeBaseName_;
-        size_t nStores_;
-        size_t diskDataType_;
-        size_t srcDatatype_;
-        size_t nDims_;
-        size_t nElements_;
-        std::vector<long> dims_;
+        fitsfile* file_;
+        size_t nFileSamples;
+        size_t nFiles_;
+        size_t const imgType_;
+        size_t const srcType_;
+        size_t const nAxes_;
+        size_t nSampleElements_;
+        std::vector<long> const axes_;
 
         bool storeFull() const;
         void finish();
-        void closeStore();
-        void newStore();
+        void closeDatafile();
+        void newDatafile();
 
-        // table to convert dao datatypes to fits image pixel datatypes (BPIX parameter).
-        inline static const std::unordered_map<size_t, size_t> daoToBPIX_
+        inline static const std::unordered_map<size_t, size_t> daoToImgType_
         {
            {_DATATYPE_UINT8, BYTE_IMG},
            {_DATATYPE_INT8, SBYTE_IMG},
@@ -89,8 +87,7 @@ namespace Dao::DAQ
            {_DATATYPE_DOUBLE, DOUBLE_IMG}
         };
 
-        // table to convert dao datatypes to fits datatypes.
-        inline static const std::unordered_map<size_t, size_t> daoToFits_
+        inline static const std::unordered_map<size_t, size_t> daoToSrcType_
         {
             {_DATATYPE_UINT8, TBYTE},
             {_DATATYPE_INT8, TSBYTE},

@@ -7,19 +7,19 @@
  */
 
 #include <filesystem>
-#include <daq.hpp>
+#include <daqs.hpp>
 
 namespace Dao::DAQ
 {
-    FileDAQ::FileDAQ(FileParameters const& params, std::function<void()> doneCallback, std::function<void()> errorCallback) :
-        IDAQ { doneCallback, errorCallback },
+    FileDAQ::FileDAQ(FileParameters const& params, std::function<void()> doneCallback, std::function<void()> errorCallback, Dao::Log::Logger& log) :
+        IDAQ(doneCallback, errorCallback, log),
         params_(params) {
     }
 
     /* Copy the file to the DAQ session output directory as soon as we have been instructed
      * to begin capture.
     */
-    void FileDAQ::startCapture(std::filesystem::path const& outputPath) {
+    void FileDAQ::beginAcquire(std::filesystem::path const& outputPath) {
         std::filesystem::path const fileSourcePath { params_.absPath };
         std::filesystem::path const fileOutputPath = outputPath / fileSourcePath.filename().string();
 
@@ -33,6 +33,8 @@ namespace Dao::DAQ
         doneCallback_();
     }
 
-    void FileDAQ::finishCapture() {}
+    void FileDAQ::endAcquire() {
+        //
+    }
 }
 

@@ -2,184 +2,215 @@
  * @ Author: Thomas N. Davies
  * @ Company: Centre for Advanced Instrumentation, Durham University
  * @ Contact: thomas.n.davies@durham.ac.uk
- * @ Create Time: 2026-04-28 09:43:06
- * @ Description: Implements a (dao) shared-memory capture resource.
+ * @ Create Time: 2026-05-08 22:03:13
+ * @ Description: Implementation of shared-memory (smem) DAQ resource.
  */
 
-#include <unordered_map>
-#include <fmt/format.h>
-#include <pthread.h>
-#include <daq.hpp>
-#include <cstring>
+#include <daqs.hpp>
+#include <daoLog.hpp>
 
-namespace Dao::DAQ
-{
-    SmemDAQ::SmemDAQ(SmemParameters const& params, std::function<void()> doneCallback, std::function<void()> errorCallback) :
-        IDAQ { doneCallback, errorCallback },
-        params_ { params },
-        pollThread_([this]() { DAQThreadEntry(); }),
-        exportThread_([this]() { serviceExportQueue(); }),
-        stopThreads_ { false },
-        nExportedSamples_(0),
-        smem_ {} {
+using namespace Dao::DAQ;
 
-        connectToSharedMemory();
-        createExporter();
+SmemDAQ::SmemDAQ(SmemParameters const& params, std::function<void()> doneCallback, std::function<void()> errorCallback, Dao::Log::Logger& log) :
+    IDAQ(doneCallback, errorCallback, log),
+    params_(params),
+    stopToken_(false),
+    runSession_(false),
+    daqThread_([this]() { this->daqThreadEntry(); }),
+    sinkThread_([this]() { this->sinkThreadEntry(); }),
+    smem_ {},
+    sampleMemSize_ {} {
+
+    establishResourceConnection();
+}
+
+/* Signals DAQ and sink threads to exit gracefully and blocks until they
+ * have exited.
+*/
+SmemDAQ::~SmemDAQ() {
+    stopToken_.store(true);
+    bSignal_.notify_all();
+
+    daqThread_.join();
+    sinkThread_.join();
+}
+
+/* Connect to the shared memory resource; an exception is thrown
+ * in the case connection fails.
+*/
+void SmemDAQ::establishResourceConnection() {
+    if (DAO_SUCCESS != daoShmShm2Img(params_.absPath.c_str(), &smem_)) {
+        std::string const err = fmt::format("could not connect to smem resource `{}`", params_.absPath);
+        throw std::runtime_error(err);
     }
 
-    SmemDAQ::~SmemDAQ() {
-        stopThreads_.store(true);
-        pollThread_.join();
-        exportThread_.join();
+    sampleMemSize_ = smem_.memsize - sizeof(IMAGE_METADATA) - smem_.md->NBkw * sizeof(IMAGE_KEYWORD);
+}
+
+/* Configures calling thread according to the provided parameters
+ * for high-throughput capture.
+*/
+void SmemDAQ::configureThread(Optional<CoreID> const& core) {
+    if (!core)
+        return;
+
+    // pin thread to desired cpu core.
+    cpu_set_t affinitySet;
+    CPU_ZERO(&affinitySet);
+    CPU_SET(core.value(), &affinitySet);
+    if (!pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &affinitySet)) {
+        std::string const err = fmt::format("could not pin smem thread because {}", strerror(errno));
+        throw std::runtime_error(err);
     }
+}
 
-    /* Helper method to configure threads for high-throughput capture;
-     * throws an exception if an issue occurs.
-    */
-    void SmemDAQ::configureThread(Optional<CoreID> const& core) {
-        if (!core) {
-            return;
-        }
+/* Signals both the DAQ and sink threads of this resource to begin a new DAQ
+ * session; the session will either auto-finish (if applicable) or is ended
+ * by calling the session finish method.
+*/
+void SmemDAQ::beginAcquire([[maybe_unused]] std::filesystem::path const& outputPath) {
+    sessionOutputDir_.store(outputPath);
+    runSession_.store(true);
+    bSignal_.notify_all();
+}
 
-        cpu_set_t affinitySet;
-        CPU_ZERO(&affinitySet);
-        CPU_SET(core.value(), &affinitySet);
-        if (!pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &affinitySet)) {
-            std::string const err = fmt::format("could not pin smem thread because {}", strerror(errno));
-            throw std::runtime_error(err);
-        }
-    }
+/* Signals both the DAQ and sink threads to end their in-progress DAQ session
+ * and return to their blocked state where they await an unblock signal
+ * to either begin a new DAQ session or to exit.
+*/
+void SmemDAQ::endAcquire() {
+    runSession_.store(false);
+}
 
-    /* Connects to the shared memory; throws an exception if connection fails.
-    */
-    void SmemDAQ::connectToSharedMemory() {
-        if (DAO_SUCCESS != daoShmShm2Img(params_.absPath.c_str(), &smem_)) {
-            std::string const err = fmt::format("could not connect to smem resource `{}`", params_.absPath);
-            throw std::runtime_error(err);
-        }
+/* Entry point for the DAQ thread; this is the thread that captures the
+ * data samples from the shared memory resource and enqueues them for
+ * sinking to the disk.
+*/
+void SmemDAQ::daqThreadEntry() {
+    log_.Info(LOGFMT("DAQ thread has started for smem resource {}", params_.absPath));
+    configureThread(params_.daqThreadAffinity);
 
-        smInfo_ = static_cast<IMAGE_METADATA const volatile*>(smem_.md);
-        sampleByteSize_ = smem_.memsize - sizeof(IMAGE_METADATA) - smem_.md->NBkw * sizeof(IMAGE_KEYWORD);
-    }
+    while (1) {
+        std::unique_lock bGuard(bLock_);
+        bSignal_.wait(bGuard);
 
-    /* Create an exporter that will export captured samples to the disk in
-     * the desired data format.
-    */
-    void SmemDAQ::createExporter() {
-        switch (params_.format) {
-            case ExportFormat::FITS: {
-                exporter_ = std::make_unique<FitsExporter>(params_, *smem_.md);
-            } break;
+        log_.Info(LOGFMT("DAQ thread has unblocked for smem resource {}", params_.absPath));
+        if (!stopToken_)
+            break;
 
-            case ExportFormat::NUMPY: {
-                throw std::runtime_error("exporter not implemented yet!"); // @todo add support to export samples in numpy.
-            } break;
-        }
-    }
-
-    /*
-    */
-    void SmemDAQ::startCapture(std::filesystem::path const& outputPath) {
-        outputDirectory_.store(outputPath);
-        stopSession_.store(true);
-    }
-
-    /*
-    */
-    void SmemDAQ::finishCapture() {
-        stopSession_.store(false);
-    }
-
-    /* Entry-point for the smem daq thread.
-     * The thread terminates when the stop token is set.
-    */
-    void SmemDAQ::DAQThreadEntry() {
-        configureThread(params_.daqThreadAffinity);
-
-        /* @todo do something like...
-            while(1) {
-                cv.wait()
-                if(stopToken)
-                    break; // thread terminates.
-                sessionSetup();
-                sessionDo();
-                sessionCleanup();
-            }
-        */
-
-        while (stopThreads_.load()) {
-            try {
-                serviceDAQSession();
-            } catch (std::exception const& e) {
-                finishCapture();
-                errorCallback_();
-            }
+        try {
+            acquire();
+        } catch (std::exception const& e) {
+            endAcquire();
+            errorCallback_();
+            continue;
         }
     }
 
-    /* Collects samples from the shared memory and enqueues
-     * them for export to the disk; throws if an issue occurs.
-    */
-    void SmemDAQ::serviceDAQSession() {
-        bool sampleAvailable { params_.eagerStart };
-        size_t lastSampleId {}; // id of last sample enqueued.
+    log_.Info(LOGFMT("DAQ thread has finished for smem resource {}", params_.absPath));
+}
 
-        while (!stopSession_.load()) {
-            if (sampleAvailable) {
-                size_t const sampleId = smInfo_->cnt0;
+/* Entry point for the sink thread; this is the thread that processes
+ * samples enqueued by the DAQ thread and writes them to the disk
+ * in the data-format specified by our resource parameters.
+*/
+void SmemDAQ::sinkThreadEntry() {
+    log_.Info(LOGFMT("Sink thread has started for smem resource {}", params_.absPath));
+    configureThread(params_.sinkThreadAffinity);
 
-                QueueType entry {
-                    IMAGE_METADATA {},
-                    std::make_unique<std::byte[]>(sampleByteSize_)
-                };
-                std::memcpy(&entry.first, smem_.md, sizeof(IMAGE_METADATA));
-                std::memcpy(entry.second.get(), smem_.array.V, sampleByteSize_);
-                bool const copyInterupted = (1 == smInfo_->write || smInfo_->cnt0 > sampleId);
+    while (1) {
+        std::unique_lock bGuard(bLock_);
+        bSignal_.wait(bGuard);
 
-                std::scoped_lock qlock(queueLock_);
-                bool const queueHasSpace = params_.bufferLimit
-                    ? (params_.bufferLimit.value() < exportQueue_.size()) : true;
+        log_.Info(LOGFMT("Sink thread has unblocked for smem resource {}", params_.absPath));
+        if (!stopToken_)
+            break;
 
-                if (!copyInterupted && queueHasSpace) {
-                    exportQueue_.push(std::move(entry));
-                }
-
-                lastSampleId = sampleId;
-            }
-
-            sampleAvailable = (smInfo_->cnt0 > lastSampleId);
+        try {
+            sink();
+        } catch (std::exception const& e) {
+            endAcquire();
+            errorCallback_();
+            continue;
         }
     }
 
-    /* Entry-point for the smem export thread.
-     * The thread terminates when the stop token is set.
-    */
-    void SmemDAQ::serviceExportQueue() {
-        configureThread(params_.sinkThreadAffinity);
+    log_.Info(LOGFMT("Sink thread has finished for smem resource {}", params_.absPath));
+}
 
-        while (stopThreads_.load()) {
-            exporter_->reset(outputDirectory_.load());
-            size_t nSamplesCaptured {};
+/* Captures data-samples from the shared memory resource an enqueues them for
+ * saving to the disk by the sink thread; samples are captured for the duration
+ * of a DAQ session which ends when either the sink thread has met the desired
+ * sample target (if one exists) or if the DAQ server has signalled the DAQ session
+ * to finish.
+*/
+void SmemDAQ::acquire() {
+    IMAGE_METADATA const volatile* smInfo_ = static_cast<IMAGE_METADATA const volatile*>(smem_.md);
 
-            while (stopSession_.load()) {
-                std::optional<QueueType> entry {};
-                if (std::scoped_lock qlock(queueLock_); !exportQueue_.empty()) {
-                    entry = std::move(exportQueue_.front());
-                    exportQueue_.pop();
-                }
+    bool sampleAvailable { params_.eagerStart };
+    size_t lastSampleId = smInfo_->cnt0;
 
-                if (entry && !sampleGoalMet_) {
-                    QueueType const& sample = entry.value();
-                    exporter_->put(sample);
-                    ++nSamplesCaptured;
-                    if (policies.nSamples) {
-                        sampleGoalMet_.store(nSamplesCaptured == policies.nSamples.value());
-                    }
-                }
+    while (runSession_) {
+        if (sampleAvailable) {
+            size_t const sampleId = smInfo_->cnt0;
+
+            QueueType qSample {
+                IMAGE_METADATA {},
+                std::make_unique<std::byte[]>(sampleMemSize_)
+            };
+            std::memcpy(&qSample.first, smem_.md, sizeof(IMAGE_METADATA));
+            std::memcpy(qSample.second.get(), smem_.array.V, sampleMemSize_);
+            bool const copyInterupted = (1 == smInfo_->write || smInfo_->cnt0 > sampleId);
+
+            std::lock_guard qGuard(qLock_);
+            bool const queueHasSpace = params_.bufferLimit ? (queue_.size() < params_.bufferLimit.value()) : true;
+            if (!copyInterupted && queueHasSpace) {
+                queue_.push(std::move(qSample));
             }
 
-            exporter_->finish(); // @todo what if we throw and don't do this -> make exporter RAII in this scope.
+            lastSampleId = sampleId;
+        }
+
+        sampleAvailable = smInfo_->cnt0 > lastSampleId;
+    }
+}
+
+/* Writes samples that are enqueued by the DAQ thread, to the disk in the desired
+ * data-format for the duration of a DAQ session; note that a DAQ session lifetime
+ * is defined either when the total number of samples have been successfully persisted
+ * to the disk, or the DAQ server sends a signal to end our DAQ session.
+*/
+void SmemDAQ::sink() {
+    log_.Info(LOGFMT("Sink thread has started new session for smem resource {}", params_.absPath));
+    auto writer = std::make_unique<ISampleWriter>(params_, sessionOutputDir_, *smem_.md);
+    size_t nSamplesWritten {};
+
+    {
+        std::lock_guard qGuard(qLock_);
+        while (!queue_.empty())
+            queue_.pop();
+    }
+
+    while (runSession_) {
+        if (params_.nSamples && params_.nSamples.value() == nSamplesWritten) {
+            log_.Info(LOGFMT("DAQ session has reached sample-target for smem resource {} ({} samples written)", params_.absPath, nSamplesWritten));
+            endAcquire();
+            doneCallback_();
+            continue;
+        }
+
+        std::optional<QueueType> qSample {};
+        if (std::lock_guard qGuard(qLock_); !queue_.empty()) {
+            qSample = std::move(queue_.front());
+            queue_.pop();
+        }
+
+        if (qSample) {
+            auto const& sample = qSample.value();
+            writer->write(sample);
+            ++nSamplesWritten;
         }
     }
 }
+
 

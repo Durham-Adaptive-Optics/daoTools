@@ -8,11 +8,11 @@
 
 #pragma once
 
+#include <configuration.hpp>
 #include <daoComponent.hpp>
 #include <yaml-cpp/yaml.h>
-#include <policies.hpp>
 #include <filesystem>
-#include <record.hpp>
+#include <daqs.hpp>
 #include <vector>
 #include <chrono>
 #include <thread>
@@ -29,8 +29,8 @@ namespace Dao::DAQ
 
         private:
         std::string daqRawConfig_;
-        std::unique_ptr<CapturePolicies> daqConfig_;
-        std::vector<std::unique_ptr<DAQ>> daqResources_;
+        std::unique_ptr<DAQConfiguration> daqConfig_;
+        std::vector<std::unique_ptr<IDAQ>> daqResources_;
         std::atomic<size_t> daqResourcesDone_;
 
         // -- Session Management Methods --

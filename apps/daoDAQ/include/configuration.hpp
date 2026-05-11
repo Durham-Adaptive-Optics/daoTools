@@ -11,9 +11,10 @@
  /* ---------------------------------------------------------------- */
 
 #include <yaml-cpp/yaml.h>
-#include <export.hpp>
+#include <sinks.hpp>
 #include <exception>
 #include <optional>
+#include <log.hpp>
 #include <vector>
 
 /* ---------------------------------------------------------------- */
@@ -53,6 +54,8 @@ namespace Dao::DAQ
         Optional<CoreID> daqThreadAffinity;
         Optional<size_t> bufferLimit;
         Optional<bool> eagerStart { true };
+
+        std::string localName; // parsed from absolute path.
     };
 
     /* ---------------------------------------------------------------- */

@@ -9,6 +9,6 @@
 #pragma once
 
 #include <fmt/format.h>
-#include <daoLog.hpp>
+ // #include <daoLog.hpp>
 
-#define LOGFMT(fmtstr, ...) (fmt::format(fmtstr, __VA_ARGS__).c_str())
+#define LOGFMT(fmtstr, ...) fmt::format(fmtstr, __VA_ARGS__).c_str()

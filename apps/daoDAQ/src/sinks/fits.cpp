@@ -6,71 +6,115 @@
  * @ Description: Implements FITS sample exporter.
  */
 
-#include <exporters.hpp>
+#include <sinks.hpp>
+
+ /* Utility macro for invoking a fits API call; if the call
+  * returns a unsuccessfull error code, an exception is thrown
+  * with a detailed error message.
+ */
+#define FITS_CALL(call, ...) \
+  do { \
+    int status {}; \
+    char err[FLEN_ERRMSG]; \
+    call(__VA_ARGS__, &status); \
+    if (status) { \
+      fits_get_errstatus(status, err); \
+      throw std::runtime_error(fmt::format( \
+        "fits sample write failed: {} {} ({})", \
+        #call, err, params_.absPath)); \
+    } \
+  } while (0)
+
+
+ /*  -- Exporting Dao Samples to FITS --
+
+   FITS requires NAXISx keywords where NAXIS1 is the fastest-varying
+   dimension. This allows arrays exported in any storage order (row-major
+   in C/Python, column-major in Fortran, etc.) to be read correctly by
+   any reader, yielding logically equivalent arrays regardless of storage
+   convention differences.
+
+   Dao uses row-major ordering for multidimensional arrays (as inferred
+   from its Python-Numpy API), with shape metadata as (row, col, depth)
+   and array elements in row-major order.
+
+   To export to FITS, we copy the row-major buffer directly into an
+   image HDU and set NAXISx keywords to reflect the fastest-varying axis,
+   enabling correct interpretation by readers with different conventions.
+
+   Row-major storage implies:
+       3D arrays: NAXIS1=depth, NAXIS2=columns, NAXIS3=rows
+       2D arrays: NAXIS1=columns, NAXIS2=rows
+
+   Therefore, reverse the shape dimension ordering before passing to FITS.
+   (Note: Dao currently supports only 2D and 3D arrays.)
+*/
 
 namespace Dao::DAQ
 {
-    FitsExporter::FitsExporter(SmemPolicy const& policies, IMAGE_METADATA const& smInfo) :
-        ExportBackend(policies),
-        store_(nullptr),
-        nSamplesStored_(0),
-        nStores_(0),
-        diskDataType_(daoToBPIX_.at(smInfo.atype)),
-        srcDatatype_(daoToFits_.at(smInfo.atype)),
-        nElements_(smInfo.nelement),
-        nDims_(smInfo.naxis),
-        dims_(std::reverse_iterator(smInfo.size + nDims_), std::reverse_iterator(smInfo.size))
-    {
+    FitsWriter::FitsWriter(SmemParameters const& params, std::filesystem::path const& sessionOutputDir, IMAGE_METADATA const& smInfo) :
+        ISampleWriter(params, sessionOutputDir),
+        nAxes_(smInfo.naxis),
+        axes_(std::reverse_iterator(smInfo.size + nAxes_), std::reverse_iterator(smInfo.size)),
+        imgType_(daoToImgType_.at(smInfo.atype)),
+        srcType_(daoToSrcType_.at(smInfo.atype)),
+        nSampleElements_(smInfo.nelement),
+        nFileSamples(0),
+        file_(nullptr),
+        nFiles_(0) {
+        //
     }
 
-    void FitsExporter::reset(std::filesystem::path const& output)
-    {
-        outputDirectory_ = output;
-        store_ = nullptr;
-        nSamplesStored_ = 0;
-        nStores_ = 0;
+    /* Ensures the active datafile is safely closed before
+     * the writer is destroyed. throws if an
+     * issue occurred.
+    */
+    FitsWriter::~FitsWriter() {
+        if (file_)
+            closeDatafile();
     }
 
-    void FitsExporter::closeStore()
-    {
-        int err {};
-        fits_close_file(store_, &err);
-        store_ = nullptr;
+    /* Creates a new fits datafile on the disk with the appropriate naming
+     * convention, and makes it the active file for sample storage; throws
+     * if an issue occurred.
+    */
+    void FitsWriter::newDatafile() {
+        std::string const fileName = params_.fileRollover ?
+            fmt::format("{}_{}.fits", params_.localName, std::to_string(nFiles_)) :
+            fmt::format("{}.fits", params_.localName);
+        std::filesystem::path const storePath { sessionOutputDir_ / fileName };
+        FITS_CALL(fits_create_file, &file_, storePath.string().c_str());
+        nFileSamples = 0;
+        ++nFiles_;
     }
 
-    void FitsExporter::newStore()
-    {
-        std::string const storeName = policies_.fileRollover ? storeBaseName_ : storeBaseName_ + "_" + std::to_string(nStores_++);
-        std::filesystem::path const storePath { outputDirectory_ / storeName };
-
-        int err {};
-        fits_create_file(&store_, storePath.string().c_str(), &err);
+    /* Closes the active datafile safely; throws if an
+     * issue occurred.
+    */
+    void FitsWriter::closeDatafile() {
+        FITS_CALL(fits_close_file, file_);
+        file_ = nullptr;
     }
 
-    bool FitsExporter::storeFull() const { return policies_.fileRollover && nSamplesStored_ == policies_.fileRollover.value(); }
+    /* Writes the provided shared-memory sample into the active FITS datafile.
+     * throws if an issue occurred.
+    */
+    void FitsWriter::write(QueueType const& sample) {
+        if (file_ && params_.fileRollover && params_.fileRollover.value() == nFileSamples)
+            closeDatafile();
 
-    void FitsExporter::finish()
-    {
-        if (store_)
-            closeStore();
-    }
+        if (!file_)
+            newDatafile();
 
-    void FitsExporter::put(QueueType const& sample)
-    {
-        if (store_ && storeFull())
-            closeStore();
-
-        if (!store_)
-            newStore();
-
-        int err {};
-        auto& [info, buffer] = const_cast<QueueType&>(sample);
-        fits_create_img(store_, diskDataType_, nDims_, dims_.data(), &err);
-        fits_write_key(store_, TBYTE, "atype", &info.atype, NULL, &err);
-        fits_write_key(store_, TLONGLONG, "atime", &info.atime.tsfixed.secondlong, "nanoseconds", &err);
-        fits_write_key(store_, TULONGLONG, "cnt0", &info.cnt0, NULL, &err);
-        fits_write_key(store_, TULONGLONG, "cnt1", &info.cnt1, NULL, &err);
-        fits_write_key(store_, TULONGLONG, "cnt2", &info.cnt2, NULL, &err);
-        fits_write_img(store_, srcDatatype_, 1, nElements_, buffer.get(), &err);
+        auto& [info, buffer] = const_cast<QueueType&>(sample);  // cast const away for C API.
+        long* axes = const_cast<long*>(axes_.data()); // cast const away for C API.
+        FITS_CALL(fits_create_img, file_, imgType_, nAxes_, axes);
+        FITS_CALL(fits_write_key, file_, TBYTE, "atype", &info.atype, NULL);
+        FITS_CALL(fits_write_key, file_, TLONGLONG, "atime", &info.atime.tsfixed.secondlong, "nanoseconds");
+        FITS_CALL(fits_write_key, file_, TULONGLONG, "cnt0", &info.cnt0, NULL);
+        FITS_CALL(fits_write_key, file_, TULONGLONG, "cnt1", &info.cnt1, NULL);
+        FITS_CALL(fits_write_key, file_, TULONGLONG, "cnt2", &info.cnt2, NULL);
+        FITS_CALL(fits_write_img, file_, srcType_, 1, nSampleElements_, buffer.get());
+        ++nFileSamples;
     }
 };

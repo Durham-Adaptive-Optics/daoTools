@@ -19,6 +19,7 @@
 #include <queue>
 #include <mutex>
 #include <log.hpp>
+#include <daoLog.hpp>
 
 namespace Dao::DAQ
 {
@@ -34,8 +35,8 @@ namespace Dao::DAQ
 
         virtual ~IDAQ() = default;
 
-        virtual void beginDAQSession(std::filesystem::path const& outputPath) = 0;
-        virtual void finishDAQSession() = 0;
+        virtual void beginAcquire(std::filesystem::path const& outputPath) = 0;
+        virtual void endAcquire() = 0;
 
         protected:
         std::function<void()> doneCallback_;
@@ -48,8 +49,8 @@ namespace Dao::DAQ
     struct FileDAQ final : public IDAQ {
         FileDAQ(FileParameters const& params, std::function<void()> doneCallback, std::function<void()> errorCallback, Dao::Log::Logger& log);
 
-        void beginDAQSession(std::filesystem::path const& outputPath) override;
-        void finishDAQSession() override;
+        void beginAcquire(std::filesystem::path const& outputPath) override;
+        void endAcquire() override;
 
         auto const& params() const { return params_; }
 
@@ -62,15 +63,15 @@ namespace Dao::DAQ
     struct SmemDAQ final : public IDAQ {
         using QueueType = std::pair<IMAGE_METADATA, std::unique_ptr<std::byte[]>>;
 
-        SmemDAQ(SmemParameters const& params, std::function<void()> doneCallback, std::function<void()> errorCallback);
+        SmemDAQ(SmemParameters const& params, std::function<void()> doneCallback, std::function<void()> errorCallback, Dao::Log::Logger& log);
         SmemDAQ& operator=(SmemDAQ const&) = delete;
         SmemDAQ& operator=(SmemDAQ&&) = delete;
         SmemDAQ(SmemDAQ const&) = delete;
         SmemDAQ(SmemDAQ&&) = delete;
         ~SmemDAQ();
 
-        void beginDAQSession(std::filesystem::path const& outputPath) override;
-        void finishDAQSession() override;
+        void beginAcquire(std::filesystem::path const& outputPath) override;
+        void endAcquire() override;
 
         auto const& params() const { return params_; }
 
@@ -86,14 +87,14 @@ namespace Dao::DAQ
         std::queue<QueueType> queue_;
         IMAGE smem_;
         size_t sampleMemSize_;
+        std::atomic<std::filesystem::path> sessionOutputDir_;
 
         void establishResourceConnection();
         void configureThread(Optional<CoreID> const& core);
 
         void daqThreadEntry();
         void sinkThreadEntry();
-        void runSessionDAQ();
-        void runSessionSink();
-        void endThreads();
+        void acquire();
+        void sink();
     };
 };

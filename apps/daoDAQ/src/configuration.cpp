@@ -8,6 +8,7 @@
 
 #include <configuration.hpp>
 #include <fmt/format.h>
+#include <daoTools.h>
 
  /* Implements conversions between YAML node and custom types.
  */
@@ -81,19 +82,31 @@ namespace Dao::DAQ
 
     /* ---------------------------------------------------------------- */
 
-    void DAQConfiguration::loadFileParams(YAML::Node const& sourceNode, FileParameters& policySet) {
+    void DAQConfiguration::loadFileParams(YAML::Node const& sourceNode, FileParameters& params) {
         return;
     }
 
-    void DAQConfiguration::loadSmemParams(YAML::Node const& sourceNode, SmemParameters& policySet) {
-        loadOptional(policySet.metadataOnly, "metadata_only", sourceNode);
-        loadOptional(policySet.nSamples, "samples", sourceNode);
-        loadRequired(policySet.format, "format", sourceNode);
-        loadOptional(policySet.fileRollover, "file_rollover", sourceNode);
-        loadOptional(policySet.daqThreadAffinity, "daq_affinity", sourceNode);
-        loadOptional(policySet.sinkThreadAffinity, "sink_affinity", sourceNode);
-        loadOptional(policySet.bufferLimit, "buffer_limit", sourceNode);
-        loadOptional(policySet.eagerStart, "eager_start", sourceNode);
+    void DAQConfiguration::loadSmemParams(YAML::Node const& sourceNode, SmemParameters& params) {
+        loadOptional(params.metadataOnly, "metadata_only", sourceNode);
+        loadOptional(params.nSamples, "samples", sourceNode);
+        loadRequired(params.format, "format", sourceNode);
+        loadOptional(params.fileRollover, "file_rollover", sourceNode);
+        loadOptional(params.daqThreadAffinity, "daq_affinity", sourceNode);
+        loadOptional(params.sinkThreadAffinity, "sink_affinity", sourceNode);
+        loadOptional(params.bufferLimit, "buffer_limit", sourceNode);
+        loadOptional(params.eagerStart, "eager_start", sourceNode);
+
+        int buffLen {};
+        if (DAO_SUCCESS != daoToolsLocalName(params.absPath.c_str(), nullptr, &buffLen)) {
+            auto const err = fmt::format("failed to extract shm local name length for {}", params.absPath);
+            throw std::runtime_error(err);
+        }
+
+        params.localName.resize(buffLen);
+        if (DAO_SUCCESS != daoToolsLocalName(params.absPath.c_str(), params.localName.data(), nullptr)) {
+            auto const err = fmt::format("failed to extract shm local name for {}", params.absPath);
+            throw std::runtime_error(err);
+        }
     }
 
     /* ---------------------------------------------------------------- */

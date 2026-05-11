@@ -35,7 +35,7 @@ namespace Dao::DAQ
      * parse an exception is thrown.
     */
     void DAQServer::applyDAQConfig() {
-        daqConfig_ = std::make_unique<CapturePolicies>(daqRawConfig_);
+        daqConfig_ = std::make_unique<DAQConfiguration>(daqRawConfig_);
 
         if (!daqConfig_->numResources()) {
             m_log.Warning("DAQ configuration specifies no data sources");
@@ -87,15 +87,15 @@ namespace Dao::DAQ
 
         /*
         */
-        for (auto const& config : daqConfig_->filePolicies) {
+        for (auto const& config : daqConfig_->fileResources()) {
             daqResources_.push_back(
                 std::make_unique<FileDAQ>(config, doneCallback, errorCallback)
             );
         }
 
-        for (auto const& config : daqConfig_->smemPolicies) {
+        for (auto const& config : daqConfig_->smemResources()) {
             daqResources_.push_back(
-                std::make_unique<SmemCaptureResource>(config, doneCallback, errorCallback)
+                std::make_unique<SmemDAQ>(config, doneCallback, errorCallback)
             );
         }
 
@@ -121,7 +121,7 @@ namespace Dao::DAQ
         m_log.Info(LOGFMT("Output directory has been prepared for the new DAQ session: {}", sessionDirectory.string()));
 
         for (auto& res : daqResources_) {
-            res->beginDAQSession(sessionDirectory);
+            res->beginAcquire(sessionDirectory);
         }
     }
 
@@ -130,7 +130,7 @@ namespace Dao::DAQ
     */
     void DAQServer::finishDAQSession() {
         for (auto& res : daqResources_) {
-            res->finishDAQSession();
+            res->endAcquire();
         }
     }
 
@@ -183,23 +183,13 @@ namespace Dao::DAQ
      * @return The absolute path to the freshly prepared directory.
     */
     std::filesystem::path DAQServer::prepareOutputDirectory() {
-        std::string const groupName = daqConfig_->generalPolicies.groupName ? timestamp() : daqConfig_->generalPolicies.groupName.value();
-        std::filesystem::path const rootPath(daqConfig_->generalPolicies.rootStorage);
-        std::filesystem::path const groupPath = rootPath / groupName;
+        std::filesystem::path const rootPath(daqConfig_->sessionParameters().rootStorage);
+        std::filesystem::path const groupPath = rootPath / timestamp();
         createDirectory(groupPath);
 
-        for (auto const& smem : daqConfig_->smemPolicies) {
-            if (smem.fileRollover) {
-                int buffLen {};
-                if (DAO_SUCCESS != daoToolsLocalName(smem.absPath.c_str(), nullptr, &buffLen))
-                    throw std::runtime_error("failed to extract shm local name length");
-
-                std::string smLocalName(buffLen, '\0');
-                if (DAO_SUCCESS != daoToolsLocalName(smem.absPath.c_str(), smLocalName.data(), nullptr))
-                    throw std::runtime_error("failed to extract shm local name");
-
-                createDirectory(groupPath / smLocalName);
-            }
+        for (auto const& smem : daqConfig_->smemResources()) {
+            if (smem.fileRollover)
+                createDirectory(groupPath / smem.localName);
         }
 
         return groupPath;
