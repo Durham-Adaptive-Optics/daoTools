@@ -108,6 +108,6 @@ int main(int argc, char* argv[]) {
     pthread_sigmask(SIG_BLOCK, &sigset, nullptr);
     sigwait(&sigset, &signum);
 
-    log.Info(LOGFMT("Termination signal received ({}); process terminating gracefully", strsignal(signum)));
+    log.Info(LOGFMT("termination signal received ({}); process terminating gracefully", strsignal(signum)));
 }
 
