@@ -1,5 +1,5 @@
 ================
-daoDAQ  v2.0.0
+daoDAQ  v3.0.0
 ================
 
 The DAO Data Acquisition tool, named daoDAQ and referred to simply as DAQ throughout this document, is a server application designed to facilitate

@@ -9,7 +9,7 @@
  /* ---------------------------------------------------------------- */
 
 #define APP_NAME            "daoDAQ"
-#define APP_VERSION_TAG     "v2.0.0"
+#define APP_VERSION_TAG     "v3.0.0"
 #define DEFAULT_LOGFILE     "daoDAQ.logs"
 #define DEFAULT_TCP_PORT    62000
 
