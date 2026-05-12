@@ -60,8 +60,8 @@ namespace Dao::DAQ
         srcType_(daoToSrcType_.at(smInfo.atype)),
         nSampleElements_(smInfo.nelement),
         nFileSamples(0),
-        file_(nullptr),
-        nFiles_(0) {
+        nFiles_(0),
+        file_(nullptr) {
         //
     }
 

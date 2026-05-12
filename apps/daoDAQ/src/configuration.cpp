@@ -10,35 +10,7 @@
 #include <fmt/format.h>
 #include <daoTools.h>
 
- /* Implements conversions between YAML node and custom types.
- */
-namespace YAML
-{
-    template<>
-    struct convert<Dao::DAQ::ExportFormat> {
-        static Node encode(Dao::DAQ::ExportFormat const& rhs) {
-            return YAML::Node { Dao::DAQ::fmtToRepr.at(rhs) };
-        }
-
-        static bool decode(Node const& node, Dao::DAQ::ExportFormat& rhs) {
-            bool decoded { true };
-
-            try {
-                std::string const formatString = node.as<std::string>();
-                auto const& kv = Dao::DAQ::ReprToFmt.find(formatString);
-                if (kv != Dao::DAQ::ReprToFmt.end()) {
-                    rhs = kv->second;
-                }
-            } catch (...) {
-                decoded = false;
-            }
-
-            return decoded;
-        }
-    };
-};
-
-/* ---------------------------------------------------------------- */
+ /* ---------------------------------------------------------------- */
 
 namespace Dao::DAQ
 {
@@ -82,7 +54,7 @@ namespace Dao::DAQ
 
     /* ---------------------------------------------------------------- */
 
-    void DAQConfiguration::loadFileParams(YAML::Node const& sourceNode, FileParameters& params) {
+    void DAQConfiguration::loadFileParams([[maybe_unused]] YAML::Node const& sourceNode, [[maybe_unused]] FileParameters& params) {
         return;
     }
 

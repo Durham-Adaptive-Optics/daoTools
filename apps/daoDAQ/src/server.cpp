@@ -89,13 +89,13 @@ namespace Dao::DAQ
         */
         for (auto const& config : daqConfig_->fileResources()) {
             daqResources_.push_back(
-                std::make_unique<FileDAQ>(config, doneCallback, errorCallback)
+                std::make_unique<FileDAQ>(config, doneCallback, errorCallback, m_log)
             );
         }
 
         for (auto const& config : daqConfig_->smemResources()) {
             daqResources_.push_back(
-                std::make_unique<SmemDAQ>(config, doneCallback, errorCallback)
+                std::make_unique<SmemDAQ>(config, doneCallback, errorCallback, m_log)
             );
         }
 

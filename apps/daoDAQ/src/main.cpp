@@ -58,7 +58,7 @@ int main(int argc, char* argv[]) {
     app.add_flag_callback("--version, -v", []() {
         std::cout << fmt::format("{} {}", APP_NAME, APP_VERSION_TAG) << std::endl;
         throw CLI::Success();
-    });
+    }, "Print application version");
 
     app.add_option(
         "--daq-configuration, -c",
@@ -79,7 +79,7 @@ int main(int argc, char* argv[]) {
     );
 
     app.add_flag(
-        "--verbose-logging, -v",
+        "--verbose-logging, -l",
         verboseLogging,
         "Increase verbosity of logs."
     );

@@ -11,39 +11,22 @@
 #include <configuration.hpp>
 #include <unordered_map>
 #include <filesystem>
-#include <daoShm.h>
 #include <fitsio.h>
 #include <utility>
 #include <memory>
+#include <dao.h>
 
 namespace Dao::DAQ
 {
-    enum class ExportFormat {
-        FITS,
-        NUMPY
-    };
-
-    inline static std::unordered_map<ExportFormat, std::string> const fmtToRepr
-    {
-        { ExportFormat::FITS, "fits" },
-        { ExportFormat::NUMPY, "numpy" }
-    };
-
-    inline static std::unordered_map<std::string, ExportFormat> const ReprToFmt
-    {
-        { "fits", ExportFormat::FITS },
-        { "numpy", ExportFormat::NUMPY }
-    };
-
     using QueueType = std::pair<IMAGE_METADATA, std::unique_ptr<std::byte[]>>;
 
     struct ISampleWriter {
         ISampleWriter(SmemParameters const& params, std::filesystem::path const& sessionOutputDir) :
             params_(params),
             sessionOutputDir_(sessionOutputDir) {
+            //
         }
 
-        virtual void reset(std::filesystem::path const& output) = 0;
         virtual void write(QueueType const& sample) = 0;
         virtual ~ISampleWriter() = default;
 
@@ -54,19 +37,23 @@ namespace Dao::DAQ
 
     struct FitsWriter : public ISampleWriter {
         FitsWriter(SmemParameters const& params, std::filesystem::path const& sessionOutputDir, IMAGE_METADATA const& smInfo);
+        FitsWriter& operator= (FitsWriter const&) = delete;
+        FitsWriter& operator= (FitsWriter&&) = delete;
+        FitsWriter(FitsWriter const&) = delete;
+        FitsWriter(FitsWriter&&) = delete;
+        ~FitsWriter();
 
         void write(QueueType const& sample) override;
-        void reset(std::filesystem::path const& output) override;
 
         private:
-        fitsfile* file_;
-        size_t nFileSamples;
-        size_t nFiles_;
+        size_t const nAxes_;
+        std::vector<long> const axes_;
         size_t const imgType_;
         size_t const srcType_;
-        size_t const nAxes_;
         size_t nSampleElements_;
-        std::vector<long> const axes_;
+        size_t nFileSamples;
+        size_t nFiles_;
+        fitsfile* file_;
 
         bool storeFull() const;
         void finish();

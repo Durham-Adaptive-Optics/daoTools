@@ -13,13 +13,13 @@
 #include <unordered_map>
 #include <filesystem>
 #include <functional>
-#include <daoShm.h>
+#include <dao.h>
 #include <utility>
 #include <thread>
 #include <queue>
 #include <mutex>
 #include <log.hpp>
-#include <daoLog.hpp>
+#include <sinks.hpp>
 
 namespace Dao::DAQ
 {
@@ -87,7 +87,6 @@ namespace Dao::DAQ
         std::queue<QueueType> queue_;
         IMAGE smem_;
         size_t sampleMemSize_;
-        std::atomic<std::filesystem::path> sessionOutputDir_;
 
         void establishResourceConnection();
         void configureThread(Optional<CoreID> const& core);

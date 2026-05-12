@@ -43,16 +43,15 @@ namespace Dao::DAQ
         void captureErrorHandler();
 
         // -- Server API Hooks -- 
-        void PROCESS_OTHER(std::string ymlPolicyDocument) override;
+        void PROCESS_OTHER(std::string daqRawConfig) override; // @todo update dao API to allow us to use UPDATE instead here - makes more sense.
         void transition_Off_Standby() override;
         void transition_Standby_Idle() override;
         void transition_Idle_Running() override;
         void transition_Running_Idle() override;
         void transition_Idle_Standby() override;
         void transition_Standby_Off() override;
-        void transition_Running_Error();
-        void entry_Error() override;
         void transition_Error_Idle() override;
+        void transition_Running_Error() override;
 
         // -- Utility Methods -- 
         std::string timestamp();

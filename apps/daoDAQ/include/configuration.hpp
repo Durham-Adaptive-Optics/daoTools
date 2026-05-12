@@ -11,11 +11,68 @@
  /* ---------------------------------------------------------------- */
 
 #include <yaml-cpp/yaml.h>
-#include <sinks.hpp>
 #include <exception>
 #include <optional>
 #include <log.hpp>
 #include <vector>
+
+/* ---------------------------------------------------------------- */
+
+/* Supported data formats for saving smem samples to the disk.
+*/
+namespace Dao::DAQ
+{
+    enum class SinkFormat {
+        FITS, NUMPY
+    };
+
+    /* Mappings between sink formats and string representations.
+*/
+    #define FITS_STREP  "fits"
+    #define NUMPY_STREP "numpy"
+};
+
+std::unordered_map<Dao::DAQ::SinkFormat, std::string> const sinkToStr
+{
+    { Dao::DAQ::SinkFormat::FITS, FITS_STREP },
+    { Dao::DAQ::SinkFormat::NUMPY, NUMPY_STREP }
+};
+
+std::unordered_map<std::string, Dao::DAQ::SinkFormat> const strToSink
+{
+    { FITS_STREP, Dao::DAQ::SinkFormat::FITS },
+    { NUMPY_STREP, Dao::DAQ::SinkFormat::NUMPY }
+};
+
+/* ---------------------------------------------------------------- */
+
+/* Implements conversions between YAML node and custom types.
+*/
+namespace YAML
+{
+    template<>
+    struct convert<Dao::DAQ::SinkFormat> {
+        static Node encode(Dao::DAQ::SinkFormat const& rhs) {
+            return YAML::Node { sinkToStr.at(rhs) };
+        }
+
+        static bool decode(Node const& node, Dao::DAQ::SinkFormat& rhs) {
+            bool decoded { true };
+
+            try {
+                std::string const formatString = node.as<std::string>();
+                auto const& kv = strToSink.find(formatString);
+                if (kv != strToSink.end()) {
+                    rhs = kv->second;
+                }
+            } catch (...) {
+                decoded = false;
+            }
+
+            return decoded;
+        }
+    };
+};
 
 /* ---------------------------------------------------------------- */
 
@@ -48,7 +105,7 @@ namespace Dao::DAQ
         Required<std::string> absPath;
         Optional<bool> metadataOnly { false };
         Optional<size_t> nSamples;
-        Required<ExportFormat> format;
+        Required<SinkFormat> format;
         Optional<size_t> fileRollover;
         Optional<CoreID> sinkThreadAffinity;
         Optional<CoreID> daqThreadAffinity;
@@ -157,5 +214,5 @@ namespace Dao::DAQ
             }
         }
     };
-};
+}
 

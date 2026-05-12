@@ -18,7 +18,7 @@ class DAQState(Enum):
     Unconfigured: int = 0
     Configured: int = 1
     Ready: int = 2
-    Aquiring: int = 3
+    Acquiring: int = 3
     Error: int = 4
 
 """ DAQ Client Library 
@@ -44,7 +44,7 @@ class DAQClient:
             "Off": DAQState.Unconfigured,
             "Standby": DAQState.Configured,
             "Idle": DAQState.Ready,
-            "Running": DAQState.Aquiring,
+            "Running": DAQState.Acquiring,
             "Error": DAQState.Error
         }
         
@@ -91,7 +91,7 @@ class DAQClient:
             raise RuntimeError("failed to begin DAQ session")
 
     def daq_session_await_finish(self, timeout=None, delay_s = 0.5):
-        if self.state() != DAQState.Aquiring:
+        if self.state() != DAQState.Acquiring:
             raise RuntimeError("No DAQ session in progess")
            
         t0 = time.perf_counter()
@@ -107,7 +107,7 @@ class DAQClient:
                 time.sleep(delay_s)
         
     def daq_session_finish(self):
-        if self.state() != DAQState.Aquiring:
+        if self.state() != DAQState.Acquiring:
             raise RuntimeError("No DAQ session in progess")
            
         status, _ = self.api.Exec("Idle")
@@ -203,7 +203,7 @@ if __name__ == "__main__":
     @cli.command()
     @click.pass_obj
     @click.option('--wait', is_flag=True, help='Block until DAQ session completes (session must be auto-finishable)')
-    def aquire(obj, wait: bool):
+    def acquire(obj, wait: bool):
         """ Begin DAQ session """
         try:
             client = DAQClient(obj['daq_host'], obj['daq_port'])

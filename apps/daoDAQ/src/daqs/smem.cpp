@@ -7,7 +7,6 @@
  */
 
 #include <daqs.hpp>
-#include <daoLog.hpp>
 
 using namespace Dao::DAQ;
 
@@ -68,7 +67,7 @@ void SmemDAQ::configureThread(Optional<CoreID> const& core) {
  * by calling the session finish method.
 */
 void SmemDAQ::beginAcquire([[maybe_unused]] std::filesystem::path const& outputPath) {
-    sessionOutputDir_.store(outputPath);
+    // sessionOutputDir_.store(outputPath); // @todo ensure thread-safe setting.
     runSession_.store(true);
     bSignal_.notify_all();
 }
@@ -181,7 +180,7 @@ void SmemDAQ::acquire() {
 */
 void SmemDAQ::sink() {
     log_.Info(LOGFMT("Sink thread has started new session for smem resource {}", params_.absPath));
-    auto writer = std::make_unique<ISampleWriter>(params_, sessionOutputDir_, *smem_.md);
+    auto writer = std::make_unique<FitsWriter>(params_, "", *smem_.md); // @todo access thread-safe session dir.
     size_t nSamplesWritten {};
 
     {

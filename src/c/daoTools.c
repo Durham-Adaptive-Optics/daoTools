@@ -4,7 +4,7 @@
   S.Cetre
  *****************************************************************************/
 
-/*==========================================================================*/
+ /*==========================================================================*/
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -24,8 +24,7 @@
  * @localName Output buffer for the local name (or NULL to query size).
  * @len Output for required buffer length (or NULL when writing result).
 */
-int daoToolsLocalName(const char* shmPath, char* localName, int* len)
-{
+int daoToolsLocalName(const char* shmPath, char* localName, int* len) {
     const char* pathEnd = strrchr(shmPath, '/');
     const char* nameEnd = strchr(shmPath, '.');
     if (!pathEnd || !nameEnd) {
@@ -50,8 +49,7 @@ int daoToolsLocalName(const char* shmPath, char* localName, int* len)
 
 /** Compute 32-bit XOR checksum over buffer
  */
-uint32_t daoComputeChecksum(const void* data, size_t length_bytes)
-{
+uint32_t daoComputeChecksum(const void* data, size_t length_bytes) {
     const uint32_t* words = (const uint32_t*)data;
     size_t num_words = length_bytes / 4;
     uint32_t checksum = 0;
@@ -70,8 +68,7 @@ uint32_t daoComputeChecksum(const void* data, size_t length_bytes)
  * @param ip
  * @return unsigned
  */
-unsigned daoToolsIp2Int(const char* ip)
-{
+unsigned daoToolsIp2Int(const char* ip) {
     daoTrace("\n");
     /* The return value. */
     unsigned v = 0;
@@ -120,8 +117,7 @@ unsigned daoToolsIp2Int(const char* ip)
  * @param suffix
  * @param final_string
  */
-void daoToolsInsertShmNamePrefix(const char* base_string, const char* prefix, char* final_string)
-{
+void daoToolsInsertShmNamePrefix(const char* base_string, const char* prefix, char* final_string) {
     daoTrace("\n");
     const char* suffix = ".im.shm";
     size_t suffix_length = strlen(suffix);
@@ -146,8 +142,7 @@ void daoToolsInsertShmNamePrefix(const char* base_string, const char* prefix, ch
  * @param calShm output calibrated image
  * @return int_fast8_t
  */
-int_fast8_t daoToolsShmCalibrate(IMAGE* inShm, IMAGE* ffShm, IMAGE* bgShm, IMAGE* calShm)
-{
+int_fast8_t daoToolsShmCalibrate(IMAGE* inShm, IMAGE* ffShm, IMAGE* bgShm, IMAGE* calShm) {
     daoTrace("\n");
     int k;
     int calSize = calShm[0].md[0].size[0] * calShm[0].md[0].size[1];
@@ -216,8 +211,7 @@ int_fast8_t daoToolsShmCalibrate(IMAGE* inShm, IMAGE* ffShm, IMAGE* bgShm, IMAGE
  * @param calShm output calibrated image
  * @return int_fast8_t
  */
-int_fast8_t daoToolsShmCalibrate64(IMAGE* inShm, IMAGE* ffShm, IMAGE* bgShm, IMAGE* calShm)
-{
+int_fast8_t daoToolsShmCalibrate64(IMAGE* inShm, IMAGE* ffShm, IMAGE* bgShm, IMAGE* calShm) {
     daoTrace("\n");
     int k;
     int calSize = calShm[0].md[0].size[0] * calShm[0].md[0].size[1];
@@ -287,8 +281,7 @@ int_fast8_t daoToolsShmCalibrate64(IMAGE* inShm, IMAGE* ffShm, IMAGE* bgShm, IMA
  * @param calShm output calibrated image
  * @return int_fast8_t
  */
-int_fast8_t daoToolsShmCalibratePws(IMAGE* inShm, IMAGE* ffShm, IMAGE* bgShm, IMAGE* maskShm, IMAGE* calShm, IMAGE* fluxShm)
-{
+int_fast8_t daoToolsShmCalibratePws(IMAGE* inShm, IMAGE* ffShm, IMAGE* bgShm, IMAGE* maskShm, IMAGE* calShm, IMAGE* fluxShm) {
     daoTrace("\n");
     int k;
     int inSize = inShm[0].md[0].size[0] * inShm[0].md[0].size[1];
@@ -386,8 +379,7 @@ int_fast8_t daoToolsShmCalibratePws(IMAGE* inShm, IMAGE* ffShm, IMAGE* bgShm, IM
  * @param width
  * @return int_fast8_t
  */
-int_fast8_t daoToolCog(float* img, int height, int width, float* centX, float* centY)
-{
+int_fast8_t daoToolCog(float* img, int height, int width, float* centX, float* centY) {
     daoTrace("\n");
     float sumX = 0;
     float sumY = 0;
@@ -420,8 +412,7 @@ int_fast8_t daoToolCog(float* img, int height, int width, float* centX, float* c
 /*
  * Apply 3rd order filter to command
  */
-int_fast8_t daoToolsCommandFilter(float* command, int nbVal, daoFilterHistory* filterHistory, float* servoFilter, float* commandOffset, float* filteredCommand)
-{
+int_fast8_t daoToolsCommandFilter(float* command, int nbVal, daoFilterHistory* filterHistory, float* servoFilter, float* commandOffset, float* filteredCommand) {
     daoTrace("\n");
     // 
     float commandMoff[nbVal];
@@ -469,8 +460,7 @@ int_fast8_t daoToolsCommandFilter(float* command, int nbVal, daoFilterHistory* f
 /*
  * Apply Integrator to command
  */
-int_fast8_t daoToolsLeakyIntegrator(float* command, int nbVal, float leaky, float gain, float* commandOffset, float* filteredCommand)
-{
+int_fast8_t daoToolsLeakyIntegrator(float* command, int nbVal, float leaky, float gain, float* commandOffset, float* filteredCommand) {
     daoTrace("\n");
     // 
     float commandMoff[nbVal];
@@ -492,8 +482,7 @@ int_fast8_t daoToolsLeakyIntegrator(float* command, int nbVal, float leaky, floa
 /*
  * Apply Integrator to command double precision
  */
-int_fast8_t daoToolsLeakyIntegratorDouble(double* command, int nbVal, double leaky, double gain, double* commandOffset, double* filteredCommand)
-{
+int_fast8_t daoToolsLeakyIntegratorDouble(double* command, int nbVal, double leaky, double gain, double* commandOffset, double* filteredCommand) {
     daoTrace("\n");
     // 
     double commandMoff[nbVal];
@@ -514,8 +503,7 @@ int_fast8_t daoToolsLeakyIntegratorDouble(double* command, int nbVal, double lea
 /*
  * Apply Integrator to modes
  */
-int_fast8_t daoToolsLeakyModalIntegrator(float* command, int nbVal, float* leaky, float* gain, float* commandOffset, float* filteredCommand)
-{
+int_fast8_t daoToolsLeakyModalIntegrator(float* command, int nbVal, float* leaky, float* gain, float* commandOffset, float* filteredCommand) {
     daoTrace("\n");
     // 
     float commandMoff[nbVal];
@@ -537,8 +525,7 @@ int_fast8_t daoToolsLeakyModalIntegrator(float* command, int nbVal, float* leaky
 /*
  * Apply Integrator to modes double precision
  */
-int_fast8_t daoToolsLeakyModalIntegratorDouble(double* command, int nbVal, double* leaky, double* gain, double* commandOffset, double* filteredCommand)
-{
+int_fast8_t daoToolsLeakyModalIntegratorDouble(double* command, int nbVal, double* leaky, double* gain, double* commandOffset, double* filteredCommand) {
     daoTrace("\n");
     // 
     double commandMoff[nbVal];
@@ -604,8 +591,7 @@ int_fast8_t daoCentroidSpots(float* image,
     int boxSize,
     int nSuba,
     float threshold,
-    float* cent)
-{
+    float* cent) {
     daoTrace("\n");
 
     /* Loop indices and subaperture bounds */
@@ -722,8 +708,7 @@ int_fast8_t daoCentroidSpotsRelative(float* image,
     int boxSize,
     int nSuba,
     float threshold,
-    float* cent)
-{
+    float* cent) {
     daoTrace("\n");
 
     int x, y, x1, x2, y1, y2;
@@ -823,8 +808,7 @@ int_fast8_t daoCentroidSpotsRelative(float* image,
 int_fast8_t daoCentroidPws(float* im, float* slopes,
     float* slopesRef, int* wfsPixId, int* wfsPixIdMap,
     float* flux, int nbPix,
-    int imSize, int pupSize)
-{
+    int imSize, int pupSize) {
     daoTrace("\n");
     float q1, q2, q3, q4;
     // Get our global thread ID
@@ -866,8 +850,7 @@ int_fast8_t daoCentroidPws(float* im, float* slopes,
  * @param output A pointer to a pre-allocated array where the processed image data will be stored.
  */
 void daoDescrambleOcam2Image(uint8_t img[], int imgRows, int imgCols, uint16_t* img16[],
-    int descrambler[], int descramblerSize, uint16_t output[])
-{
+    int descrambler[], int descramblerSize, uint16_t output[]) {
     int img16Cols = imgCols / 2;
 
     // Convert flattened img to 16-bit img16
@@ -895,8 +878,7 @@ void daoDescrambleOcam2Image(uint8_t img[], int imgRows, int imgCols, uint16_t* 
  * @param outShm output extracted image as vector
  * @return int_fast8_t
  */
-int_fast8_t daoToolsShmExtract(IMAGE* inShm, IMAGE* maskShm, IMAGE* outShm)
-{
+int_fast8_t daoToolsShmExtract(IMAGE* inShm, IMAGE* maskShm, IMAGE* outShm) {
     daoTrace("\n");
     int k;
     int inSize = inShm[0].md[0].size[0] * inShm[0].md[0].size[1];
@@ -996,8 +978,7 @@ int_fast8_t daoToolsShmExtract(IMAGE* inShm, IMAGE* maskShm, IMAGE* outShm)
  * @param outShm output extracted image as vector
  * @return int_fast8_t
  */
-int_fast8_t daoToolsShmSubstractExtract(IMAGE* inAShm, IMAGE* inBShm, IMAGE* maskShm, IMAGE* outShm)
-{
+int_fast8_t daoToolsShmSubstractExtract(IMAGE* inAShm, IMAGE* inBShm, IMAGE* maskShm, IMAGE* outShm) {
     daoTrace("\n");
     int k;
     int inSize = inAShm[0].md[0].size[0] * inAShm[0].md[0].size[1];
@@ -1121,8 +1102,7 @@ int_fast8_t daoToolsHighPassFilter(float* H,
     const float* HPrev,
     float fCutoff,
     float fLoop,
-    int size)
-{
+    int size) {
     daoTrace("\n");
     float alpha = exp(-2.0 * M_PI * fCutoff / fLoop);
     for (int i = 0; i < size; ++i) {
@@ -1165,8 +1145,7 @@ int_fast8_t daoToolsHighPassFilterDouble(double* H,
     const double* HPrev,
     double fCutoff,
     double fLoop,
-    int size)
-{
+    int size) {
     daoTrace("\n");
     double alpha = exp(-2.0 * M_PI * fCutoff / fLoop);
 
@@ -1177,8 +1156,7 @@ int_fast8_t daoToolsHighPassFilterDouble(double* H,
     return DAO_SUCCESS;
 }
 
-int_fast8_t daoDmCombine(IMAGE** imageCube, IMAGE* image, int nbChannel, int nbVal, int removePiston, double clipping)
-{
+int_fast8_t daoDmCombine(IMAGE** imageCube, IMAGE* image, int nbChannel, int nbVal, int removePiston, double clipping) {
     daoTrace("\n");
     int pp;
     int k;
@@ -1237,8 +1215,7 @@ int_fast8_t daoDmCombine(IMAGE** imageCube, IMAGE* image, int nbChannel, int nbV
 
 
 int_fast8_t daoShmCopyToPosition(IMAGE* imageIn, IMAGE* imageOut,
-    int nbVal, int position, int finalize)
-{
+    int nbVal, int position, int finalize) {
     daoTrace("\n");
 
     imageOut->md[0].write = 1;
@@ -1271,10 +1248,9 @@ int_fast8_t daoShmCopyToPosition(IMAGE* imageIn, IMAGE* imageOut,
 #include <sys/time.h>
 
 // Fallback for sched_setscheduler
-int sched_setscheduler(pid_t pid, int policy, const struct sched_param* param)
-{
-// macOS does not support real-time policies (SCHED_FIFO, etc.)
-// Just log and return success as a no-op
+int sched_setscheduler(pid_t pid, int policy, const struct sched_param* param) {
+    // macOS does not support real-time policies (SCHED_FIFO, etc.)
+    // Just log and return success as a no-op
     (void)pid;
     (void)policy;
     (void)param;
@@ -1283,8 +1259,7 @@ int sched_setscheduler(pid_t pid, int policy, const struct sched_param* param)
 }
 
 // Fallback for clock_nanosleep
-int clock_nanosleep(clockid_t clock_id, int flags, const struct timespec* request, struct timespec* remain)
-{
+int clock_nanosleep(clockid_t clock_id, int flags, const struct timespec* request, struct timespec* remain) {
     if (flags == TIMER_ABSTIME) {
         // Absolute time mode: wait until the specified time
         struct timespec now;
@@ -1306,15 +1281,14 @@ int clock_nanosleep(clockid_t clock_id, int flags, const struct timespec* reques
         return nanosleep(&delay, remain);
     }
     else {
-     // Relative sleep
+        // Relative sleep
         return nanosleep(request, remain);
     }
 }
 
 #endif // __APPLE__
 
-void daoRtSetup(int rt_priority)
-{
+void daoRtSetup(int rt_priority) {
     struct sched_param sp;
     int policy;
     int cur_prio;

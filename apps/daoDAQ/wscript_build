@@ -1,14 +1,43 @@
 import os
-from glob import glob
 
-if bld.env.HAVE_CLI11:
-    bld.program(
-        source = [glob("src/*.cpp")],
-        target = 'daoDAQ',
-        includes = ['../../include', f"{os.getenv('DAOROOT')}/include", "include"],
-        linkflags = [f'-L{os.getenv('DAOROOT')}/lib', f'-L{os.getenv('DAOROOT')}/lib64'],
-        ldflags = ['-ldao' , '-lpthread', '-ldaoNuma', '-ldaoProto', '-lzmq', '-lprotobuf', '-lyaml-cpp', '-lstdc++fs'],
-        cxxflags = ['-O3', '-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto', '-std=c++17'],
-        use= 'daoTools CLI11 cfitsio fmt'
-    )
-        
+bld.program(
+    target='daoDAQ',
+    source=bld.path.ant_glob('src/**/*.cpp'),
+
+    includes=[
+        'include',
+        '../../include',
+        f"{os.getenv('DAOROOT')}/include"
+    ],
+
+    libpath=[
+        f"{os.getenv('DAOROOT')}/lib",
+        f"{os.getenv('DAOROOT')}/lib64"
+    ],
+
+    lib=[
+        'dao',
+        'daoNuma',
+        'daoProto',
+        'pthread'
+    ],
+
+    cxxflags=[
+        '-O3',
+        '-Wall',
+        '-Wextra',
+        '-pipe',
+        '-fdiagnostics-color=always',
+        '-std=c++17'
+    ],
+
+    use=[
+        'daoTools',
+        'CLI11',
+        'cfitsio',
+        'FMT',
+        'ZMQ',
+        'PROTOBUF',
+        'YAMLCPP'
+    ]
+)

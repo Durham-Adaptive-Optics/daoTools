@@ -17,17 +17,19 @@
 #define RES_MAX_VAL 8192
 #define FILTER_ORDER 3
 
-/**
- * RES filter structure to store precalc, cmd and residual
- */
-typedef struct
-{
+ /**
+  * RES filter structure to store precalc, cmd and residual
+  */
+typedef struct {
     float precal[RES_MAX_VAL];
     float dlCmd[FILTER_ORDER][RES_MAX_VAL];
     float dlRes[FILTER_ORDER][RES_MAX_VAL];
     int step;
 } daoFilterHistory;
 
+#ifdef __cplusplus
+extern "C"
+#endif
 int daoToolsLocalName(const char* shmPath, char* localName, int* len);
 
 uint32_t daoComputeChecksum(const void* data, size_t length_bytes);
