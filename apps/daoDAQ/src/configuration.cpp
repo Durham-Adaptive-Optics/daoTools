@@ -85,18 +85,12 @@ namespace Dao::DAQ
 
     void DAQConfiguration::load(YAML::Node const& ymlDoc) {
         // load session policies..
-        if (auto const& sessionNode = ymlDoc["session_parameters"]; sessionNode) {
-            loadRequired(sessionParams_.rootStorage, "root_storage", sessionNode);
-        }
-        else {
-            std::string const err = fmt::format("DAQ configuration omitted 'session_parameters'");
-            throw std::runtime_error(err);
-        }
+        loadRequired(sessionParams_.rootStorage, "root_storage", ymlDoc);
 
         // load source policies..
-        if (auto const& sourcesNode = ymlDoc["source_list"]; sourcesNode) {
+        if (auto const& sourcesNode = ymlDoc["sources"]; sourcesNode) {
             if (sourcesNode.Type() != YAML::NodeType::Sequence) {
-                std::string const err = fmt::format("DAQ configuration 'source_list' is not a list");
+                std::string const err = fmt::format("DAQ configuration 'sources' is not a list");
                 throw std::runtime_error(err);
             }
 
