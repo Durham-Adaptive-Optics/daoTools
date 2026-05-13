@@ -619,7 +619,7 @@ class daoShmViewer(QMainWindow):
         buttonLayout.addWidget(exportBtn)
         
         self.daqBtn = QPushButton("Acquire")
-        # self.daqBtn.clicked.connect(self.acquireData)
+        self.daqBtn.clicked.connect(self.daqAcquire)
         buttonLayout.addWidget(self.daqBtn)
 
         # assemble widgets into a new tab
@@ -635,15 +635,56 @@ class daoShmViewer(QMainWindow):
         widget.setLayout(layout)
         self.tabWidget.addTab(widget, "DAQ")
         
+    # def setup_metadata_tab(self):
+    #     """Setup the metadata tab."""
+    #     metadataTab = QWidget()
+    #     metadataLayout = QVBoxLayout()
+        
+    #     self.metadataText = QTextEdit()
+    #     self.metadataText.setReadOnly(True)
+        
+    #     metadataLayout.addWidget(self.metadataText)
+    #     metadataLayout.addStretch()
+    #     metadataTab.setLayout(metadataLayout)
+    #     self.tabWidget.addTab(metadataTab, "Metadata")
+
     def setup_metadata_tab(self):
         """Setup the metadata tab."""
+        def open_file_dialog():
+            filePath, _ = QFileDialog.getSaveFileName(self, "Select Output File")
+            if filePath:
+                self.quickRecPathInput.setText(filePath)
+            
         metadataTab = QWidget()
         metadataLayout = QVBoxLayout()
+
+        quickRecLayout = QHBoxLayout()
+        
+        self.quickRecSampleInput = QSpinBox()
+        self.quickRecSampleInput.setMinimum(1)
+        self.quickRecSampleInput.setValue(1)
+        self.quickRecSampleInput.setMaximum(999999)
+        self.quickRecSampleInput.hide()
+        
+        self.quickRecPathInput = QLineEdit()
+        self.quickRecPathInput.setReadOnly(True)
+        self.quickRecPathInput.setPlaceholderText("Click me to select output path...")
+        self.quickRecPathInput.mousePressEvent = lambda event: open_file_dialog()
+        self.quickRecPathInput.hide()
+        
+        self.quickRecordButton = QPushButton("Quick Record")
+        self.quickRecordButton.clicked.connect(lambda: self.record_file(self.quickRecPathInput.text(), self.quickRecSampleInput.value()))
+        self.quickRecordButton.hide()
+        
+        quickRecLayout.addWidget(self.quickRecSampleInput)
+        quickRecLayout.addWidget(self.quickRecPathInput)
+        quickRecLayout.addWidget(self.quickRecordButton)
         
         self.metadataText = QTextEdit()
         self.metadataText.setReadOnly(True)
         
         metadataLayout.addWidget(self.metadataText)
+        metadataLayout.addLayout(quickRecLayout)
         metadataLayout.addStretch()
         metadataTab.setLayout(metadataLayout)
         self.tabWidget.addTab(metadataTab, "Metadata")
@@ -807,9 +848,15 @@ class daoShmViewer(QMainWindow):
             self.shm = dao.shm(f"/tmp/{filename}", logLevel=0)
             self.lastCounter = self.shm.get_counter()
             
+            # reset and show quick-record form for this shm.
+            self.quickRecSampleInput.setValue(1)
+            self.quickRecPathInput.setText("")
+            self.quickRecSampleInput.show()
+            self.quickRecPathInput.show()
+            self.quickRecordButton.show()
+            
             # Update metadata and selected files list
             self.updateMetadata(filename)
-            # self.updateMultiRecordList()
             
             # Determine visualization type based on data shape
             data = self.shm.get_data()
@@ -936,11 +983,18 @@ class daoShmViewer(QMainWindow):
             self.timer.stop()
             self.show_error(f"Error updating data: {e}")
 
-    # @todo(tom) 'quick record' can be removed once I have added numpy support to the Dao DAQ tool.
     def record_file(self, filename, frames):
         """ Perform a quick record of the shm - this saved N samples to a numpy file """
         if not self.shm:
             self.show_error("No shared memory selected")
+            return
+            
+        if not filename:
+            self.show_error("No output path specified")
+            return
+            
+        if frames == 0:
+            self.show_error("No frames to record")
             return
             
         try:
@@ -1170,6 +1224,9 @@ class daoShmViewer(QMainWindow):
     #         # invoke recording session with daoTelemetry
     #         # using the current recording configuration.
     #         QMessageBox.critical(self, "Telemetry Record Error", "TODO") # @todo(tom)
+       
+    def daqAcquire(self):
+        pass
        
     def openLoadFileDialog(self, event):
         """Open file dialog for loading."""
