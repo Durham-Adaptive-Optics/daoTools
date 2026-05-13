@@ -64,8 +64,20 @@ class DAQClient:
             raise RuntimeError("failed to recover DAQ server")
     
     def daq_session_configure_upload(self, daq_config: str):
-        if self.state() not in (DAQState.Unconfigured, DAQState.Error):
-            raise RuntimeError("DAQ will not accept new configuration in current state")
+        if self.state() is DAQState.Acquiring:
+            raise RuntimeError("Cannot upload configuration during active DAQ session")
+
+        # move tool into the Off state before we can upload
+        # new config.
+        if self.state() is DAQState.Ready:
+            self.api.Exec("Disable")
+            self.api.Exec("Stop")
+        elif self.state() is DAQState.Configured:
+            status, _ = self.api.Exec("Stop")
+            
+        toolState = self.state()
+        if toolState != DAQState.Unconfigured:
+            raise RuntimeError(f"Cannot upload configuration due to invalid tool state ({toolState})")
         
         status, _ = self.api.Other(daq_config)
         if status != 0:
