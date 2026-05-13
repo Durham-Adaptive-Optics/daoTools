@@ -17,9 +17,9 @@ on centos:
 sudo yum install ncurses-devel
 ````
 
-## CLI11+cfitsio+libyamml+blas
+## CLI11+cfitsio+libyamml+blas+fmt
 ````
-sudo apt install libcli11-dev libcfitsio-dev libyaml-cpp-dev libopenblas-dev
+sudo apt install libcli11-dev libcfitsio-dev libyaml-cpp-dev libopenblas-dev libfmt-dev
 ````
 
 We recommand to use magicPlot
