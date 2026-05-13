@@ -14,6 +14,7 @@ import dao
 import yaml
 import magicplot
 import numpy as np
+from daoDAQClient import DAQState, DAQClient
 from astropy.io import fits
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -22,10 +23,10 @@ from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import (
     QAction, QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog,
     QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout, QGroupBox,
-    QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
+    QHBoxLayout, QLabel, QLineEdit, QListWidget,
     QMainWindow, QMessageBox, QPushButton, QRadioButton, QSpinBox,
     QStackedWidget, QStatusBar, QSplitter, QTabWidget, QTableView,
-    QAbstractItemView, QTableWidgetItem, QTextEdit, QToolBar, QVBoxLayout, QWidget,
+    QAbstractItemView, QTextEdit, QToolBar, QVBoxLayout, QWidget,
     QTreeWidget, QTreeWidgetItem
 )
 
@@ -44,7 +45,8 @@ class DaqSessionConfig(QWidget):
         groupBox = QGroupBox("Required Parameters")
         layout = QFormLayout()
         
-        self.pathDisplay = QLineEdit()
+        defaultRootStorage = os.getenv("DAODATA", "")
+        self.pathDisplay = QLineEdit(defaultRootStorage)
         self.pathDisplay.setReadOnly(True)
         
         selectBtn = QPushButton("Pick")
@@ -166,71 +168,6 @@ class SmemDaqConfig(QWidget):
         
         self.setLayout(mainLayout)
             
-class QuickRecordModal(QDialog):
-    ''' Modal form to collect shared memory quick record options '''
-    
-    def __init__(self, UI: Qt.Widget, shmPath: str):
-        super().__init__(UI)
-        self.setWindowTitle("Shared Memory Quick Record")
-        self.initUI(shmPath)
-        
-    def initUI(self, shmPath: str):
-        # create input to display selected saveAs path
-        # and configure to open file picker on click.
-        shmName = shmPath.split("/")[1].split(".")[0]
-        outputDir = os.getenv("DAODATA", os.getcwd())
-        defaultSaveAs = f"{os.path.join(outputDir, shmName)}.npy"
-        self.saveAsInput = QLineEdit(defaultSaveAs)
-        self.saveAsInput.mousePressEvent = self.pickOutputPath
-        self.saveAsInput.setReadOnly(True)
-        
-        # create numeric input for number of frames to record.
-        self.frameCounter = QSpinBox()
-        self.frameCounter.setRange(1, 10000)
-        self.frameCounter.setValue(1)
-        
-        # create button to allow user to complete the form.
-        doneBtn = QPushButton("Done")
-        doneBtn.clicked.connect(self.finish)
-
-        # create label for showing errors in the modal.
-        self.statusLabel = QLabel()
-        self.statusLabel.hide()
-
-        # assemble widgets into a modal form.
-        form = QFormLayout()
-        form.addRow("Source", QLabel(shmPath))
-        form.addRow("Save as", self.saveAsInput)
-        form.addRow("Frames to record", self.frameCounter)
-        form.addRow(self.statusLabel)
-        form.addRow(doneBtn)
-        self.setMinimumWidth(300)
-        self.setLayout(form)
-        
-    def pickOutputPath(self, mouseEvent):
-        fileName, _ = QFileDialog.getSaveFileName(
-            self, "Save As", os.getcwd(), "Numpy Files (*.npy)"
-        )
-        if fileName:
-            self.saveAsInput.setText(fileName)
-        
-    def finish(self):
-        # deny form completion if user has not provided saveAs path.
-        if not self.saveAsInput.text():
-            self.statusLabel.setText("You must pick a SaveAs path before you can quick record.")
-            self.statusLabel.show()
-            return
-        
-        # Close modal with success exit code - recording can then
-        # be triggered as all fields are configured.
-        self.accept()
-        
-    def getFrameCount(self):
-        return self.frameCounter.value()
-    
-    def getSavePath(self):
-        return self.saveAsInput.text()
-
 class NumpyTableModel(QAbstractTableModel):
     """Model for displaying and editing NumPy arrays in table view."""
     def __init__(self, data, shm, parent=None):
@@ -615,11 +552,11 @@ class daoShmViewer(QMainWindow):
         buttonLayout.addWidget(importBtn)
 
         exportBtn = QPushButton("Export")
-        exportBtn.clicked.connect(self.exportDaqConfig)
+        exportBtn.clicked.connect(self.exportDaqConfigToFile)
         buttonLayout.addWidget(exportBtn)
         
-        self.daqBtn = QPushButton("Acquire")
-        self.daqBtn.clicked.connect(self.daqAcquire)
+        self.daqBtn = QPushButton("Start DAQ")
+        self.daqBtn.clicked.connect(self.startDaq)
         buttonLayout.addWidget(self.daqBtn)
 
         # assemble widgets into a new tab
@@ -635,19 +572,6 @@ class daoShmViewer(QMainWindow):
         widget.setLayout(layout)
         self.tabWidget.addTab(widget, "DAQ")
         
-    # def setup_metadata_tab(self):
-    #     """Setup the metadata tab."""
-    #     metadataTab = QWidget()
-    #     metadataLayout = QVBoxLayout()
-        
-    #     self.metadataText = QTextEdit()
-    #     self.metadataText.setReadOnly(True)
-        
-    #     metadataLayout.addWidget(self.metadataText)
-    #     metadataLayout.addStretch()
-    #     metadataTab.setLayout(metadataLayout)
-    #     self.tabWidget.addTab(metadataTab, "Metadata")
-
     def setup_metadata_tab(self):
         """Setup the metadata tab."""
         def open_file_dialog():
@@ -818,13 +742,10 @@ class daoShmViewer(QMainWindow):
         """ Handle when the user changes the cell selected in the shm table """
         numShmsSelected = len(self.file_list_widget.selectionModel().selectedRows())
         
-        # update recording tab buttons based on active shm selection.
         if numShmsSelected == 1:
-            self.daqBtn.setText("Quick Acquire")
             self.addDaqSrcBtn.setText("Add Shm")
         elif numShmsSelected > 1:
             self.addDaqSrcBtn.setText("Add Shms")
-            self.daqBtn.setText("Acquire")
         else:
             self.addDaqSrcBtn.setText("Add File")
             
@@ -1089,12 +1010,52 @@ class daoShmViewer(QMainWindow):
             w = self.daqWidgetArea.widget(i)
             QTreeWidgetItem(self.daqViewSrcsLeaf, [w.source]).setData(0, Qt.UserRole, self.daqWidgetArea.indexOf(w))
 
-    def exportDaqConfig(self):
+    def exportDaqConfig(self) -> dict:
+        ''' Export DAQ config to Python object '''
+        config = {"sources": []}
+            
+        for i in range(self.daqWidgetArea.count()):
+            configUI = self.daqWidgetArea.widget(i)
+                
+            if isinstance(configUI, DaqSessionConfig):
+                config["root_storage"] = configUI.pathDisplay.text()
+            elif isinstance(configUI, FileDaqConfig):
+                config["sources"].append({
+                    # required params
+                    "uri": f"file://{configUI.pathDisplay.text()}"
+                })
+            elif isinstance(configUI, SmemDaqConfig):
+                params = {
+                    # required params
+                    "uri": f"smem://{configUI.pathDisplay.text()}",
+                    "format": configUI.formatInput.currentText(),
+                        
+                    # optional params
+                    "metadata_only": configUI.metadataOnlyInput.isChecked(),
+                    "eager_start": configUI.eagerStartInput.isChecked()
+                }
+
+                # omit parameters from export that aren't specified in UI.
+                optional = lambda val: val if val != -1 else None
+                if (param := optional(configUI.samplesInput.value())) and (param is not None):      params["samples"] = param
+                if (param := optional(configUI.fileRolloverInput.value())) and (param is not None): params["file_rollover"] = param
+                if (param := optional(configUI.daqAffinityInput.value())) and (param is not None):  params["daq_affinity"] = param
+                if (param := optional(configUI.sinkAffinityInput.value())) and (param is not None): params["sink_affinity"] = param
+                if (param := optional(configUI.bufferLimitInput.value())) and (param is not None):  params["buffer_limit"] = param
+
+                #
+                config["sources"].append(params)
+            else:
+                raise RuntimeError(f"unknown config widget {configUI}")
+                
+        return config
+
+    def exportDaqConfigToFile(self):
         ''' Allows the user to select a output location and saves the current DAQ config to disk '''
         filepath, _ = QFileDialog.getSaveFileName(
             self,
             "Save DAQ Config File",
-            "",
+            os.getenv("DAODATA", os.getcwd()),
             "YAML Files (*.yml *.yaml);;All Files (*)"
         )
         
@@ -1102,46 +1063,10 @@ class daoShmViewer(QMainWindow):
             return
         
         try:
-            config = {"sources": []}
-            
-            for i in range(self.daqWidgetArea.count()):
-                configUI = self.daqWidgetArea.widget(i)
-                
-                if isinstance(configUI, DaqSessionConfig):
-                    config["root_storage"] = configUI.pathDisplay.text()
-                elif isinstance(configUI, FileDaqConfig):
-                    config["sources"].append({
-                        # required params
-                        "uri": f"file://{configUI.pathDisplay.text()}"
-                    })
-                elif isinstance(configUI, SmemDaqConfig):
-                    params = {
-                        # required params
-                        "uri": f"smem://{configUI.pathDisplay.text()}",
-                        "format": configUI.formatInput.currentText(),
-                        
-                        # optional params
-                        "metadata_only": configUI.metadataOnlyInput.isChecked(),
-                        "eager_start": configUI.eagerStartInput.isChecked()
-                    }
-
-                    # omit parameters from export that aren't specified in UI.
-                    optional = lambda val: val if val != -1 else None
-                    if (param := optional(configUI.samplesInput.value())) and (param is not None):      params["samples"] = param
-                    if (param := optional(configUI.fileRolloverInput.value())) and (param is not None): params["file_rollover"] = param
-                    if (param := optional(configUI.daqAffinityInput.value())) and (param is not None):  params["daq_affinity"] = param
-                    if (param := optional(configUI.sinkAffinityInput.value())) and (param is not None): params["sink_affinity"] = param
-                    if (param := optional(configUI.bufferLimitInput.value())) and (param is not None):  params["buffer_limit"] = param
-
-                    #
-                    config["sources"].append(params)
-                else:
-                    raise RuntimeError(f"unknown config widget {configUI}")
-                
-            yaml.safe_dump(config, open(filepath, "w"))
-            
+            with open(filepath, "w") as file:
+                yaml.safe_dump(self.exportDaqConfig(), file)
         except Exception as e:
-            self.show_error(f"failed to export DAQ configuration: {e}")
+            self.show_error(f"failed to export DAQ configuration to disk: {e}")
             return
 
     def importDaqConfig(self):
@@ -1149,7 +1074,7 @@ class daoShmViewer(QMainWindow):
         filepath, _ = QFileDialog.getOpenFileName(
             self,
             "Select DAQ Config File",
-            "",
+            os.getenv("DAODATA", os.getcwd()),
             "YAML Files (*.yml *.yaml);;All Files (*)"
         )
         
@@ -1209,25 +1134,47 @@ class daoShmViewer(QMainWindow):
             self.show_error(f"failed to import DAQ configuration: {e}")
             return
 
-    # def acquireData(self):
-    #     ''' Performs a quick-record or full telemetry record depending on UI state'''
-        
-    #     numSelectedShms = len(self.file_list_widget.selectedItems())
-    #     if numSelectedShms == 1: 
-    #         # single shm selected so capture quick-record
-    #         # parameters and execute quick-record.
-    #         shmSource = self.shm.get_meta_data()["name"].decode("utf-8")
-    #         inputForm = QuickRecordModal(self, shmSource)
-    #         if QDialog.Accepted == inputForm.exec_() :
-    #             self.record_file(inputForm.getSavePath(), inputForm.getFrameCount())
-    #     else:
-    #         # invoke recording session with daoTelemetry
-    #         # using the current recording configuration.
-    #         QMessageBox.critical(self, "Telemetry Record Error", "TODO") # @todo(tom)
-       
-    def daqAcquire(self):
-        pass
-       
+    def startDaq(self):
+        ''' Uses the daoDAQ tool to carry out a DAQ session '''
+        try:
+            client = DAQClient()
+            daqConfigString = yaml.dump(self.exportDaqConfig())
+            client.daq_session_configure_upload(daqConfigString)
+            client.daq_session_configure_apply()
+            client.daq_session_begin()
+        except Exception as e:
+            self.show_error(f"failed to start DAQ session: {e}")
+        else:
+            self.daqTimer = QTimer()
+            self.daqTimer.timeout.connect(self.daqCheckin)
+            self.daqBtn.setText("Finish DAQ")
+            self.daqBtn.clicked.connect(self.finishDaq)
+            self.daqTimer.start(250)
+            
+    def daqCheckin(self):
+        ''' Aligns DAQ tab UI with state of daoDAQ when DAQ session is in progress '''
+        try:
+            client = DAQClient()
+            state: DAQState = client.state()
+            if state == DAQState.Ready:
+                self.daqTimer.stop()
+                self.daqBtn.setText("Start DAQ")
+                self.daqBtn.clicked.connect(self.startDaq)
+                return
+        except Exception as e:
+            self.show_error(f"failed to sync UI to DAQ session: {e}")
+            
+    def finishDaq(self):
+        ''' Finishes the current DAQ session '''
+        try:
+            client = DAQClient()
+            client.daq_session_finish()
+        except Exception as e:
+            self.show_error(f"failed to finish DAQ session: {e}")
+        finally:
+            self.daqBtn.setText("Start DAQ")
+            self.daqBtn.clicked.connect(self.startDaq)
+            
     def openLoadFileDialog(self, event):
         """Open file dialog for loading."""
         options = QFileDialog.Options()
