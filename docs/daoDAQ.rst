@@ -75,7 +75,7 @@ A DAQ configuration contains two main sections:
 Session Parameters
 ~~~~~~~~~~~~~~~~~~
 
-Session parameters are specified at the YAML root level under ``session_parameters``:
+Session parameters are specified at the YAML root level:
 
 .. list-table::
    :widths: 20 15 15 20 40
@@ -93,16 +93,10 @@ Session parameters are specified at the YAML root level under ``session_paramete
      - —
      - Absolute path where session outputs are stored on disk.
 
-   * - ``group_name``
-     - Optional
-     - String
-     - Timestamp (e.g., 2026-04-22_14-30-45)
-     - Name of the session's group subdirectory. If omitted, a timestamp is used.
-
 Data Sources
 ~~~~~~~~~~~~
 
-Two source types are supported:
+Two source types are supported and should be specified under the ``sources`` list within the YAML root level:
 
 **1. File Source**
 

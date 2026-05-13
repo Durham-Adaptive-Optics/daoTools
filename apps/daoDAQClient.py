@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 '''
  # @ Author: Thomas N. Davies
  # @ Company: Centre for Advanced Instrumentation, Durham University
