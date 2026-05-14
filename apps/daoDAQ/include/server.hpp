@@ -31,7 +31,8 @@ namespace Dao::DAQ
         std::string daqRawConfig_;
         std::unique_ptr<DAQConfiguration> daqConfig_;
         std::vector<std::unique_ptr<IDAQ>> daqResources_;
-        std::atomic<size_t> daqResourcesDone_;
+        size_t daqResourcesDone_;
+        std::mutex reportLock_;
 
         // -- Session Management Methods --
         void applyDAQConfig();
@@ -43,7 +44,7 @@ namespace Dao::DAQ
         void captureErrorHandler();
 
         // -- Server API Hooks -- 
-        void PROCESS_OTHER(std::string daqRawConfig) override; // @todo update dao API to allow us to use UPDATE instead here - makes more sense.
+        void PROCESS_OTHER(std::string daqRawConfig) override; // @todo update dao API to allow us to use UPDATE instead here.
         void transition_Off_Standby() override;
         void transition_Standby_Idle() override;
         void transition_Idle_Running() override;

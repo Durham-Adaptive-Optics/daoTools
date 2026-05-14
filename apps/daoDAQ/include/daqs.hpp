@@ -35,8 +35,8 @@ namespace Dao::DAQ
 
         virtual ~IDAQ() = default;
 
-        virtual void beginAcquire(std::filesystem::path const& outputPath) = 0;
-        virtual void endAcquire() = 0;
+        virtual void beginAcquisition(std::filesystem::path const& outputPath) = 0;
+        virtual void endAcquisition() = 0;
 
         protected:
         std::function<void()> doneCallback_;
@@ -49,8 +49,8 @@ namespace Dao::DAQ
     struct FileDAQ final : public IDAQ {
         FileDAQ(FileParameters const& params, std::function<void()> doneCallback, std::function<void()> errorCallback, Dao::Log::Logger& log);
 
-        void beginAcquire(std::filesystem::path const& outputPath) override;
-        void endAcquire() override;
+        void beginAcquisition(std::filesystem::path const& outputPath) override;
+        void endAcquisition() override {};
 
         auto const& params() const { return params_; }
 
@@ -70,8 +70,8 @@ namespace Dao::DAQ
         SmemDAQ(SmemDAQ&&) = delete;
         ~SmemDAQ();
 
-        void beginAcquire(std::filesystem::path const& outputPath) override;
-        void endAcquire() override;
+        void beginAcquisition(std::filesystem::path const& outputPath) override;
+        void endAcquisition() override;
 
         auto const& params() const { return params_; }
 
@@ -81,19 +81,21 @@ namespace Dao::DAQ
         std::atomic<bool> runSession_;
         std::thread daqThread_;
         std::thread sinkThread_;
-        std::mutex bLock_;
-        std::mutex qLock_;
-        std::condition_variable bSignal_;
+        std::mutex qLock_;  // ensures exclusive access to sample queue between DAQ and sink threads.
         std::queue<QueueType> queue_;
         IMAGE smem_;
         size_t sampleMemSize_;
+        std::mutex cvLock_;  // ensures exclusive access to CV between DAQ and sink threads.
+        std::atomic<bool> cvPredicate_;
+        std::condition_variable cvSignal_;
+        std::filesystem::path sessionOutputDir_;
 
         void establishResourceConnection();
         void configureThread(Optional<CoreID> const& core);
 
         void daqThreadEntry();
         void sinkThreadEntry();
-        void acquire();
-        void sink();
+        void acquireSamples();
+        void sinkSamples();
     };
 };

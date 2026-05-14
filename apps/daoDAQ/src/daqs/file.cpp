@@ -8,6 +8,7 @@
 
 #include <filesystem>
 #include <daqs.hpp>
+#include <log.hpp>
 
 namespace Dao::DAQ
 {
@@ -16,25 +17,22 @@ namespace Dao::DAQ
         params_(params) {
     }
 
-    /* Copy the file to the DAQ session output directory as soon as we have been instructed
-     * to begin capture.
+    /* Launch an async task to copy the file to the DAQ session output directory.
     */
-    void FileDAQ::beginAcquire(std::filesystem::path const& outputPath) {
+    void FileDAQ::beginAcquisition(std::filesystem::path const& outputPath) {
         std::filesystem::path const fileSourcePath { params_.absPath };
         std::filesystem::path const fileOutputPath = outputPath / fileSourcePath.filename().string();
 
-        try {
-            std::filesystem::copy_file(fileSourcePath, fileOutputPath);
-        } catch (std::exception const& e) {
-            errorCallback_();
-            return;
-        }
-
-        doneCallback_();
-    }
-
-    void FileDAQ::endAcquire() {
-        //
+        std::thread([&]() {
+            try {
+                std::filesystem::copy_file(fileSourcePath, fileOutputPath);
+            } catch (std::exception const& e) {
+                log_.Critical(LOGFMT("copy failed for file resource '{}' because {}", fileSourcePath.string(), e.what()));
+                this->errorCallback_();
+                return;
+            }
+            this->doneCallback_();
+        }).detach();
     }
 }
 

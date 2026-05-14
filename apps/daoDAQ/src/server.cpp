@@ -62,15 +62,19 @@ namespace Dao::DAQ
          * and in the case all have finished, the server will
          * automatically end the DAQ session.
         */
-        auto doneCallback = [this]() -> void {
-            auto const nDaqResources = daqResources_.size() - 1;
-            auto const priorDoneTotal = daqResourcesDone_.fetch_add(1);
-            this->m_log.Debug(LOGFMT("DAQ resource finished capture ({} / {} done)", priorDoneTotal + 1, nDaqResources));
+        auto doneCallback = [&]() -> void {
+            std::thread([&]() {
+                std::lock_guard lock(reportLock_);
+                auto const totalDaqResources = daqResources_.size() - 1;
+                auto const priorNumDone = daqResourcesDone_++;
 
-            if (priorDoneTotal == nDaqResources) {
-                this->m_log.Info(LOGFMT("All DAQ resources have finished capturing ({} done)", nDaqResources));
-                this->Idle();
-            }
+                this->m_log.Debug(LOGFMT("DAQ resource finished capture ({} / {} done)", daqResourcesDone_, totalDaqResources));
+
+                if (daqResourcesDone_ == totalDaqResources) {
+                    this->m_log.Info(LOGFMT("All DAQ resources have finished capturing ({} done)", totalDaqResources));
+                    this->Idle();
+                }
+            }).detach();
         };
 
         /* In the event a DAQ resource has encounters and error
@@ -80,13 +84,14 @@ namespace Dao::DAQ
          * Within this callback the server will transition
          * to the Error state.
         */
-        auto errorCallback = [this]() -> void {
-            this->m_log.Info("DAQ server has been informed that a DAQ resource has experienced an error");
-            this->OnFailure();
+        auto errorCallback = [&]() -> void {
+            std::thread([&]() {
+                std::lock_guard lock(reportLock_);
+                this->m_log.Info("DAQ server has been informed that a DAQ resource has experienced an error");
+                this->OnFailure();
+            }).detach();
         };
 
-        /*
-        */
         for (auto const& config : daqConfig_->fileResources()) {
             daqResources_.push_back(
                 std::make_unique<FileDAQ>(config, doneCallback, errorCallback, m_log)
@@ -99,8 +104,6 @@ namespace Dao::DAQ
             );
         }
 
-        /*
-        */
         m_log.Info("DAQ resources have been prepared");
     }
 
@@ -115,13 +118,11 @@ namespace Dao::DAQ
      * to begin capture.
     */
     void DAQServer::startDAQSession() {
-        daqResourcesDone_.store(0);
-
         std::filesystem::path const sessionDirectory = prepareOutputDirectory();
         m_log.Info(LOGFMT("Output directory has been prepared for the new DAQ session: {}", sessionDirectory.string()));
 
         for (auto& res : daqResources_) {
-            res->beginAcquire(sessionDirectory);
+            res->beginAcquisition(sessionDirectory);
         }
     }
 
@@ -130,8 +131,10 @@ namespace Dao::DAQ
     */
     void DAQServer::finishDAQSession() {
         for (auto& res : daqResources_) {
-            res->endAcquire();
+            res->endAcquisition();
         }
+
+        daqResourcesDone_ = 0;
     }
 
     /* The following methods provide overrides for the inherited component state-machine.

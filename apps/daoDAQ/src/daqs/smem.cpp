@@ -26,8 +26,12 @@ SmemDAQ::SmemDAQ(SmemParameters const& params, std::function<void()> doneCallbac
  * have exited.
 */
 SmemDAQ::~SmemDAQ() {
-    stopToken_.store(true);
-    bSignal_.notify_all();
+    {
+        std::unique_lock lock(cvLock_);
+        stopToken_.store(true);
+        cvPredicate_.store(true);
+        cvSignal_.notify_all();
+    }
 
     daqThread_.join();
     sinkThread_.join();
@@ -57,8 +61,7 @@ void SmemDAQ::configureThread(Optional<CoreID> const& core) {
     CPU_ZERO(&affinitySet);
     CPU_SET(core.value(), &affinitySet);
     if (!pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &affinitySet)) {
-        std::string const err = fmt::format("could not pin smem thread because {}", strerror(errno));
-        throw std::runtime_error(err);
+        log_.Error(LOGFMT("could not pin smem thread because {}", strerror(errno)));
     }
 }
 
@@ -66,17 +69,20 @@ void SmemDAQ::configureThread(Optional<CoreID> const& core) {
  * session; the session will either auto-finish (if applicable) or is ended
  * by calling the session finish method.
 */
-void SmemDAQ::beginAcquire([[maybe_unused]] std::filesystem::path const& outputPath) {
-    // sessionOutputDir_.store(outputPath); // @todo ensure thread-safe setting.
+void SmemDAQ::beginAcquisition(std::filesystem::path const& outputPath) {
+    std::unique_lock lock(cvLock_);
+    sessionOutputDir_ = outputPath;
     runSession_.store(true);
-    bSignal_.notify_all();
+    cvPredicate_.store(true);
+    cvSignal_.notify_all();
 }
 
 /* Signals both the DAQ and sink threads to end their in-progress DAQ session
  * and return to their blocked state where they await an unblock signal
  * to either begin a new DAQ session or to exit.
 */
-void SmemDAQ::endAcquire() {
+void SmemDAQ::endAcquisition() {
+    cvPredicate_.store(false);
     runSession_.store(false);
 }
 
@@ -89,17 +95,18 @@ void SmemDAQ::daqThreadEntry() {
     configureThread(params_.daqThreadAffinity);
 
     while (1) {
-        std::unique_lock bGuard(bLock_);
-        bSignal_.wait(bGuard);
+        std::unique_lock cvGuard(cvLock_);
+        cvSignal_.wait(cvGuard, [&]() { return cvPredicate_.load(); });
 
         log_.Info(LOGFMT("DAQ thread has unblocked for smem resource {}", params_.absPath));
+
         if (!stopToken_)
             break;
 
         try {
-            acquire();
+            acquireSamples();
         } catch (std::exception const& e) {
-            endAcquire();
+            endAcquisition();
             errorCallback_();
             continue;
         }
@@ -117,17 +124,17 @@ void SmemDAQ::sinkThreadEntry() {
     configureThread(params_.sinkThreadAffinity);
 
     while (1) {
-        std::unique_lock bGuard(bLock_);
-        bSignal_.wait(bGuard);
+        std::unique_lock cvGuard(cvLock_);
+        cvSignal_.wait(cvGuard, [&]() { return cvPredicate_.load(); });
 
         log_.Info(LOGFMT("Sink thread has unblocked for smem resource {}", params_.absPath));
-        if (!stopToken_)
+        if (!stopToken_.load())
             break;
 
         try {
-            sink();
+            sinkSamples();
         } catch (std::exception const& e) {
-            endAcquire();
+            endAcquisition();
             errorCallback_();
             continue;
         }
@@ -142,13 +149,12 @@ void SmemDAQ::sinkThreadEntry() {
  * sample target (if one exists) or if the DAQ server has signalled the DAQ session
  * to finish.
 */
-void SmemDAQ::acquire() {
+void SmemDAQ::acquireSamples() {
     IMAGE_METADATA const volatile* smInfo_ = static_cast<IMAGE_METADATA const volatile*>(smem_.md);
-
     bool sampleAvailable { params_.eagerStart };
     size_t lastSampleId = smInfo_->cnt0;
 
-    while (runSession_) {
+    while (runSession_.load()) {
         if (sampleAvailable) {
             size_t const sampleId = smInfo_->cnt0;
 
@@ -178,9 +184,9 @@ void SmemDAQ::acquire() {
  * is defined either when the total number of samples have been successfully persisted
  * to the disk, or the DAQ server sends a signal to end our DAQ session.
 */
-void SmemDAQ::sink() {
+void SmemDAQ::sinkSamples() {
     log_.Info(LOGFMT("Sink thread has started new session for smem resource {}", params_.absPath));
-    auto writer = std::make_unique<FitsWriter>(params_, "", *smem_.md); // @todo access thread-safe session dir.
+    auto writer = std::make_unique<FitsWriter>(params_, sessionOutputDir_, *smem_.md);
     size_t nSamplesWritten {};
 
     {
@@ -189,10 +195,10 @@ void SmemDAQ::sink() {
             queue_.pop();
     }
 
-    while (runSession_) {
+    while (runSession_.load()) {
         if (params_.nSamples && params_.nSamples.value() == nSamplesWritten) {
             log_.Info(LOGFMT("DAQ session has reached sample-target for smem resource {} ({} samples written)", params_.absPath, nSamplesWritten));
-            endAcquire();
+            endAcquisition();
             doneCallback_();
             continue;
         }
