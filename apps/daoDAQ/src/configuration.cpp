@@ -98,16 +98,22 @@ namespace Dao::DAQ
                 Required<URI> uri;
                 loadRequired(uri, "uri", sourceNode);
 
+                auto const& uriLocation = locationFromURI(uri);
+                if (auto const& [itr, inserted] = sourceLookup_.insert(uriLocation); !inserted) {
+                    std::string const err = fmt::format("Duplicate DAQ configuration source '{}'", uri);
+                    throw std::runtime_error(err);
+                }
+
                 switch (classFromURI(uri)) {
                     case URIClass::FILE: {
                         FileParameters& policySet = fileSrcs_.emplace_back();
-                        policySet.absPath = locationFromURI(uri);
+                        policySet.absPath = uriLocation;
                         loadFileParams(sourceNode, policySet);
                     } break;
 
                     case URIClass::SMEM: {
                         SmemParameters& policySet = smemSrcs_.emplace_back();
-                        policySet.absPath = locationFromURI(uri);
+                        policySet.absPath = uriLocation;
                         loadSmemParams(sourceNode, policySet);
                     } break;
                 }

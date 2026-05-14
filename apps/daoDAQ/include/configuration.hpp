@@ -11,6 +11,7 @@
  /* ---------------------------------------------------------------- */
 
 #include <yaml-cpp/yaml.h>
+#include <unordered_set>
 #include <exception>
 #include <optional>
 #include <log.hpp>
@@ -139,6 +140,7 @@ namespace Dao::DAQ
         SessionParameters sessionParams_;
         std::vector<FileParameters> fileSrcs_;
         std::vector<SmemParameters> smemSrcs_;
+        std::unordered_set<std::string> sourceLookup_;
 
         /* Parse a URI and return its resource class. If the URI is
          * malformed then an exception is thrown.
