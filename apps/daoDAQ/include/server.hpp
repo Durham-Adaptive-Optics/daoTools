@@ -24,7 +24,6 @@ namespace Dao::DAQ
         public:
         DAQServer(std::uint16_t const tcpPort, Dao::Log::Logger& log);
 
-        void run(bool const& runtimeTerminated);
         void uploadDAQConfig(std::string const& ymlPolicyDocument);
 
         private:
