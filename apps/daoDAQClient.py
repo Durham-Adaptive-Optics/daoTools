@@ -32,16 +32,22 @@ class DAQClient:
         daoLog(__file__, toScreen=False)
         self.api = daoAPI(daq_host_addr, daq_host_port, timeout=timeout_s)
 
-    def ping(self):
-        status, _ = self.api.Ping()
+    ''' Internal Methods '''
+    def dao_invoke_(self, method: callable, *args):
+        status, payload = method(*args)
         if status != 0:
-            raise RuntimeError("failed to ping DAQ endpoint")
+            raise RuntimeError(f"{method.__name__}.status -> {status}")
+        return payload
+    
+    ''' API Methods '''
+
+    def ping(self):
+        try:
+            self.dao_invoke_(self.api.Ping)
+        except Exception as e:
+            raise RuntimeError(f"failed to ping DAQ endpoint ({e})")
 
     def state(self) -> DAQState:
-        status, stateName = self.api.State(None)
-        if status != 0:
-            raise RuntimeError("failed to retrieve DAQ state")
-        
         stateMap = {
             "Off": DAQState.Unconfigured,
             "Standby": DAQState.Configured,
@@ -49,84 +55,104 @@ class DAQClient:
             "Running": DAQState.Acquiring,
             "Error": DAQState.Error
         }
-        
-        if stateName not in stateMap:
-            raise RuntimeError(f"un-mapped DAQ state ({stateName})")
-        
-        return stateMap.get(stateName)
+
+        try:
+            stateName = self.dao_invoke_(self.api.State, None)
+            if stateName not in stateMap:
+                raise RuntimeError(f"un-mapped DAO API state {stateName}")
+            return stateMap.get(stateName)
+        except Exception as e:
+            raise RuntimeError(f"failed to fetch DAQ tool state ({e})")
     
     def recover(self):
-        if self.state() != DAQState.Error:
-            raise RuntimeError("No recovery needed")
+        try:
+            if self.state() != DAQState.Error:
+                raise RuntimeError("DAQ tool is already operational")
            
-        status, _ = self.api.Exec("Recover")
-        if status != 0 or self.state() != DAQState.Ready:
-            raise RuntimeError("failed to recover DAQ server")
+            self.dao_invoke_(self.api.Exec, "Recover")
+            
+            if self.state() != DAQState.Ready:
+                raise RuntimeError()
+        except Exception as e:
+            raise RuntimeError(f"failed to recover DAQ tool {e}")
     
     def daq_session_configure_upload(self, daq_config: str):
-        if self.state() is DAQState.Acquiring:
-            raise RuntimeError("Cannot upload configuration during active DAQ session")
-
-        # move tool into the Off state before we can upload
-        # new config.
-        if self.state() is DAQState.Ready:
-            self.api.Exec("Disable")
-            self.api.Exec("Stop")
-        elif self.state() is DAQState.Configured:
-            status, _ = self.api.Exec("Stop")
+        try:
+            if self.state() is DAQState.Acquiring:
+                raise RuntimeError("DAQ session in-progress")
             
-        toolState = self.state()
-        if toolState != DAQState.Unconfigured:
-            raise RuntimeError(f"Cannot upload configuration due to invalid tool state ({toolState})")
-        
-        status, _ = self.api.Other(daq_config)
-        if status != 0:
-            raise RuntimeError("failed to upload DAQ configuration")
+            # move tool into the Off state before we can upload
+            # new config.
+            if self.state() is DAQState.Ready:
+                self.dao_invoke_(self.api.Exec, "Disable")
+                self.dao_invoke_(self.api.Exec, "Stop")
+            elif self.state() is DAQState.Configured:
+                self.dao_invoke_(self.api.Exec, "Stop")
+            
+            if self.state() is DAQState.Unconfigured:
+                raise RuntimeError("DAQ tool not ready to accept new config")
+            
+            self.dao_invoke_(self.api.Other, daq_config)
+        except Exception as e:
+            raise RuntimeError(f"failed to upload DAQ config: {e}")
         
     def daq_session_configure_apply(self):
-        if self.state() != DAQState.Unconfigured:
-            raise RuntimeError("DAQ not accepting new configurations")
-        
-        status, _ = self.api.Exec("Init")
-        if status != 0 or self.state() != DAQState.Configured:
-            raise RuntimeError("failed to apply DAQ configuration")
+        try:
+            if self.state() != DAQState.Unconfigured:
+                raise RuntimeError("a DAQ config is currently applied")
             
-        status, _ = self.api.Exec("Enable")
-        if status != 0 or self.state() != DAQState.Ready:
-            raise RuntimeError("failed to preapre DAQ resources")
+            self.dao_invoke_(self.api.Exec, "Init")
+            self.dao_invoke_(self.api.Exec, "Enable")
+
+            if self.state() != DAQState.Ready:
+                raise RuntimeError("")
+        except Exception as e:
+            raise RuntimeError(f"failed to apply DAQ config: {e}")
         
     def daq_session_begin(self):
-        if self.state() != DAQState.Ready:
-            raise RuntimeError("DAQ not ready to carry out a session")
+        try:
+            if self.state() != DAQState.Ready:
+                raise RuntimeError("no DAQ resources available")
+            
+            self.dao_invoke_(self.api.Exec, "Run")
+            
+            # note: we don't check the state entered Running here as
+            # the session in theory could finish before we check and
+            # then we report an error when in-fact everything is fine.
+        except Exception as e:
+            raise RuntimeError(f"failed to begin DAQ session: {e}")
            
-        # note: We don't check if the tool reports as running — the session may finish before we check.
-        status, _ = self.api.Exec("Run")
-        if status != 0:
-            raise RuntimeError("failed to begin DAQ session")
-
     def daq_session_await_finish(self, timeout=None, delay_s = 0.5):
-        if self.state() != DAQState.Acquiring:
-            raise RuntimeError("No DAQ session in progess")
-           
-        t0 = time.perf_counter()
-        while True:
-            elapsed_time = time.perf_counter() - t0
-            if (timeout != None) and (elapsed_time >= timeout):
-                raise RuntimeError("Timeout reached while awaiting DAQ session to auto-finish")
+        try:
+            if self.state() != DAQState.Acquiring:
+                raise RuntimeError("no DAQ session in progess")
             
-            if self.state() == DAQState.Ready:
-                break
-            
-            if delay_s != None:
-                time.sleep(delay_s)
-        
+            t0 = time.perf_counter()
+            while True:
+                elapsed_time = time.perf_counter() - t0
+                if (timeout != None) and (elapsed_time >= timeout):
+                    raise RuntimeError("client timeout")
+                
+                if self.state() == DAQState.Ready:
+                    break
+                
+                if delay_s != None:
+                    time.sleep(delay_s)
+        except Exception as e:
+            raise RuntimeError(f"failed to await DAQ session finish: {e}")
+                
     def daq_session_finish(self):
-        if self.state() != DAQState.Acquiring:
-            raise RuntimeError("No DAQ session in progess")
-           
-        status, _ = self.api.Exec("Idle")
-        if status != 0 or self.state() != DAQState.Ready:
-            raise RuntimeError("failed to finish DAQ session")
+        try: 
+            if self.state() != DAQState.Acquiring:
+                raise RuntimeError("no DAQ session in progess")
+            
+            self.dao_invoke_(self.api.Exec, "Idle")
+            
+            if self.state() != DAQState.Ready:
+                raise RuntimeError()
+        except Exception as e:
+            raise RuntimeError(f"failed to finish DAQ session: {e}")
+        
         
 """ CLI Utility """
 if __name__ == "__main__":
