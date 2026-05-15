@@ -21,9 +21,11 @@ namespace Dao::DAQ
     using QueueType = std::pair<IMAGE_METADATA, std::unique_ptr<std::byte[]>>;
 
     struct ISampleWriter {
-        ISampleWriter(SmemParameters const& params, std::filesystem::path const& sessionOutputDir) :
+        ISampleWriter(SmemParameters const& params, std::filesystem::path const& sessionOutputDir, Dao::Log::Logger& log, std::string const& parentID) :
             params_(params),
-            sessionOutputDir_(sessionOutputDir) {
+            sessionOutputDir_(sessionOutputDir),
+            log_(log),
+            parentID_(parentID) {
             //
         }
 
@@ -33,10 +35,12 @@ namespace Dao::DAQ
         protected:
         SmemParameters const& params_;
         std::filesystem::path sessionOutputDir_;
+        Dao::Log::Logger& log_;
+        std::string const& parentID_;
     };
 
     struct FitsWriter : public ISampleWriter {
-        FitsWriter(SmemParameters const& params, std::filesystem::path const& sessionOutputDir, IMAGE_METADATA const& smInfo);
+        FitsWriter(SmemParameters const& params, std::filesystem::path const& sessionOutputDir, IMAGE_METADATA const& smInfo, Dao::Log::Logger& log, std::string const& parentID);
         FitsWriter& operator= (FitsWriter const&) = delete;
         FitsWriter& operator= (FitsWriter&&) = delete;
         FitsWriter(FitsWriter const&) = delete;
@@ -54,6 +58,7 @@ namespace Dao::DAQ
         size_t nFileSamples;
         size_t nFiles_;
         fitsfile* file_;
+        std::string fileName_;
 
         bool storeFull() const;
         void finish();

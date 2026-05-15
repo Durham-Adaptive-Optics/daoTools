@@ -23,7 +23,8 @@
 
 namespace Dao::DAQ
 {
-    using ServerCallback = std::function<void(std::string const&)>;
+    using ServerErrorCallback = std::function<void(std::string const&, std::string const&)>;
+    using ServerDoneCallback = std::function<void(std::string const&)>;
 
     /* Defines the common interface between all DAQ resource implementations.
      * Each DAQ resource enables the capture of data from a specific data source;
@@ -31,7 +32,7 @@ namespace Dao::DAQ
      * interface with them.
     */
     struct IDAQ {
-        IDAQ(ServerCallback doneCallback, ServerCallback errorCallback, std::string const& resourceID, Dao::Log::Logger& log)
+        IDAQ(ServerDoneCallback doneCallback, ServerErrorCallback errorCallback, std::string const& resourceID, Dao::Log::Logger& log)
             : resourceID_(resourceID), doneCallback_(doneCallback), errorCallback_(errorCallback), log_(log) {
         }
 
@@ -43,15 +44,15 @@ namespace Dao::DAQ
         std::string const resourceID_;
 
         protected:
-        ServerCallback doneCallback_;
-        ServerCallback errorCallback_;
+        ServerDoneCallback doneCallback_;
+        ServerErrorCallback errorCallback_;
         Dao::Log::Logger& log_;
     };
 
     /* File DAQ Resource.
     */
     struct FileDAQ final : public IDAQ {
-        FileDAQ(FileParameters const& params, ServerCallback doneCallback, ServerCallback errorCallback, Dao::Log::Logger& log);
+        FileDAQ(FileParameters const& params, ServerDoneCallback doneCallback, ServerErrorCallback errorCallback, Dao::Log::Logger& log);
         ~FileDAQ();
         void beginAcquisition(std::filesystem::path const& outputPath) override;
         void finishAcquisition() override {};
@@ -67,7 +68,7 @@ namespace Dao::DAQ
     struct SmemDAQ final : public IDAQ {
         using QueueType = std::pair<IMAGE_METADATA, std::unique_ptr<std::byte[]>>;
 
-        SmemDAQ(SmemParameters const& params, ServerCallback doneCallback, ServerCallback errorCallback, Dao::Log::Logger& log);
+        SmemDAQ(SmemParameters const& params, ServerDoneCallback doneCallback, ServerErrorCallback errorCallback, Dao::Log::Logger& log);
         SmemDAQ& operator=(SmemDAQ const&) = delete;
         SmemDAQ& operator=(SmemDAQ&&) = delete;
         SmemDAQ(SmemDAQ const&) = delete;

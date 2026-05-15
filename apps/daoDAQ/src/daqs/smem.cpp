@@ -10,7 +10,7 @@
 
 using namespace Dao::DAQ;
 
-SmemDAQ::SmemDAQ(SmemParameters const& params, ServerCallback doneCallback, ServerCallback errorCallback, Dao::Log::Logger& log) :
+SmemDAQ::SmemDAQ(SmemParameters const& params, ServerDoneCallback doneCallback, ServerErrorCallback errorCallback, Dao::Log::Logger& log) :
     IDAQ(doneCallback, errorCallback, params.absPath, log),
     params_(params),
     stopToken_(false),
@@ -121,9 +121,9 @@ void SmemDAQ::daqThreadEntry() {
 
         try {
             acquireSamples();
-        } catch (std::exception const& e) {
+        } catch (std::exception const& err) {
             finishAcquisition();
-            errorCallback_(resourceID_);
+            errorCallback_(resourceID_, err.what());
             continue;
         }
     }
@@ -159,9 +159,9 @@ void SmemDAQ::sinkThreadEntry() {
 
         try {
             sinkSamples();
-        } catch (std::exception const& e) {
+        } catch (std::exception const& err) {
             finishAcquisition();
-            errorCallback_(resourceID_);
+            errorCallback_(resourceID_, err.what());
             continue;
         }
     }
@@ -217,7 +217,7 @@ void SmemDAQ::acquireSamples() {
 void SmemDAQ::sinkSamples() {
     log_.Debug(LOGFMT("Sink thread has started sample export for smem resource {}", params_.absPath));
 
-    auto writer = std::make_unique<FitsWriter>(params_, sessionOutputDir_, *smem_.md);
+    auto writer = std::make_unique<FitsWriter>(params_, sessionOutputDir_, *smem_.md, log_, resourceID_);
     size_t nSamplesWritten {};
 
     {

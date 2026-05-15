@@ -67,8 +67,6 @@ namespace Dao::DAQ
          * automatically end the DAQ session.
         */
         auto doneCallback = [&](std::string const& resourceID) -> void {
-            m_log.Debug(LOGFMT("DAQ resource '{}' invoked server.done callback", resourceID));
-
             std::thread([this, resourceID]() {
                 std::lock_guard lock(reportLock_);
                 ++daqResourcesDone_;
@@ -88,13 +86,11 @@ namespace Dao::DAQ
          * Within this callback the server will transition
          * to the Error state.
         */
-        auto errorCallback = [&](std::string const& resourceID) -> void {
-            m_log.Debug(LOGFMT("DAQ resource '{}' invoked server.error callback", resourceID));
-
-            std::thread([&]() {
+        auto errorCallback = [&](std::string const& resourceID, std::string const& err) -> void {
+            std::thread([&, err]() {
                 std::lock_guard lock(reportLock_);
-                this->m_log.Info("DAQ server has been informed that a DAQ resource has experienced an error");
-                this->OnFailure();
+                m_log.Critical(LOGFMT("DAQ resource '{}' had session error: {}", resourceID, err));
+                OnFailure();
             }).detach();
         };
 
@@ -185,7 +181,7 @@ namespace Dao::DAQ
     */
     void createDirectory(std::filesystem::path const dirPath) {
         if (!std::filesystem::create_directory(dirPath)) {
-            throw std::runtime_error("failed to create session group directory");
+            throw std::runtime_error("failed to create session output directory");
         }
     }
 

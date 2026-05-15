@@ -575,7 +575,7 @@ class daoShmViewer(QMainWindow):
     def setup_metadata_tab(self):
         """Setup the metadata tab."""
         def open_file_dialog():
-            filePath, _ = QFileDialog.getSaveFileName(self, "Select Output File")
+            filePath, _ = QFileDialog.getSaveFileName(self, "Select Output File", os.getenv("DAODATA", os.getcwd()))
             if filePath:
                 self.quickRecPathInput.setText(filePath)
             

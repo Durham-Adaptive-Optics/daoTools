@@ -12,7 +12,7 @@
 
 namespace Dao::DAQ
 {
-    FileDAQ::FileDAQ(FileParameters const& params, ServerCallback doneCallback, ServerCallback errorCallback, Dao::Log::Logger& log) :
+    FileDAQ::FileDAQ(FileParameters const& params, ServerDoneCallback doneCallback, ServerErrorCallback errorCallback, Dao::Log::Logger& log) :
         IDAQ(doneCallback, errorCallback, params.absPath, log),
         params_(params) {
     }
@@ -31,13 +31,13 @@ namespace Dao::DAQ
             try {
                 std::filesystem::copy_file(fileSourcePath, fileOutputPath);
             } catch (std::exception const& e) {
-                this->log_.Critical(LOGFMT("copy failed for file DAQ resource '{}' because {}", fileSourcePath.string(), e.what()));
-                this->errorCallback_(this->resourceID_);
+                auto const err = LOGFMT("copying '{}' failed because {}", fileSourcePath.string(), e.what());
+                errorCallback_(resourceID_, err);
                 return;
             }
 
             log_.Debug(LOGFMT("copy succeeded for file DAQ resource '{}'", fileSourcePath.string()));
-            this->doneCallback_(this->resourceID_);
+            doneCallback_(resourceID_);
         }).detach();
     }
 }
