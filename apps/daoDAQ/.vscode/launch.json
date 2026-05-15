@@ -1,11 +1,14 @@
 {
     "configurations": [
         {
-            "name": "(gdb) Launch",
+            "name": "Debug daoDAQ",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/testConfig",
-            "args": [],
+            "program": "/home/tomcfai/DAOROOT/bin/daoDAQ",
+            "args": [
+                "-s",
+                "-ll"
+            ],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",
             "environment": [],

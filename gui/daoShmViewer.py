@@ -110,15 +110,15 @@ class SmemDaqConfig(QWidget):
         self.pathDisplay.setReadOnly(True)
         requiredLayout.addRow("Shared Memory Path:", self.pathDisplay)
         
-        self.formatInput = QComboBox()
-        self.formatInput.addItems(["numpy", "fits"])
-        self.formatInput.setCurrentIndex(-1)
-        requiredLayout.addRow("Format:", self.formatInput)
-        
         requiredGroup.setLayout(requiredLayout)
         
         optionalGroup = QGroupBox("Optional Parameters")
         optionalLayout = QFormLayout()
+        
+        self.formatInput = QComboBox()
+        self.formatInput.addItems(["fits"])
+        self.formatInput.setCurrentIndex(0)
+        optionalLayout.addRow("Export As:", self.formatInput)
         
         self.samplesInput = QSpinBox()
         self.samplesInput.setMinimum(-1)
@@ -1028,9 +1028,9 @@ class daoShmViewer(QMainWindow):
                 params = {
                     # required params
                     "uri": f"smem://{configUI.pathDisplay.text()}",
-                    "format": configUI.formatInput.currentText(),
                         
                     # optional params
+                    "format": configUI.formatInput.currentText(),
                     "metadata_only": configUI.metadataOnlyInput.isChecked(),
                     "eager_start": configUI.eagerStartInput.isChecked()
                 }

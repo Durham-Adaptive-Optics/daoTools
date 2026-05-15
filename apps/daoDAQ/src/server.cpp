@@ -13,17 +13,23 @@
 namespace Dao::DAQ
 {
     DAQServer::DAQServer(std::uint16_t const tcpPort, Dao::Log::Logger& log) :
-        Dao::Component("DAQServer", log, "", tcpPort) {
+        Dao::Component("DAQServer", log, "", tcpPort),
+        daqResourcesDone_(0) {
+        //
         m_log.Info(LOGFMT("DAQ server available on port {}", m_port));
+    }
+
+    DAQServer::~DAQServer() {
+        m_log.Debug("DAQ-Server destroyed");
     }
 
     /* Takes the supplied DAQ YAML configuration string and saves it
      * internally for later use.
     */
-    void DAQServer::uploadDAQConfig(std::string const& daqConfig) {
+    void DAQServer::uploadDAQConfig(std::string const& daqRawConfig) {
         auto const currentStateName = currentState();
         if ("Off" == currentStateName || "Error" == currentStateName) {
-            daqRawConfig_ = daqConfig;
+            daqRawConfig_ = daqRawConfig;
             m_log.Info("Successfully uploaded DAQ configuration");
         }
         else {
@@ -35,11 +41,9 @@ namespace Dao::DAQ
      * parse an exception is thrown.
     */
     void DAQServer::applyDAQConfig() {
-        daqConfig_ = std::make_unique<DAQConfiguration>(daqRawConfig_);
-
-        if (!daqConfig_->numResources()) {
-            m_log.Warning("DAQ configuration specifies no data sources");
-        }
+        m_log.Debug("parsing DAQ configuration..");
+        daqConfig_ = std::make_unique<DAQConfiguration>(daqRawConfig_, m_log);
+        m_log.Info("DAQ configuration successfully applied");
     }
 
     /* Clears the currently active DAQ configuration; the saved raw
@@ -62,17 +66,17 @@ namespace Dao::DAQ
          * and in the case all have finished, the server will
          * automatically end the DAQ session.
         */
-        auto doneCallback = [&]() -> void {
-            std::thread([&]() {
+        auto doneCallback = [&](std::string const& resourceID) -> void {
+            m_log.Debug(LOGFMT("DAQ resource '{}' invoked server.done callback", resourceID));
+
+            std::thread([this, resourceID]() {
                 std::lock_guard lock(reportLock_);
-                auto const totalDaqResources = daqResources_.size() - 1;
-                auto const priorNumDone = daqResourcesDone_++;
+                ++daqResourcesDone_;
 
-                this->m_log.Debug(LOGFMT("DAQ resource finished capture ({} / {} done)", daqResourcesDone_, totalDaqResources));
-
-                if (daqResourcesDone_ == totalDaqResources) {
-                    this->m_log.Info(LOGFMT("All DAQ resources have finished capturing ({} done)", totalDaqResources));
-                    this->Idle();
+                m_log.Debug(LOGFMT("DAQ resource '{}' finished capture ({} / {} done)", resourceID, daqResourcesDone_, daqResources_.size()));
+                if (daqResourcesDone_ == daqResources_.size()) {
+                    m_log.Info(LOGFMT("All DAQ resources have finished capturing ({} done)", daqResources_.size()));
+                    Idle();
                 }
             }).detach();
         };
@@ -84,7 +88,9 @@ namespace Dao::DAQ
          * Within this callback the server will transition
          * to the Error state.
         */
-        auto errorCallback = [&]() -> void {
+        auto errorCallback = [&](std::string const& resourceID) -> void {
+            m_log.Debug(LOGFMT("DAQ resource '{}' invoked server.error callback", resourceID));
+
             std::thread([&]() {
                 std::lock_guard lock(reportLock_);
                 this->m_log.Info("DAQ server has been informed that a DAQ resource has experienced an error");
@@ -111,7 +117,7 @@ namespace Dao::DAQ
     */
     void DAQServer::freeDAQResources() {
         daqResources_.clear();
-        m_log.Info("DAQ resources have been freed");
+        m_log.Debug("DAQ resources have been freed");
     }
 
     /* Prepares a new DAQ session context and informs all DAQ resources
@@ -123,6 +129,7 @@ namespace Dao::DAQ
 
         for (auto& res : daqResources_) {
             res->beginAcquisition(sessionDirectory);
+            m_log.Debug(LOGFMT("started acquisition for DAQ resource {}", res->resourceID_));
         }
     }
 
@@ -131,7 +138,8 @@ namespace Dao::DAQ
     */
     void DAQServer::finishDAQSession() {
         for (auto& res : daqResources_) {
-            res->endAcquisition();
+            res->finishAcquisition();
+            m_log.Debug(LOGFMT("finished acquisition for DAQ resource {}", res->resourceID_));
         }
 
         daqResourcesDone_ = 0;

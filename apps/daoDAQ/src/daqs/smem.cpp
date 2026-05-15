@@ -10,14 +10,15 @@
 
 using namespace Dao::DAQ;
 
-SmemDAQ::SmemDAQ(SmemParameters const& params, std::function<void()> doneCallback, std::function<void()> errorCallback, Dao::Log::Logger& log) :
-    IDAQ(doneCallback, errorCallback, log),
+SmemDAQ::SmemDAQ(SmemParameters const& params, ServerCallback doneCallback, ServerCallback errorCallback, Dao::Log::Logger& log) :
+    IDAQ(doneCallback, errorCallback, params.absPath, log),
     params_(params),
     stopToken_(false),
     runSession_(false),
+    smem_ {},
+    cvPredicate_(false),
     daqThread_([this]() { this->daqThreadEntry(); }),
-    sinkThread_([this]() { this->sinkThreadEntry(); }),
-    smem_ {} {
+    sinkThread_([this]() { this->sinkThreadEntry(); }) {
     //
     establishResourceConnection();
 }
@@ -28,13 +29,18 @@ SmemDAQ::SmemDAQ(SmemParameters const& params, std::function<void()> doneCallbac
 SmemDAQ::~SmemDAQ() {
     {
         std::unique_lock lock(cvLock_);
-        stopToken_.store(true);
-        cvPredicate_.store(true);
+        stopToken_ = true;
+        cvPredicate_ = true;
         cvSignal_.notify_all();
     }
 
+    log_.Debug(LOGFMT("joining daq thread for smem DAQ resource '{}'", resourceID_));
     daqThread_.join();
+
+    log_.Debug(LOGFMT("joining sink thread for smem DAQ resource '{}'", resourceID_));
     sinkThread_.join();
+
+    log_.Debug(LOGFMT("smem DAQ resource has been destroyed '{}'", resourceID_));
 }
 
 /* Connect to the shared memory resource; an exception is thrown
@@ -72,8 +78,8 @@ void SmemDAQ::configureThread(Optional<CoreID> const& core) {
 void SmemDAQ::beginAcquisition(std::filesystem::path const& outputPath) {
     std::unique_lock lock(cvLock_);
     sessionOutputDir_ = outputPath;
-    runSession_.store(true);
-    cvPredicate_.store(true);
+    runSession_ = true;
+    cvPredicate_ = true;
     cvSignal_.notify_all();
 }
 
@@ -81,9 +87,10 @@ void SmemDAQ::beginAcquisition(std::filesystem::path const& outputPath) {
  * and return to their blocked state where they await an unblock signal
  * to either begin a new DAQ session or to exit.
 */
-void SmemDAQ::endAcquisition() {
-    cvPredicate_.store(false);
-    runSession_.store(false);
+void SmemDAQ::finishAcquisition() {
+    std::unique_lock lock(cvLock_);
+    cvPredicate_ = false;
+    runSession_ = false;
 }
 
 /* Entry point for the DAQ thread; this is the thread that captures the
@@ -91,28 +98,37 @@ void SmemDAQ::endAcquisition() {
  * sinking to the disk.
 */
 void SmemDAQ::daqThreadEntry() {
-    log_.Info(LOGFMT("DAQ thread has started for smem resource {}", params_.absPath));
+    log_.Info(LOGFMT("DAQ thread has launched for smem resource {}", params_.absPath));
     configureThread(params_.daqThreadAffinity);
 
     while (1) {
-        std::unique_lock cvGuard(cvLock_);
-        cvSignal_.wait(cvGuard, [&]() { return cvPredicate_.load(); });
+        {
+            std::unique_lock cvGuard(cvLock_);
+            cvSignal_.wait(cvGuard, [&]() {
+                log_.Debug(LOGFMT(
+                    "DAQ thread for smem resource '{}' evaluated cv-predicate ({})",
+                    resourceID_,
+                    cvPredicate_ ? "resuming" : "waiting"
+                ));
+                return cvPredicate_;
+            });
+        }
 
-        log_.Info(LOGFMT("DAQ thread has unblocked for smem resource {}", params_.absPath));
+        log_.Debug(LOGFMT("DAQ thread has awoken for smem resource {}", params_.absPath));
 
-        if (!stopToken_)
+        if (stopToken_)
             break;
 
         try {
             acquireSamples();
         } catch (std::exception const& e) {
-            endAcquisition();
-            errorCallback_();
+            finishAcquisition();
+            errorCallback_(resourceID_);
             continue;
         }
     }
 
-    log_.Info(LOGFMT("DAQ thread has finished for smem resource {}", params_.absPath));
+    log_.Info(LOGFMT("DAQ thread has terminated for smem resource {}", params_.absPath));
 }
 
 /* Entry point for the sink thread; this is the thread that processes
@@ -120,27 +136,37 @@ void SmemDAQ::daqThreadEntry() {
  * in the data-format specified by our resource parameters.
 */
 void SmemDAQ::sinkThreadEntry() {
-    log_.Info(LOGFMT("Sink thread has started for smem resource {}", params_.absPath));
+    log_.Info(LOGFMT("Sink thread has launched for smem resource {}", params_.absPath));
     configureThread(params_.sinkThreadAffinity);
 
     while (1) {
-        std::unique_lock cvGuard(cvLock_);
-        cvSignal_.wait(cvGuard, [&]() { return cvPredicate_.load(); });
+        {
+            std::unique_lock cvGuard(cvLock_);
+            cvSignal_.wait(cvGuard, [&]() {
+                log_.Debug(LOGFMT(
+                    "Sink thread for smem resource '{}' evaluated cv-predicate ({})",
+                    resourceID_,
+                    cvPredicate_ ? "resuming" : "waiting"
+                ));
+                return cvPredicate_;
+            });
+        }
 
-        log_.Info(LOGFMT("Sink thread has unblocked for smem resource {}", params_.absPath));
-        if (!stopToken_.load())
+        log_.Debug(LOGFMT("Sink thread has awoken for smem resource {}", params_.absPath));
+
+        if (stopToken_)
             break;
 
         try {
             sinkSamples();
         } catch (std::exception const& e) {
-            endAcquisition();
-            errorCallback_();
+            finishAcquisition();
+            errorCallback_(resourceID_);
             continue;
         }
     }
 
-    log_.Info(LOGFMT("Sink thread has finished for smem resource {}", params_.absPath));
+    log_.Info(LOGFMT("Sink thread has terminated for smem resource {}", params_.absPath));
 }
 
 /* Captures data-samples from the shared memory resource an enqueues them for
@@ -150,11 +176,13 @@ void SmemDAQ::sinkThreadEntry() {
  * to finish.
 */
 void SmemDAQ::acquireSamples() {
+    log_.Debug(LOGFMT("DAQ thread has started sample collection for smem resource {}", params_.absPath));
+
     IMAGE_METADATA const volatile* smInfo_ = static_cast<IMAGE_METADATA const volatile*>(smem_.md);
     bool sampleAvailable { params_.eagerStart };
     size_t lastSampleId = smInfo_->cnt0;
 
-    while (runSession_.load()) {
+    while (runSession_) {
         if (sampleAvailable) {
             size_t const sampleId = smInfo_->cnt0;
 
@@ -177,6 +205,8 @@ void SmemDAQ::acquireSamples() {
 
         sampleAvailable = smInfo_->cnt0 > lastSampleId;
     }
+
+    log_.Debug(LOGFMT("DAQ thread has stopped sample collection for smem resource {}", params_.absPath));
 }
 
 /* Writes samples that are enqueued by the DAQ thread, to the disk in the desired
@@ -185,7 +215,8 @@ void SmemDAQ::acquireSamples() {
  * to the disk, or the DAQ server sends a signal to end our DAQ session.
 */
 void SmemDAQ::sinkSamples() {
-    log_.Info(LOGFMT("Sink thread has started new session for smem resource {}", params_.absPath));
+    log_.Debug(LOGFMT("Sink thread has started sample export for smem resource {}", params_.absPath));
+
     auto writer = std::make_unique<FitsWriter>(params_, sessionOutputDir_, *smem_.md);
     size_t nSamplesWritten {};
 
@@ -195,11 +226,11 @@ void SmemDAQ::sinkSamples() {
             queue_.pop();
     }
 
-    while (runSession_.load()) {
+    while (runSession_) {
         if (params_.nSamples && params_.nSamples.value() == nSamplesWritten) {
             log_.Info(LOGFMT("DAQ session has reached sample-target for smem resource {} ({} samples written)", params_.absPath, nSamplesWritten));
-            endAcquisition();
-            doneCallback_();
+            finishAcquisition();
+            doneCallback_(resourceID_);
             continue;
         }
 
@@ -213,8 +244,16 @@ void SmemDAQ::sinkSamples() {
             auto const& sample = qSample.value();
             writer->write(sample);
             ++nSamplesWritten;
+            log_.Trace(LOGFMT(
+                "Sink thread for daq resource '{}' has exported {} samples",
+                resourceID_,
+                nSamplesWritten,
+                params_.nSamples ? fmt::format("{}/{}", nSamplesWritten, params_.nSamples.value()) : fmt::format("{}", nSamplesWritten)
+            ));
         }
     }
+
+    log_.Debug(LOGFMT("Sink thread has stopped sample export for smem resource {}", params_.absPath));
 }
 
 

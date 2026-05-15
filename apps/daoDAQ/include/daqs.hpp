@@ -23,34 +23,38 @@
 
 namespace Dao::DAQ
 {
+    using ServerCallback = std::function<void(std::string const&)>;
+
     /* Defines the common interface between all DAQ resource implementations.
      * Each DAQ resource enables the capture of data from a specific data source;
      * they all implement this common DAQ interface to enable the DAQ server to
      * interface with them.
     */
     struct IDAQ {
-        IDAQ(std::function<void()> doneCallback, std::function<void()> errorCallback, Dao::Log::Logger& log)
-            : doneCallback_(doneCallback), errorCallback_(errorCallback), log_(log) {
+        IDAQ(ServerCallback doneCallback, ServerCallback errorCallback, std::string const& resourceID, Dao::Log::Logger& log)
+            : resourceID_(resourceID), doneCallback_(doneCallback), errorCallback_(errorCallback), log_(log) {
         }
 
         virtual ~IDAQ() = default;
 
         virtual void beginAcquisition(std::filesystem::path const& outputPath) = 0;
-        virtual void endAcquisition() = 0;
+        virtual void finishAcquisition() = 0;
+
+        std::string const resourceID_;
 
         protected:
-        std::function<void()> doneCallback_;
-        std::function<void()> errorCallback_;
+        ServerCallback doneCallback_;
+        ServerCallback errorCallback_;
         Dao::Log::Logger& log_;
     };
 
     /* File DAQ Resource.
     */
     struct FileDAQ final : public IDAQ {
-        FileDAQ(FileParameters const& params, std::function<void()> doneCallback, std::function<void()> errorCallback, Dao::Log::Logger& log);
-
+        FileDAQ(FileParameters const& params, ServerCallback doneCallback, ServerCallback errorCallback, Dao::Log::Logger& log);
+        ~FileDAQ();
         void beginAcquisition(std::filesystem::path const& outputPath) override;
-        void endAcquisition() override {};
+        void finishAcquisition() override {};
 
         auto const& params() const { return params_; }
 
@@ -63,7 +67,7 @@ namespace Dao::DAQ
     struct SmemDAQ final : public IDAQ {
         using QueueType = std::pair<IMAGE_METADATA, std::unique_ptr<std::byte[]>>;
 
-        SmemDAQ(SmemParameters const& params, std::function<void()> doneCallback, std::function<void()> errorCallback, Dao::Log::Logger& log);
+        SmemDAQ(SmemParameters const& params, ServerCallback doneCallback, ServerCallback errorCallback, Dao::Log::Logger& log);
         SmemDAQ& operator=(SmemDAQ const&) = delete;
         SmemDAQ& operator=(SmemDAQ&&) = delete;
         SmemDAQ(SmemDAQ const&) = delete;
@@ -71,24 +75,24 @@ namespace Dao::DAQ
         ~SmemDAQ();
 
         void beginAcquisition(std::filesystem::path const& outputPath) override;
-        void endAcquisition() override;
+        void finishAcquisition() override;
 
         auto const& params() const { return params_; }
 
         private:
         SmemParameters const params_;
-        std::atomic<bool> stopToken_;
-        std::atomic<bool> runSession_;
-        std::thread daqThread_;
-        std::thread sinkThread_;
+        bool stopToken_;
+        bool runSession_;
         std::mutex qLock_;  // ensures exclusive access to sample queue between DAQ and sink threads.
         std::queue<QueueType> queue_;
         IMAGE smem_;
         size_t sampleMemSize_;
         std::mutex cvLock_;  // ensures exclusive access to CV between DAQ and sink threads.
-        std::atomic<bool> cvPredicate_;
+        bool cvPredicate_;
         std::condition_variable cvSignal_;
         std::filesystem::path sessionOutputDir_;
+        std::thread daqThread_;
+        std::thread sinkThread_;
 
         void establishResourceConnection();
         void configureThread(Optional<CoreID> const& core);

@@ -89,7 +89,7 @@ class DAQClient:
             elif self.state() is DAQState.Configured:
                 self.dao_invoke_(self.api.Exec, "Stop")
             
-            if self.state() is DAQState.Unconfigured:
+            if self.state() not in (DAQState.Unconfigured, DAQState.Error):
                 raise RuntimeError("DAQ tool not ready to accept new config")
             
             self.dao_invoke_(self.api.Other, daq_config)

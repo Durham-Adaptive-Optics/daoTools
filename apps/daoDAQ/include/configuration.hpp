@@ -21,28 +21,23 @@
 
 /* Supported data formats for saving smem samples to the disk.
 */
+#define FITS_STREP  "fits"
+
 namespace Dao::DAQ
 {
-    enum class SinkFormat {
-        FITS, NUMPY
+    enum class SinkFormat { FITS };
+
+    static
+        std::unordered_map<SinkFormat, std::string> const sinkToStr
+    {
+        { SinkFormat::FITS, FITS_STREP },
     };
 
-    /* Mappings between sink formats and string representations.
-*/
-    #define FITS_STREP  "fits"
-    #define NUMPY_STREP "numpy"
-};
-
-std::unordered_map<Dao::DAQ::SinkFormat, std::string> const sinkToStr
-{
-    { Dao::DAQ::SinkFormat::FITS, FITS_STREP },
-    { Dao::DAQ::SinkFormat::NUMPY, NUMPY_STREP }
-};
-
-std::unordered_map<std::string, Dao::DAQ::SinkFormat> const strToSink
-{
-    { FITS_STREP, Dao::DAQ::SinkFormat::FITS },
-    { NUMPY_STREP, Dao::DAQ::SinkFormat::NUMPY }
+    static
+        std::unordered_map<std::string, SinkFormat> const strToSink
+    {
+        { FITS_STREP, SinkFormat::FITS },
+    };
 };
 
 /* ---------------------------------------------------------------- */
@@ -54,7 +49,7 @@ namespace YAML
     template<>
     struct convert<Dao::DAQ::SinkFormat> {
         static Node encode(Dao::DAQ::SinkFormat const& rhs) {
-            return YAML::Node { sinkToStr.at(rhs) };
+            return YAML::Node { Dao::DAQ::sinkToStr.at(rhs) };
         }
 
         static bool decode(Node const& node, Dao::DAQ::SinkFormat& rhs) {
@@ -62,8 +57,8 @@ namespace YAML
 
             try {
                 std::string const formatString = node.as<std::string>();
-                auto const& kv = strToSink.find(formatString);
-                if (kv != strToSink.end()) {
+                auto const& kv = Dao::DAQ::strToSink.find(formatString);
+                if (kv != Dao::DAQ::strToSink.end()) {
                     rhs = kv->second;
                 }
             } catch (...) {
@@ -106,7 +101,7 @@ namespace Dao::DAQ
         Required<std::string> absPath;
         Optional<bool> metadataOnly { false };
         Optional<size_t> nSamples;
-        Required<SinkFormat> format;
+        Optional<SinkFormat> format { SinkFormat::FITS };
         Optional<size_t> fileRollover;
         Optional<CoreID> sinkThreadAffinity;
         Optional<CoreID> daqThreadAffinity;
@@ -127,16 +122,19 @@ namespace Dao::DAQ
         /* Parse and store capture session policies from yaml document.
          * Throws an exception if the parse fails for any reason.
         */
-        DAQConfiguration(std::string const& docString);
+        DAQConfiguration(std::string const& daqRaqConfig, Dao::Log::Logger& log);
+
+        ~DAQConfiguration();
 
         auto const& sessionParameters() const { return sessionParams_; }
         auto const& fileResources() const { return fileSrcs_; }
         auto const& smemResources() const { return smemSrcs_; }
-        size_t numResources() const { return fileSrcs_.size() + smemSrcs_.size(); }
+        auto const numResources() const { return fileSrcs_.size() + smemSrcs_.size(); }
 
         private:
         /* Variables storing the parsed DAQ session configuration.
         */
+        Dao::Log::Logger& log_;
         SessionParameters sessionParams_;
         std::vector<FileParameters> fileSrcs_;
         std::vector<SmemParameters> smemSrcs_;

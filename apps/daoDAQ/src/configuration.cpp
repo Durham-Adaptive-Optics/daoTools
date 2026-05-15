@@ -47,9 +47,15 @@ namespace Dao::DAQ
 
     /* ---------------------------------------------------------------- */
 
-    DAQConfiguration::DAQConfiguration(std::string const& docString) {
-        auto const doc = YAML::Load(docString);
+    DAQConfiguration::DAQConfiguration(std::string const& daqRaqConfig, Dao::Log::Logger& log) :
+        log_(log) {
+        //
+        auto const doc = YAML::Load(daqRaqConfig);
         load(doc);
+    }
+
+    DAQConfiguration::~DAQConfiguration() {
+        log_.Debug("DAQ configuration object destroyed");
     }
 
     /* ---------------------------------------------------------------- */
@@ -61,7 +67,7 @@ namespace Dao::DAQ
     void DAQConfiguration::loadSmemParams(YAML::Node const& sourceNode, SmemParameters& params) {
         loadOptional(params.metadataOnly, "metadata_only", sourceNode);
         loadOptional(params.nSamples, "samples", sourceNode);
-        loadRequired(params.format, "format", sourceNode);
+        loadOptional(params.format, "format", sourceNode);
         loadOptional(params.fileRollover, "file_rollover", sourceNode);
         loadOptional(params.daqThreadAffinity, "daq_affinity", sourceNode);
         loadOptional(params.sinkThreadAffinity, "sink_affinity", sourceNode);
@@ -99,7 +105,7 @@ namespace Dao::DAQ
                 loadRequired(uri, "uri", sourceNode);
 
                 auto const& uriLocation = locationFromURI(uri);
-                if (auto const& [itr, inserted] = sourceLookup_.insert(uriLocation); !inserted) {
+                if (auto [_, inserted] = sourceLookup_.insert(uriLocation); !inserted) {
                     std::string const err = fmt::format("Duplicate DAQ configuration source '{}'", uri);
                     throw std::runtime_error(err);
                 }
@@ -122,6 +128,11 @@ namespace Dao::DAQ
         else {
             std::string const err = fmt::format("DAQ configuration omitted 'source_list'");
             throw std::runtime_error(err);
+        }
+
+        //
+        if (!numResources()) {
+            throw std::runtime_error("DAQ configuration has no data sources");
         }
     }
 };

@@ -44,13 +44,25 @@ void uploadDAQConfig(Dao::DAQ::DAQServer& daqServer, std::string const& filePath
     }
 }
 
+Dao::Log::LEVEL pickLoggingVerbosity(size_t const& verbosity) {
+    if (0 == verbosity) {
+        return Dao::Log::LEVEL::INFO;
+    }
+    if (1 == verbosity) {
+        return Dao::Log::LEVEL::DEBUG;
+    }
+    else {
+        return Dao::Log::LEVEL::TRACE;
+    }
+}
+
 /* ---------------------------------------------------------------- */
 
 int main(int argc, char* argv[]) {
     // cli parsing ..
     std::uint16_t tcpPort { DEFAULT_TCP_PORT };
     std::string daqConfigPath {};
-    bool verboseLogging {};
+    size_t logVerbosityCount {};
     bool stdoutLogging {};
 
     CLI::App app("Dao Data Acquisition (DAQ) Software", APP_NAME);
@@ -80,19 +92,19 @@ int main(int argc, char* argv[]) {
 
     app.add_flag(
         "--verbose-logging, -l",
-        verboseLogging,
-        "Increase verbosity of logs."
+        logVerbosityCount,
+        "Increase verbosity of logs (default: informative+)"
     );
 
     CLI11_PARSE(app, argc, argv);
 
     // setup application logger ..
     auto const logSink = stdoutLogging ? Dao::Log::Logger::DESTINATION::SCREEN : Dao::Log::Logger::DESTINATION::FILE;
-    auto const logVerbosity = verboseLogging ? Dao::Log::LEVEL::TRACE : Dao::Log::LEVEL::INFO;
+    auto const logVerbosity = pickLoggingVerbosity(logVerbosityCount);
     Dao::Log::Logger log(APP_NAME, logSink, DEFAULT_LOGFILE);
     log.SetLevel(logVerbosity);
 
-    // setup and run the application server ..
+    // // setup and run the application server ..
     Dao::DAQ::DAQServer daqServer(DEFAULT_TCP_PORT, log);
     if (daqConfigPath.length())
         uploadDAQConfig(daqServer, daqConfigPath, log);

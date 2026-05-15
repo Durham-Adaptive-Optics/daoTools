@@ -23,8 +23,9 @@ namespace Dao::DAQ
     class DAQServer : public Dao::Component {
         public:
         DAQServer(std::uint16_t const tcpPort, Dao::Log::Logger& log);
+        ~DAQServer();
 
-        void uploadDAQConfig(std::string const& ymlPolicyDocument);
+        void uploadDAQConfig(std::string const& daqRawConfig);
 
         private:
         std::string daqRawConfig_;
