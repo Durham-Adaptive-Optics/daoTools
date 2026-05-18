@@ -24,6 +24,8 @@
 
 /* ---------------------------------------------------------------- */
 
+#define SAFE_EXIT 166
+
 /* Read in a DAQ configuration from a file and provide it to the DAQ server instance.
  * If doing so fails for whatever reason, a log message is emitted.
 */
@@ -121,5 +123,7 @@ int main(int argc, char* argv[]) {
     sigwait(&sigset, &signum);
 
     log.Info(LOGFMT("termination signal received ({}); process terminating gracefully", strsignal(signum)));
+
+    return SAFE_EXIT;
 }
 

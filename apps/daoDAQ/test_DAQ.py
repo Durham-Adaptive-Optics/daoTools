@@ -8,12 +8,13 @@
 
 # ================================================================ #
 
-from daoDAQClient import DAQClient
+from daoDAQClient import DAQClient, DAQState
 import astropy.io.fits as fits
 import subprocess as sp
 import numpy as np
 import pytest
 import shutil
+import signal
 import math
 import yaml
 import time
@@ -22,26 +23,6 @@ import os
 
 # ================================================================ #
     
-''' Ensures a file resources are correctly captured '''
-def test_File_DAQ(tmp_directory, client, request, tool_inst):
-    # Record
-    daqConfig = {
-        "root_storage": tmp_directory,
-        "sources": [{
-            "uri": f"file://{request.fspath}"
-        }]
-    }
-    client.daq_session_configure_upload(yaml.dump(daqConfig))
-    client.daq_session_configure_apply()
-    client.daq_session_begin()
-    client.daq_session_await_finish(timeout=1)
-
-    # Validate
-    listing = os.listdir(tmp_directory)
-    sessionDir = os.path.join(tmp_directory, listing[0])
-    datafiles = [file for file in os.listdir(sessionDir)]
-    assert os.path.basename(request.fspath) in datafiles
-
 ''' Ensures samples of all dao supported dtypes are correctly captured for both 2D and 3D arrays
     for the smem resource type.
 '''
@@ -61,10 +42,69 @@ def test_Smem_Rollover(tmp_directory, client, tool_inst):
 def test_Smem_EagerStart(tmp_directory, client, tool_inst):
     smem_tester_(tmp_directory, client, tool_inst, (2,3), np.float32, rollover=False, eager_start=True)
 
-def smem_tester_(tmp_directory, client, tool_inst, shape, dtype, rollover, eager_start):
+''' Ensures a file resources are correctly captured '''
+def test_File_DAQ(tmp_directory, client, request, tool_inst):
+    # Record
+    daqConfig = {
+        "root_storage": tmp_directory,
+        "sources": [{
+            "uri": f"file://{request.fspath}"
+        }]
+    }
+    client.daq_session_configure_upload(yaml.dump(daqConfig))
+    client.daq_session_configure_apply()
+    client.daq_session_begin()
+    client.daq_session_await_finish(timeout=1)
+
+    # Validate
+    listing = os.listdir(tmp_directory)
+    sessionDir = os.path.join(tmp_directory, listing[0])
+    datafiles = [file for file in os.listdir(sessionDir)]
+    assert os.path.basename(request.fspath) in datafiles
+    
+''' Ensure DAQ session can be finished manually '''
+def test_Finish_Session(tmp_directory, client, tool_inst, request):
+    session_tester_(tmp_directory, client, tool_inst, request, False)
+    
+''' Ensure back-to-back DAQ sessions can be carried out correctly '''
+def test_Consecutive_Sessions(tmp_directory, client, tool_inst, request):
+    session_tester_(tmp_directory, client, tool_inst, request, True)
+
+''' Ensure DAQ session error alert mechanism operates correctly '''
+def test_Session_Alert(tmp_directory, client, tool_inst):
+    error_tester_(tmp_directory, client, tool_inst, recover=False)
+
+''' Ensure recovery from error operates correctly '''
+def test_Recovery(tmp_directory, client, tool_inst):
+    error_tester_(tmp_directory, client, tool_inst, recover=True)
+
+''' Ensure graceful exit during acquisistion upon SIGINT '''
+def test_Process_Terminate(tmp_directory, client, tool_inst):
+    smemPath = f"/tmp/{__name__}.im.shm"
+    smem = dao.shm(smemPath, np.zeros((1,1)))
+
+    daqConfig = {
+        "root_storage": tmp_directory,
+        "sources": [{
+            "uri": f"smem://{smemPath}"
+        }]
+    }
+
+    client.daq_session_configure_upload(yaml.dump(daqConfig))
+    client.daq_session_configure_apply()
+    client.daq_session_begin()
+    
+    tool_inst.send_signal(signal.SIGINT)
+    exit_code = tool_inst.wait()
+    assert 166 == exit_code
+    
+# ================================================================ #
+
+def smem_tester_(tmp_directory, client, tool_inst, shape, dtype, rollover: bool, eager_start: bool):
     limits = np.iinfo(dtype) if np.issubdtype(dtype, np.integer) else np.finfo(dtype)
     new_sample = lambda: np.linspace(limits.min, limits.max, np.prod(shape), dtype=dtype).reshape(shape)
     nSamples: int = 5
+    nRollover: int = 2
     
     # Setup smem
     smemPath = f"/tmp/{__name__}.im.shm"
@@ -82,8 +122,8 @@ def smem_tester_(tmp_directory, client, tool_inst, shape, dtype, rollover, eager
             "eager_start": eager_start
         }]
     }
-    if rollover != None:
-        daqConfig["sources"][0]["rollover"] = rollover
+    if rollover:
+        daqConfig["sources"][0]["rollover"] = nRollover
         
     client.daq_session_configure_upload(yaml.dump(daqConfig))
     client.daq_session_configure_apply()
@@ -129,44 +169,71 @@ def smem_tester_(tmp_directory, client, tool_inst, shape, dtype, rollover, eager
             "cnt2": metadata["cnt2"]
         }])
         
-    if rollover == None:
-        datafilePath = os.path.join(sessionDir, "smem.fits")
-        with fits.open(datafilePath, mode='readonly') as datafile:
-            for hdu in datafile: add_recorded_sample(hdu)
-    else:
-        nDatafiles: int = math.ceil(nSamples / rollover)
+    if rollover:
+        nDatafiles: int = math.ceil(nSamples / nRollover)
         dataDirPath = os.path.join(sessionDir, "smem")
         for i in range(nDatafiles):
             datafilePath = os.path.join(dataDirPath, f"smem_{i}.fits")
             with fits.open(datafilePath, mode='readonly') as datafile:
                 for hdu in datafile: add_recorded_sample(hdu)
-    
+    else:
+        datafilePath = os.path.join(sessionDir, "smem.fits")
+        with fits.open(datafilePath, mode='readonly') as datafile:
+            for hdu in datafile: add_recorded_sample(hdu)
+
     for i in range(nSamples):
         reference_sample = sample_history[i]
         recorded_sample = recorded_samples[i]
         assert recorded_sample[0].dtype == reference_sample[0].dtype
         assert np.array_equal(recorded_sample[0], reference_sample[0])
         assert recorded_sample[1] == reference_sample[1] # metadata
+
+def session_tester_(tmp_directory, client, tool_inst, request, back2back: bool):
+    smemPath = f"/tmp/{__name__}.im.shm"
+    smem = dao.shm(smemPath, np.zeros((1,1)))
+
+    daqConfig = {
+        "root_storage": tmp_directory,
+        "sources": 
+        [
+            {"uri": f"smem://{smemPath}"},
+            {"uri": f"file://{request.node.name}"}
+        ]
+    }
+
+    client.daq_session_configure_upload(yaml.dump(daqConfig))
+    client.daq_session_configure_apply()
     
-# ''' Ensure DAQ session can be finished manually '''
-# def test_Finish_Session():
-#     pass
+    client.daq_session_begin()
+    client.daq_session_finish()
 
-# ''' Ensure back-to-back DAQ sessions can be carried out correctly '''
-# def test_Consecutive_Sessions():
-#     pass
+    if back2back:
+        client.daq_session_begin()
+        client.daq_session_finish()
 
-# ''' Ensure DAQ session error alert operates correctly '''
-# def test_Session_Alert():
-#     pass
+def error_tester_(tmp_directory, client, tool_inst, recover: bool):
+    daqConfig = {
+        "root_storage": tmp_directory,
+        "sources": 
+        [
+            {"uri": f"file://non-existent-file.test"},
+        ]
+    }
 
-# ''' Ensure recovery from error operates correctly '''
-# def test_Recovery():
-#     pass
-
-# ''' Ensures program handles termination gracefully during acquisistion '''
-# def test_Process_Terminate():
-#     pass
+    client.daq_session_configure_upload(yaml.dump(daqConfig))
+    client.daq_session_configure_apply()
+    client.daq_session_begin()
+    
+    t0 = time.perf_counter()
+    while 1:
+        if time.perf_counter() - t0 >= 1.0:
+            raise RuntimeError("tool never went into Error state")
+        
+        if DAQState.Error == client.state():
+            break
+        
+    if recover:
+        client.recover()
 
 # ================================================================ #
 
