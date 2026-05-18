@@ -180,8 +180,12 @@ namespace Dao::DAQ
      * an exception if creation fails.
     */
     void createDirectory(std::filesystem::path const dirPath) {
-        if (!std::filesystem::create_directory(dirPath)) {
-            throw std::runtime_error("failed to create session output directory");
+        try {
+            if (!std::filesystem::create_directory(dirPath))
+                throw std::runtime_error("directory already exists");
+        } catch (std::exception const& e) {
+            auto const err = fmt::format("failed to create session output directory '{}': {}", dirPath.string(), e.what());
+            throw std::runtime_error(err);
         }
     }
 

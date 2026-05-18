@@ -207,6 +207,7 @@ def session_tester_(tmp_directory, client, tool_inst, request, back2back: bool):
     
     client.daq_session_begin()
     client.daq_session_finish()
+    time.sleep(1) # required due to timestamp-name resolution limitation.
 
     if back2back:
         client.daq_session_begin()
@@ -249,7 +250,7 @@ def tmp_directory(request):
 ''' Fixture to create a fresh instance of daoDAQ tool '''
 @pytest.fixture
 def tool_inst():
-    inst = sp.Popen(["daoDAQ", "-s", "-ll"])
+    inst = sp.Popen(["daoDAQ", "-s", "-l"])
     yield inst
     if inst.poll() is None:
         inst.kill()
