@@ -87,7 +87,7 @@ namespace Dao::DAQ
          * to the Error state.
         */
         auto errorCallback = [&](std::string const& resourceID, std::string const& err) -> void {
-            std::thread([&, err]() {
+            std::thread([&, resourceID, err]() {
                 std::lock_guard lock(reportLock_);
                 m_log.Critical(LOGFMT("DAQ resource '{}' had session error: {}", resourceID, err));
                 OnFailure();

@@ -23,25 +23,42 @@ import os
 
 # ================================================================ #
     
-''' Ensures samples of all dao supported dtypes are correctly captured for both 2D and 3D arrays
-    for the smem resource type.
-'''
-@pytest.mark.parametrize("shape", [(2, 3), (2, 3, 4)])
-@pytest.mark.parametrize("dtype", [
-    np.uint8, np.int8, np.uint16, np.int16, np.uint32, 
-    np.int32, np.uint64, np.int64, np.float32, np.float64
-])
-def test_Smem_Multidimensional(tmp_directory, client, tool_inst, shape, dtype):
-    smem_tester_(tmp_directory, client, tool_inst, shape, dtype, rollover=False, eager_start=False)
+''' Ensure DAQ session can be finished manually '''
+def test_Finish_Session(tmp_directory, tool_inst, client, request):
+    session_tester_(tmp_directory, client, tool_inst, request, False)
+    
+''' Ensure back-to-back DAQ sessions can be carried out correctly '''
+def test_Consecutive_Sessions(tmp_directory, tool_inst, client, request):
+    session_tester_(tmp_directory, client, tool_inst, request, True)
 
-''' Ensures smem resource correctly supports file rollover '''
-def test_Smem_Rollover(tmp_directory, client, tool_inst):
-    smem_tester_(tmp_directory, client, tool_inst, (2,3), np.float32, rollover=True, eager_start=False)
+''' Ensure DAQ session error alert mechanism operates correctly '''
+def test_Session_Alert(tmp_directory, client, tool_inst):
+    error_tester_(tmp_directory, client, tool_inst, recover=False)
 
-''' Ensures smem resource correctly supports eager start '''
-def test_Smem_EagerStart(tmp_directory, client, tool_inst):
-    smem_tester_(tmp_directory, client, tool_inst, (2,3), np.float32, rollover=False, eager_start=True)
+''' Ensure recovery from error operates correctly '''
+def test_Recovery(tmp_directory, client, tool_inst):
+    error_tester_(tmp_directory, client, tool_inst, recover=True)
 
+''' Ensure graceful exit during acquisistion upon SIGINT '''
+def test_Process_Terminate(tmp_directory, client, tool_inst):
+    smemPath = f"/tmp/smem.im.shm"
+    smem = dao.shm(smemPath, np.zeros((1,1)))
+
+    daqConfig = {
+        "root_storage": tmp_directory,
+        "sources": [{
+            "uri": f"smem://{smemPath}"
+        }]
+    }
+
+    client.daq_session_configure_upload(yaml.dump(daqConfig))
+    client.daq_session_configure_apply()
+    client.daq_session_begin()
+    
+    tool_inst.send_signal(signal.SIGINT)
+    exit_code = tool_inst.wait(timeout=3)
+    assert 166 == exit_code
+    
 ''' Ensures a file resources are correctly captured '''
 def test_File_DAQ(tmp_directory, client, request, tool_inst):
     # Record
@@ -62,42 +79,25 @@ def test_File_DAQ(tmp_directory, client, request, tool_inst):
     datafiles = [file for file in os.listdir(sessionDir)]
     assert os.path.basename(request.fspath) in datafiles
     
-''' Ensure DAQ session can be finished manually '''
-def test_Finish_Session(tmp_directory, client, tool_inst, request):
-    session_tester_(tmp_directory, client, tool_inst, request, False)
-    
-''' Ensure back-to-back DAQ sessions can be carried out correctly '''
-def test_Consecutive_Sessions(tmp_directory, client, tool_inst, request):
-    session_tester_(tmp_directory, client, tool_inst, request, True)
+''' Ensures smem resource correctly supports file rollover '''
+def test_Smem_Rollover(tmp_directory, client, tool_inst):
+    smem_tester_(tmp_directory, client, tool_inst, (2,3), np.float32, rollover=True, eager_start=False)
 
-''' Ensure DAQ session error alert mechanism operates correctly '''
-def test_Session_Alert(tmp_directory, client, tool_inst):
-    error_tester_(tmp_directory, client, tool_inst, recover=False)
+''' Ensures smem resource correctly supports eager start '''
+def test_Smem_EagerStart(tmp_directory, client, tool_inst):
+    smem_tester_(tmp_directory, client, tool_inst, (2,3), np.float32, rollover=False, eager_start=True)
 
-''' Ensure recovery from error operates correctly '''
-def test_Recovery(tmp_directory, client, tool_inst):
-    error_tester_(tmp_directory, client, tool_inst, recover=True)
+''' Ensures samples of all dao supported dtypes are correctly captured for both 2D and 3D arrays
+    for the smem resource type.
+'''
+@pytest.mark.parametrize("shape", [(2, 3), (2, 3, 4)])
+@pytest.mark.parametrize("dtype", [
+    np.uint8, np.int8, np.uint16, np.int16, np.uint32, 
+    np.int32, np.uint64, np.int64, np.float32, np.float64
+])
+def test_Smem_Multidimensional(tmp_directory, client, tool_inst, shape, dtype):
+    smem_tester_(tmp_directory, client, tool_inst, shape, dtype, rollover=False, eager_start=False)
 
-''' Ensure graceful exit during acquisistion upon SIGINT '''
-def test_Process_Terminate(tmp_directory, client, tool_inst):
-    smemPath = f"/tmp/{__name__}.im.shm"
-    smem = dao.shm(smemPath, np.zeros((1,1)))
-
-    daqConfig = {
-        "root_storage": tmp_directory,
-        "sources": [{
-            "uri": f"smem://{smemPath}"
-        }]
-    }
-
-    client.daq_session_configure_upload(yaml.dump(daqConfig))
-    client.daq_session_configure_apply()
-    client.daq_session_begin()
-    
-    tool_inst.send_signal(signal.SIGINT)
-    exit_code = tool_inst.wait()
-    assert 166 == exit_code
-    
 # ================================================================ #
 
 def smem_tester_(tmp_directory, client, tool_inst, shape, dtype, rollover: bool, eager_start: bool):
@@ -107,7 +107,7 @@ def smem_tester_(tmp_directory, client, tool_inst, shape, dtype, rollover: bool,
     nRollover: int = 2
     
     # Setup smem
-    smemPath = f"/tmp/{__name__}.im.shm"
+    smemPath = f"/tmp/smem.im.shm"
     smem = dao.shm(
         smemPath, 
         new_sample()
@@ -152,7 +152,8 @@ def smem_tester_(tmp_directory, client, tool_inst, shape, dtype, rollover: bool,
     
     # Await record to finish
     client.daq_session_await_finish(timeout=1)
-
+    print("finished awaiting!!")
+    
     # Validate
     listing = os.listdir(tmp_directory)
     sessionDir = os.path.join(tmp_directory, listing[0])
@@ -189,7 +190,7 @@ def smem_tester_(tmp_directory, client, tool_inst, shape, dtype, rollover: bool,
         assert recorded_sample[1] == reference_sample[1] # metadata
 
 def session_tester_(tmp_directory, client, tool_inst, request, back2back: bool):
-    smemPath = f"/tmp/{__name__}.im.shm"
+    smemPath = f"/tmp/smem.im.shm"
     smem = dao.shm(smemPath, np.zeros((1,1)))
 
     daqConfig = {
@@ -197,7 +198,7 @@ def session_tester_(tmp_directory, client, tool_inst, request, back2back: bool):
         "sources": 
         [
             {"uri": f"smem://{smemPath}"},
-            {"uri": f"file://{request.node.name}"}
+            {"uri": f"file://{request.fspath}"}
         ]
     }
 
@@ -249,12 +250,11 @@ def tmp_directory(request):
 @pytest.fixture
 def tool_inst():
     inst = sp.Popen(["./build/apps/daoDAQ/daoDAQ", "-s", "-ll"])
-    time.sleep(0.25)
-    yield
+    yield inst
     if inst.poll() is None:
         inst.kill()
     inst.wait()
-    
+            
 ''' Fixture to create a fresh instance of daoDAQ client '''
 @pytest.fixture
 def client():

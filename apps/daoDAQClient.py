@@ -145,8 +145,9 @@ class DAQClient:
             
             self.dao_invoke_(self.api.Exec, "Idle")
             
-            if self.state() != DAQState.Ready:
-                raise RuntimeError()
+            endState = self.state()
+            if endState != DAQState.Ready:
+                raise RuntimeError(f"end state is {endState} not {DAQState.Ready}")
         except Exception as e:
             raise RuntimeError(f"failed to finish DAQ session: {e}")
         
