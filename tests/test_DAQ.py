@@ -249,7 +249,7 @@ def tmp_directory(request):
 ''' Fixture to create a fresh instance of daoDAQ tool '''
 @pytest.fixture
 def tool_inst():
-    inst = sp.Popen(["./build/apps/daoDAQ/daoDAQ", "-s", "-ll"])
+    inst = sp.Popen(["daoDAQ", "-s", "-ll"])
     yield inst
     if inst.poll() is None:
         inst.kill()
