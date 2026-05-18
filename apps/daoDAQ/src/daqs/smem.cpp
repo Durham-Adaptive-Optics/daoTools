@@ -52,6 +52,19 @@ void SmemDAQ::establishResourceConnection() {
         throw std::runtime_error(err);
     }
 
+    /* note(tom):
+        Currently we avoid supporting complex number types.
+        It is relatively straightforward to add such support
+        in the fits backend; it involes using binary tables
+        instead of image HDUs. However I am not aware of a
+        business case for such supprt yet, so we leave this
+        for now.
+    */
+    if (_DATATYPE_COMPLEX_FLOAT == smem_.md->atype || _DATATYPE_COMPLEX_DOUBLE == smem_.md->atype) {
+        std::string const err = fmt::format("init error for smem resource `{}`: complex-valued arrays are not currently supported", params_.absPath);
+        throw std::runtime_error(err);
+    }
+
     sampleMemSize_ = smem_.memsize - sizeof(IMAGE_METADATA) - smem_.md->NBkw * sizeof(IMAGE_KEYWORD);
 }
 
