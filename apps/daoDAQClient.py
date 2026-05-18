@@ -124,9 +124,6 @@ class DAQClient:
            
     def daq_session_await_finish(self, timeout=None, delay_s = 0.5):
         try:
-            if self.state() != DAQState.Acquiring:
-                raise RuntimeError("no DAQ session in progess")
-            
             t0 = time.perf_counter()
             while True:
                 elapsed_time = time.perf_counter() - t0
