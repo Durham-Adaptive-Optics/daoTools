@@ -151,10 +151,10 @@ Acquires data samples in real-time from dao shared memory and writes them to out
      - Number of samples to record. If omitted, collection continues until manually stopped.
 
    * - ``format``
-     - Required
+     - Optional
      - String
      - —
-     - Output datafile format: ``numpy`` or ``fits``.
+     - Output datafile format: only ``fits`` supported as of now and is the default.
 
    * - ``file_rollover``
      - Optional
