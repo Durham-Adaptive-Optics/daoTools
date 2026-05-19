@@ -102,7 +102,7 @@ def test_Smem_Multidimensional(tmp_directory, client, tool_inst, shape, dtype):
 
 def smem_tester_(tmp_directory, client, tool_inst, shape, dtype, rollover: bool, eager_start: bool):
     limits = np.iinfo(dtype) if np.issubdtype(dtype, np.integer) else np.finfo(dtype)
-    new_sample = lambda: np.linspace(limits.min, limits.max, np.prod(shape), dtype=dtype).reshape(shape)
+    new_sample = lambda: np.linspace(limits.min / 2, limits.max / 2, np.prod(shape), dtype=dtype).reshape(shape)
     nSamples: int = 5
     nRollover: int = 2
     
@@ -123,7 +123,7 @@ def smem_tester_(tmp_directory, client, tool_inst, shape, dtype, rollover: bool,
         }]
     }
     if rollover:
-        daqConfig["sources"][0]["rollover"] = nRollover
+        daqConfig["sources"][0]["file_rollover"] = nRollover
         
     client.daq_session_configure_upload(yaml.dump(daqConfig))
     client.daq_session_configure_apply()
@@ -136,7 +136,7 @@ def smem_tester_(tmp_directory, client, tool_inst, shape, dtype, rollover: bool,
         metadata = smem.get_meta_data()
         sample_history.append([sample, {
             "atype": metadata["atype"],
-            "atime": metadata["atime"],
+            "atime": metadata["atime"]["tsfixed"]["secondlong"],
             "cnt0": metadata["cnt0"],
             "cnt1": metadata["cnt1"],
             "cnt2": metadata["cnt2"]
@@ -149,10 +149,10 @@ def smem_tester_(tmp_directory, client, tool_inst, shape, dtype, rollover: bool,
         sample = new_sample()
         smem.set_data(sample)
         sample_history_add()
+        time.sleep(0.1) # feed samples in every ~100ms - we are testing correctness here not performance.
     
     # Await record to finish
     client.daq_session_await_finish(timeout=1)
-    print("finished awaiting!!")
     
     # Validate
     listing = os.listdir(tmp_directory)
@@ -185,9 +185,9 @@ def smem_tester_(tmp_directory, client, tool_inst, shape, dtype, rollover: bool,
     for i in range(nSamples):
         reference_sample = sample_history[i]
         recorded_sample = recorded_samples[i]
-        assert recorded_sample[0].dtype == reference_sample[0].dtype
-        assert np.array_equal(recorded_sample[0], reference_sample[0])
-        assert recorded_sample[1] == reference_sample[1] # metadata
+        assert recorded_sample[0].dtype.type == reference_sample[0].dtype.type, f"Mismatched datatype between reference and recorded sample"
+        assert np.array_equal(recorded_sample[0], reference_sample[0]), f"Mismatched values between reference and recorded sample\nREF:{reference_sample[0]}\nREC:{recorded_sample[0]}"
+        assert recorded_sample[1] == reference_sample[1], f"Mismatched metadata between reference and recorded sample\nREF:{reference_sample[1]}\nREC:{recorded_sample[1]}"
 
 def session_tester_(tmp_directory, client, tool_inst, request, back2back: bool):
     smemPath = f"/tmp/smem.im.shm"
@@ -207,7 +207,7 @@ def session_tester_(tmp_directory, client, tool_inst, request, back2back: bool):
     
     client.daq_session_begin()
     client.daq_session_finish()
-    time.sleep(1) # required due to timestamp-name resolution limitation.
+    time.sleep(1) # required due to limitation of timestamp naming resolution.
 
     if back2back:
         client.daq_session_begin()
@@ -241,8 +241,8 @@ def error_tester_(tmp_directory, client, tool_inst, recover: bool):
 
 ''' Fixture to create a clean directory for each test '''
 @pytest.fixture
-def tmp_directory(request):
-    path = f"/tmp/dao_daq_test/{request.node.name}"
+def tmp_directory():
+    path = f"/tmp/dao_daq_test"
     os.makedirs(path)
     yield path
     shutil.rmtree(path)
@@ -250,7 +250,7 @@ def tmp_directory(request):
 ''' Fixture to create a fresh instance of daoDAQ tool '''
 @pytest.fixture
 def tool_inst():
-    inst = sp.Popen(["daoDAQ", "-s", "-l"])
+    inst = sp.Popen(["daoDAQ", "-s", "-ll"])
     yield inst
     if inst.poll() is None:
         inst.kill()

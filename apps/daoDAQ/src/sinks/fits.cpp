@@ -71,7 +71,11 @@ namespace Dao::DAQ
         nFiles_(0),
         file_(nullptr) {
         //
-        log_.Debug(LOGFMT("Fits exporter created for DAQ resource '{}'", parentID_));
+        log_.Debug(LOGFMT(
+            "Fits exporter created for DAQ resource '{}' (rollover: {})",
+            parentID_,
+            params.fileRollover ? fmt::format("{} samples", params.fileRollover.value()) : "None"
+        ));
     }
 
     /* Ensures the active datafile is safely closed before
@@ -79,8 +83,9 @@ namespace Dao::DAQ
      * issue occurred.
     */
     FitsWriter::~FitsWriter() {
-        if (file_)
+        if (file_) {
             closeDatafile();
+        }
 
         log_.Debug(LOGFMT("Fits exporter destroyed for DAQ resource '{}'", parentID_));
     }
@@ -93,9 +98,10 @@ namespace Dao::DAQ
         fileName_ = params_.fileRollover ?
             fmt::format("{}_{}.fits", params_.localName, nFiles_) :
             fmt::format("{}.fits", params_.localName);
-        std::filesystem::path const filePath { sessionOutputDir_ / fileName_ };
 
-        log_.Trace(LOGFMT("Creating datafile '{}' for DAQ resource '{}'", filePath.string(), parentID_));
+        std::filesystem::path const filePath = params_.fileRollover ? (sessionOutputDir_ / params_.localName / fileName_) : (sessionOutputDir_ / fileName_);
+
+        log_.Debug(LOGFMT("Creating fits datafile '{}' for DAQ resource '{}'", filePath.string(), parentID_));
         FITS_CALL(fits_create_file, &file_, filePath.string().c_str());
         nFileSamples = 0;
         ++nFiles_;

@@ -121,7 +121,6 @@ namespace Dao::DAQ
     */
     void DAQServer::startDAQSession() {
         std::filesystem::path const sessionDirectory = prepareOutputDirectory();
-        m_log.Info(LOGFMT("Output directory has been prepared for the new DAQ session: {}", sessionDirectory.string()));
 
         for (auto& res : daqResources_) {
             res->beginAcquisition(sessionDirectory);
@@ -195,14 +194,18 @@ namespace Dao::DAQ
     */
     std::filesystem::path DAQServer::prepareOutputDirectory() {
         std::filesystem::path const rootPath(daqConfig_->sessionParameters().rootStorage);
-        std::filesystem::path const groupPath = rootPath / timestamp();
-        createDirectory(groupPath);
+        std::filesystem::path const sessionDirectory = rootPath / timestamp();
+        createDirectory(sessionDirectory);
+        m_log.Info(LOGFMT("Created session directory: {}", sessionDirectory.string()));
 
         for (auto const& smem : daqConfig_->smemResources()) {
-            if (smem.fileRollover)
-                createDirectory(groupPath / smem.localName);
+            if (smem.fileRollover) {
+                auto const subdir = sessionDirectory / smem.localName;
+                createDirectory(subdir);
+                m_log.Debug(LOGFMT("Created session sub-dir for smem resource '{}': {}", smem.absPath, subdir.string()));
+            }
         }
 
-        return groupPath;
+        return sessionDirectory;
     }
 };

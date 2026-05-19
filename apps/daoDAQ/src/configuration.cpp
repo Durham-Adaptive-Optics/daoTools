@@ -80,11 +80,12 @@ namespace Dao::DAQ
             throw std::runtime_error(err);
         }
 
-        params.localName.resize(buffLen);
-        if (DAO_SUCCESS != daoToolsLocalName(params.absPath.c_str(), params.localName.data(), nullptr)) {
+        char buff[buffLen];
+        if (DAO_SUCCESS != daoToolsLocalName(params.absPath.c_str(), buff, nullptr)) {
             auto const err = fmt::format("failed to extract shm local name for {}", params.absPath);
             throw std::runtime_error(err);
         }
+        params.localName = buff;
     }
 
     /* ---------------------------------------------------------------- */
