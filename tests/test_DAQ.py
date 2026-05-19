@@ -23,42 +23,6 @@ import os
 
 # ================================================================ #
     
-''' Ensure DAQ session can be finished manually '''
-def test_Finish_Session(tmp_directory, tool_inst, client, request):
-    session_tester_(tmp_directory, client, tool_inst, request, False)
-    
-''' Ensure back-to-back DAQ sessions can be carried out correctly '''
-def test_Consecutive_Sessions(tmp_directory, tool_inst, client, request):
-    session_tester_(tmp_directory, client, tool_inst, request, True)
-
-''' Ensure DAQ session error alert mechanism operates correctly '''
-def test_Session_Alert(tmp_directory, client, tool_inst):
-    error_tester_(tmp_directory, client, tool_inst, recover=False)
-
-''' Ensure recovery from error operates correctly '''
-def test_Recovery(tmp_directory, client, tool_inst):
-    error_tester_(tmp_directory, client, tool_inst, recover=True)
-
-''' Ensure graceful exit during acquisistion upon SIGINT '''
-def test_Process_Terminate(tmp_directory, client, tool_inst):
-    smemPath = f"/tmp/smem.im.shm"
-    smem = dao.shm(smemPath, np.zeros((1,1)))
-
-    daqConfig = {
-        "root_storage": tmp_directory,
-        "sources": [{
-            "uri": f"smem://{smemPath}"
-        }]
-    }
-
-    client.daq_session_configure_upload(yaml.dump(daqConfig))
-    client.daq_session_configure_apply()
-    client.daq_session_begin()
-    
-    tool_inst.send_signal(signal.SIGINT)
-    exit_code = tool_inst.wait(timeout=3)
-    assert 166 == exit_code
-    
 ''' Ensures a file resources are correctly captured '''
 def test_File_DAQ(tmp_directory, client, request, tool_inst):
     # Record
@@ -97,6 +61,42 @@ def test_Smem_EagerStart(tmp_directory, client, tool_inst):
 ])
 def test_Smem_Multidimensional(tmp_directory, client, tool_inst, shape, dtype):
     smem_tester_(tmp_directory, client, tool_inst, shape, dtype, rollover=False, eager_start=False)
+
+''' Ensure DAQ session can be finished manually '''
+def test_Finish_Session(tmp_directory, tool_inst, client, request):
+    session_tester_(tmp_directory, client, tool_inst, request, False)
+    
+''' Ensure back-to-back DAQ sessions can be carried out correctly '''
+def test_Consecutive_Sessions(tmp_directory, tool_inst, client, request):
+    session_tester_(tmp_directory, client, tool_inst, request, True)
+
+''' Ensure DAQ session error alert mechanism operates correctly '''
+def test_Session_Alert(tmp_directory, client, tool_inst):
+    error_tester_(tmp_directory, client, tool_inst, recover=False)
+
+''' Ensure recovery from error operates correctly '''
+def test_Recovery(tmp_directory, client, tool_inst):
+    error_tester_(tmp_directory, client, tool_inst, recover=True)
+
+''' Ensure graceful exit during acquisistion upon SIGINT '''
+def test_Process_Terminate(tmp_directory, client, tool_inst):
+    smemPath = f"/tmp/smem.im.shm"
+    smem = dao.shm(smemPath, np.zeros((1,1)))
+
+    daqConfig = {
+        "root_storage": tmp_directory,
+        "sources": [{
+            "uri": f"smem://{smemPath}"
+        }]
+    }
+
+    client.daq_session_configure_upload(yaml.dump(daqConfig))
+    client.daq_session_configure_apply()
+    client.daq_session_begin()
+    
+    tool_inst.send_signal(signal.SIGINT)
+    exit_code = tool_inst.wait(timeout=3)
+    assert 166 == exit_code
 
 # ================================================================ #
 
