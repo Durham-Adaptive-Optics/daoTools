@@ -93,6 +93,13 @@ void SmemDAQ::beginAcquisition(std::filesystem::path const& outputPath) {
     sessionOutputDir_ = outputPath;
     runSession_ = true;
     cvPredicate_ = true;
+
+    {
+        std::lock_guard qGuard(qLock_);
+        while (!queue_.empty())
+            queue_.pop();
+    }
+
     cvSignal_.notify_all();
 }
 
@@ -189,12 +196,12 @@ void SmemDAQ::sinkThreadEntry() {
  * to finish.
 */
 void SmemDAQ::acquireSamples() {
-    log_.Debug(LOGFMT("DAQ thread has started sample collection for smem resource {}", params_.absPath));
 
     IMAGE_METADATA const volatile* smInfo_ = static_cast<IMAGE_METADATA const volatile*>(smem_.md);
-    bool sampleAvailable { params_.eagerStart };
+    bool sampleAvailable { params_.eagerStart.value() };
     size_t lastSampleId = smInfo_->cnt0;
 
+    log_.Debug(LOGFMT("DAQ thread has started sample collection for smem resource {} (eager={})", params_.absPath, params_.eagerStart.value()));
     while (runSession_) {
         if (sampleAvailable) {
             size_t const sampleId = smInfo_->cnt0;
@@ -203,14 +210,23 @@ void SmemDAQ::acquireSamples() {
                 IMAGE_METADATA {},
                 std::make_unique<std::byte[]>(sampleMemSize_)
             };
-            std::memcpy(&qSample.first, smem_.md, sizeof(IMAGE_METADATA));
+            qSample.first = *smem_.md;
             std::memcpy(qSample.second.get(), smem_.array.V, sampleMemSize_);
-            bool const copyInterupted = (smInfo_->cnt0 > sampleId || 1 == smInfo_->write);
 
-            std::lock_guard qGuard(qLock_);
-            bool const queueHasSpace = params_.bufferLimit ? (queue_.size() < params_.bufferLimit.value()) : true;
-            if (!copyInterupted && queueHasSpace) {
-                queue_.push(std::move(qSample));
+            bool const copyInterupted = (smInfo_->cnt0 > sampleId || 1 == smInfo_->write);
+            if (!copyInterupted) {
+                std::lock_guard qGuard(qLock_);
+                bool const queueHasSpace = params_.bufferLimit ? (queue_.size() < params_.bufferLimit.value()) : true;
+                if (queueHasSpace) {
+                    queue_.push(std::move(qSample));
+                    log_.Trace(LOGFMT("smem resource '{}' collected sample {}", params_.absPath, sampleId));
+                }
+                else {
+                    log_.Warning(LOGFMT("smem resource '{}' dropped sample due to full queue", params_.absPath));
+                }
+            }
+            else {
+                log_.Warning(LOGFMT("smem resource '{}' missed sample", params_.absPath));
             }
 
             lastSampleId = sampleId;
@@ -232,12 +248,6 @@ void SmemDAQ::sinkSamples() {
 
     auto writer = std::make_unique<FitsWriter>(params_, sessionOutputDir_, *smem_.md, log_, resourceID_);
     size_t nSamplesWritten {};
-
-    {
-        std::lock_guard qGuard(qLock_);
-        while (!queue_.empty())
-            queue_.pop();
-    }
 
     while (runSession_) {
         if (params_.nSamples && params_.nSamples.value() == nSamplesWritten) {

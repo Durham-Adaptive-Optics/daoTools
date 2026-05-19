@@ -81,7 +81,7 @@ namespace Dao::DAQ
         auto const& params() const { return params_; }
 
         private:
-        SmemParameters const params_;
+        SmemParameters const& params_;
         bool stopToken_;
         bool runSession_;
         std::mutex qLock_;  // ensures exclusive access to sample queue between DAQ and sink threads.

@@ -149,7 +149,7 @@ def smem_tester_(tmp_directory, client, tool_inst, shape, dtype, rollover: bool,
         sample = new_sample()
         smem.set_data(sample)
         sample_history_add()
-        time.sleep(0.1) # feed samples in every ~100ms - we are testing correctness here not performance.
+        time.sleep(0.1) # feed sample in slowly as we want to ensure correctness, not test performance.
     
     # Await record to finish
     client.daq_session_await_finish(timeout=1)
@@ -185,9 +185,9 @@ def smem_tester_(tmp_directory, client, tool_inst, shape, dtype, rollover: bool,
     for i in range(nSamples):
         reference_sample = sample_history[i]
         recorded_sample = recorded_samples[i]
-        assert recorded_sample[0].dtype.type == reference_sample[0].dtype.type, f"Mismatched datatype between reference and recorded sample"
-        assert np.array_equal(recorded_sample[0], reference_sample[0]), f"Mismatched values between reference and recorded sample\nREF:{reference_sample[0]}\nREC:{recorded_sample[0]}"
-        assert recorded_sample[1] == reference_sample[1], f"Mismatched metadata between reference and recorded sample\nREF:{reference_sample[1]}\nREC:{recorded_sample[1]}"
+        assert recorded_sample[0].dtype.type == reference_sample[0].dtype.type, f"Mismatched datatype between reference and recorded sample ({i})"
+        assert np.array_equal(recorded_sample[0], reference_sample[0]), f"Mismatched values between reference and recorded sample ({i})\nREF:{reference_sample[0]}\nREC:{recorded_sample[0]}"
+        assert recorded_sample[1] == reference_sample[1], f"Mismatched metadata between reference and recorded sample ({i})\nREF:{reference_sample[1]}\nREC:{recorded_sample[1]}"
 
 def session_tester_(tmp_directory, client, tool_inst, request, back2back: bool):
     smemPath = f"/tmp/smem.im.shm"
