@@ -20,6 +20,7 @@
 #include <mutex>
 #include <log.hpp>
 #include <sinks.hpp>
+#include <atomic>
 
 namespace Dao::DAQ
 {
@@ -84,7 +85,7 @@ namespace Dao::DAQ
         private:
         SmemParameters const& params_;
         bool stopToken_;
-        bool runSession_;
+        std::atomic<bool> runSession_;
         std::mutex qLock_;  // ensures exclusive access to sample queue between DAQ and sink threads.
         std::queue<QueueType> queue_;
         IMAGE smem_;

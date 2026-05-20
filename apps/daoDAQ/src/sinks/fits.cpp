@@ -94,16 +94,16 @@ namespace Dao::DAQ
 
         std::filesystem::path const filePath = params_.fileRollover ? (sessionOutputDir_ / params_.localName / fileName_) : (sessionOutputDir_ / fileName_);
 
-        log_.Trace("(daq.%s) creating fits datafile %s..", parentID_.c_str(), filePath.string());
+        log_.Trace("(daq.%s) creating fits datafile %s..", parentID_.c_str(), filePath.c_str());
 
         try {
-            FITS_CALL(fits_create_file, &file_, filePath.string().c_str());
+            FITS_CALL(fits_create_file, &file_, filePath.c_str());
         } catch (...) {
             file_ = nullptr;
             throw;
         }
 
-        log_.Debug("(daq.%s) created fits datafile %s", parentID_.c_str(), filePath.string());
+        log_.Debug("(daq.%s) created fits datafile %s", parentID_.c_str(), filePath.c_str());
 
         nFileSamples = 0;
         ++nFiles_;

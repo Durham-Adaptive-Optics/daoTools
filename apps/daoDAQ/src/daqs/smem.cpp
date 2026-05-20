@@ -97,11 +97,6 @@ void SmemDAQ::configureThread(Optional<CoreID> const& core) {
 void SmemDAQ::beginAcquisition(std::filesystem::path const& outputPath) {
     log_.Trace("(daq.smem % s) starting acquisition..", resourceID.c_str());
 
-    std::unique_lock lock(cvLock_);
-    sessionOutputDir_ = outputPath;
-    runSession_ = true;
-    cvPredicate_ = true;
-
     {
         std::lock_guard qGuard(qLock_);
         while (!queue_.empty())
@@ -110,7 +105,13 @@ void SmemDAQ::beginAcquisition(std::filesystem::path const& outputPath) {
         log_.Debug("(daq.smem %s) cleared queue", resourceID.c_str());
     }
 
-    cvSignal_.notify_all();
+    {
+        std::unique_lock lock(cvLock_);
+        sessionOutputDir_ = outputPath;
+        runSession_.store(true);
+        cvPredicate_ = true;
+        cvSignal_.notify_all();
+    }
 
     log_.Debug("(daq.smem %s) started acquisition", resourceID.c_str());
 }
@@ -120,11 +121,13 @@ void SmemDAQ::beginAcquisition(std::filesystem::path const& outputPath) {
  * to either begin a new DAQ session or to exit.
 */
 void SmemDAQ::finishAcquisition() {
-    log_.Debug("(daq.smem %s) finished acquisition", resourceID.c_str());
+    log_.Trace("(daq.smem %s) finishing acquisition", resourceID.c_str());
 
-    std::unique_lock lock(cvLock_);
-    cvPredicate_ = false;
-    runSession_ = false;
+    {
+        std::unique_lock lock(cvLock_);
+        cvPredicate_ = false;
+        runSession_.store(false);
+    }
 
     log_.Debug("(daq.smem %s) finished acquisition", resourceID.c_str());
 }
@@ -223,7 +226,7 @@ void SmemDAQ::acquireSamples() {
     /* note(tom): we avoid logging in the hot-path here as we do not
      * want to pay the penalty of enqueing and formatting logs etc.
     */
-    while (runSession_) {
+    while (runSession_.load()) {
         /* Process current sample in smem upon the signal.
         */
         if (sampleAvailable) {
@@ -258,7 +261,7 @@ void SmemDAQ::acquireSamples() {
         sampleAvailable = smInfo_->cnt0 > lastSampleId;
     }
 
-    log_.Debug("(daq.smem %s) stopped samples", resourceID.c_str());
+    log_.Debug("(daq.smem %s) stopped collecting samples", resourceID.c_str());
 }
 
 /* Writes samples that are enqueued by the DAQ thread, to the disk in the desired
@@ -269,13 +272,14 @@ void SmemDAQ::acquireSamples() {
 void SmemDAQ::sinkSamples() {
     log_.Debug("(daq.smem %s) sinking samples..", resourceID.c_str());
 
+    // @todo sessionOutputDir_ may have a data-race here (no mutex)?
     auto writer = std::make_unique<FitsWriter>(params_, sessionOutputDir_, *smem_.md, log_, resourceID);
     size_t nSamplesWritten {};
 
     /* note(tom): we avoid logging in the hot-path here as we do not
      * want to pay the penalty of enqueing and formatting logs etc.
     */
-    while (runSession_) {
+    while (runSession_.load()) {
         /* Finish acquiring and report that we're done to the server.
         */
         if (params_.nSamples && params_.nSamples.value() == nSamplesWritten) {

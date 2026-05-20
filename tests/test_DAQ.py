@@ -105,10 +105,8 @@ def test_Process_Terminate(tmp_directory, client, tool_inst):
     client.daq_session_configure_apply()
     client.daq_session_begin()
     
-    time.sleep(3)
-    
     tool_inst.send_signal(signal.SIGINT)
-    exit_code = tool_inst.wait(timeout=30)
+    exit_code = tool_inst.wait(timeout=3)
     assert 166 == exit_code
 
 # ================================================================ #
@@ -263,7 +261,7 @@ def tmp_directory():
 ''' Fixture to create a fresh instance of daoDAQ tool '''
 @pytest.fixture
 def tool_inst():
-    inst = sp.Popen(["daoDAQ", "-s", "-vv"])
+    inst = sp.Popen(["daoDAQ", "-s"])
     yield inst
     if inst.poll() is None:
         inst.kill()
