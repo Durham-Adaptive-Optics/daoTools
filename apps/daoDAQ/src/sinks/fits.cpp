@@ -83,11 +83,11 @@ namespace Dao::DAQ
      * issue occurred.
     */
     FitsWriter::~FitsWriter() {
+        log_.Debug(LOGFMT("Destroying fits exporter for DAQ resource '{}'", parentID_));
+
         if (file_) {
             closeDatafile();
         }
-
-        log_.Debug(LOGFMT("Fits exporter destroyed for DAQ resource '{}'", parentID_));
     }
 
     /* Creates a new fits datafile on the disk with the appropriate naming
@@ -102,7 +102,14 @@ namespace Dao::DAQ
         std::filesystem::path const filePath = params_.fileRollover ? (sessionOutputDir_ / params_.localName / fileName_) : (sessionOutputDir_ / fileName_);
 
         log_.Debug(LOGFMT("Creating fits datafile '{}' for DAQ resource '{}'", filePath.string(), parentID_));
-        FITS_CALL(fits_create_file, &file_, filePath.string().c_str());
+
+        try {
+            FITS_CALL(fits_create_file, &file_, filePath.string().c_str());
+        } catch (...) {
+            file_ = nullptr;
+            throw;
+        }
+
         nFileSamples = 0;
         ++nFiles_;
     }

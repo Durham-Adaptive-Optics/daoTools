@@ -96,14 +96,15 @@ class DAQClient:
         
     def daq_session_configure_apply(self):
         try:
-            if self.state() != DAQState.Unconfigured:
-                raise RuntimeError("a DAQ config is currently applied")
+            currState = self.state()
+            if currState != DAQState.Unconfigured:
+                raise RuntimeError(f"tool not in configurable state ({currState})")
             
             self.dao_invoke_(self.api.Exec, "Init")
             self.dao_invoke_(self.api.Exec, "Enable")
 
             if self.state() != DAQState.Ready:
-                raise RuntimeError("")
+                raise RuntimeError("not in ready state")
         except Exception as e:
             raise RuntimeError(f"failed to apply DAQ config: {e}")
         

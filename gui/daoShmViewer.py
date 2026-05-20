@@ -525,6 +525,10 @@ class daoShmViewer(QMainWindow):
     def setup_daq_tab(self):
         """Setup the recording tab."""
         
+        self.daqTimer = QTimer()
+        self.daqTimer.timeout.connect(self.daqSync)
+        self.daqTimer.setInterval(250)
+        
         self.daqSourceNames = []
         self.daqWidgetArea = QStackedWidget()
         self.daqView = QTreeWidget()
@@ -1102,9 +1106,9 @@ class daoShmViewer(QMainWindow):
                     if uriClass == "smem":
                         # required params..
                         smemUI = SmemDaqConfig(uriPath)
-                        smemUI.formatInput.setCurrentText(sourceConfig["format"])
                         
                         # optional params..
+                        formatInput = optional("format")
                         metadataOnlyParam = optional("metadata_only")
                         samplesParam = optional("samples")
                         fileRolloverParam = optional("file_rollover")
@@ -1113,6 +1117,7 @@ class daoShmViewer(QMainWindow):
                         bufferLimitParam = optional("buffer_limit")
                         eagerStartParam = optional("eager_start")
                         
+                        if formatInput != None:         smemUI.formatInput.setCurrentText(formatInput)                        
                         if metadataOnlyParam != None:   smemUI.metadataOnlyInput.setChecked(metadataOnlyParam)
                         if samplesParam != None:        smemUI.samplesInput.setValue(samplesParam)
                         if fileRolloverParam != None:   smemUI.fileRolloverInput.setValue(fileRolloverParam)
@@ -1134,6 +1139,19 @@ class daoShmViewer(QMainWindow):
             self.show_error(f"failed to import DAQ configuration: {e}")
             return
 
+    def daqSync(self):
+        ''' Periodically invoked by the DAQ timer when a session is in progress to sync the UI with the DAQ tool '''
+        try:
+            client = DAQClient()
+            if client.state() == DAQState.Ready:
+                self.daqBtn.clicked.disconnect(self.finishDaq)
+                self.daqBtn.clicked.connect(self.startDaq)
+                self.daqBtn.setText("Start DAQ")
+                self.daqTimer.stop()
+        except Exception as e:
+             self.daqTimer.stop()
+             self.show_error(f"failed to sync DAQ session: {e}")
+
     def startDaq(self):
         ''' Uses the daoDAQ tool to carry out a DAQ session '''
         try:
@@ -1145,24 +1163,10 @@ class daoShmViewer(QMainWindow):
         except Exception as e:
             self.show_error(f"failed to start DAQ session: {e}")
         else:
-            self.daqTimer = QTimer()
-            self.daqTimer.timeout.connect(self.daqCheckin)
             self.daqBtn.setText("Finish DAQ")
+            self.daqBtn.clicked.disconnect(self.startDaq)
             self.daqBtn.clicked.connect(self.finishDaq)
-            self.daqTimer.start(250)
-            
-    def daqCheckin(self):
-        ''' Aligns DAQ tab UI with state of daoDAQ when DAQ session is in progress '''
-        try:
-            client = DAQClient()
-            state: DAQState = client.state()
-            if state == DAQState.Ready:
-                self.daqTimer.stop()
-                self.daqBtn.setText("Start DAQ")
-                self.daqBtn.clicked.connect(self.startDaq)
-                return
-        except Exception as e:
-            self.show_error(f"failed to sync UI to DAQ session: {e}")
+            self.daqTimer.start()
             
     def finishDaq(self):
         ''' Finishes the current DAQ session '''
@@ -1172,8 +1176,10 @@ class daoShmViewer(QMainWindow):
         except Exception as e:
             self.show_error(f"failed to finish DAQ session: {e}")
         finally:
-            self.daqBtn.setText("Start DAQ")
+            self.daqTimer.stop()
+            self.daqBtn.clicked.disconnect(self.finishDaq)
             self.daqBtn.clicked.connect(self.startDaq)
+            self.daqBtn.setText("Start DAQ")
             
     def openLoadFileDialog(self, event):
         """Open file dialog for loading."""
