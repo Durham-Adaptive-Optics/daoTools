@@ -177,19 +177,19 @@ namespace Dao::DAQ
             auto const& parameter = ctx[name];
 
             if (!parameter) {
-                std::string const err = fmt::format("DAQ configuration omitted required parameter '{}'", name);
+                auto const err = fmt::format("(server.config) missing required parameter '{}'", name);
                 throw std::runtime_error(err);
             }
 
             if (parameter.Type() != YAML::NodeType::Scalar) {
-                std::string const err = fmt::format("DAQ configuration required parameter '{}' is not a scalar", name);
+                auto const err = fmt::format("(server.config) parameter '{}' must be a scalar", name);
                 throw std::runtime_error(err);
             }
 
             try {
                 store = parameter.as<typename UnwrapOptional<T>::type>();
             } catch (YAML::BadConversion const& e) {
-                std::string const err = fmt::format("DAQ configuration required parameter '{}' has incorrect value-type", name);
+                auto const err = fmt::format("(server.config) parameter '{}' has incorrect value-type", name);
                 throw std::runtime_error(err);
             }
         }
@@ -201,14 +201,14 @@ namespace Dao::DAQ
         void loadOptional(T& store, std::string const& name, YAML::Node const ctx) const {
             if (auto const& parameter = ctx[name]; parameter) {
                 if (parameter.Type() != YAML::NodeType::Scalar) {
-                    std::string const err = fmt::format("DAQ configuration optional parameter '{}' is not a scalar", name);
+                    auto const err = fmt::format("(server.config) parameter '{}' must be a scalar", name);
                     throw std::runtime_error(err);
                 }
 
                 try {
                     store = parameter.as<typename UnwrapOptional<T>::type>();
                 } catch (YAML::BadConversion const& e) {
-                    std::string const err = fmt::format("DAQ configuration optional parameter '{}' has incorrect value-type", name);
+                    auto const err = fmt::format("(server.config) parameter '{}' has incorrect value-type", name);
                     throw std::runtime_error(err);
                 }
             }

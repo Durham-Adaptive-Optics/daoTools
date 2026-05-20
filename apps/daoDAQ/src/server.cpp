@@ -13,17 +13,20 @@
 namespace Dao::DAQ
 {
     DAQServer::DAQServer(std::uint16_t const tcpPort, Dao::Log::Logger& log) :
-        Dao::Component("DAQServer", log, "", tcpPort),
+        Dao::Component("server", log, "", tcpPort),
         daqResourcesDone_(0) {
         //
-        m_log.Info(LOGFMT("DAQ server available on port {}", m_port));
+        m_log.Info("(server) endpoint on port %d", m_port);
     }
 
     DAQServer::~DAQServer() {
-        m_log.Debug("Destroying DAQ-Server..");
+        m_log.Trace("(server) destroying..");
+
         Idle();
         Disable();
         Stop();
+
+        m_log.Debug("(server) destroyed");
     }
 
     /* Takes the supplied DAQ YAML configuration string and saves it
@@ -33,10 +36,10 @@ namespace Dao::DAQ
         auto const currentStateName = currentState();
         if ("Off" == currentStateName || "Error" == currentStateName) {
             daqRawConfig_ = daqRawConfig;
-            m_log.Info("Successfully uploaded DAQ configuration");
+            m_log.Info("(server) configuration accepted");
         }
         else {
-            m_log.Error(LOGFMT("Could not upload new DAQ configuration due to invalid server state of {}", currentStateName));
+            m_log.Error("(server) cannot accept configuration when in %s state", currentStateName.c_str());
         }
     }
 
@@ -44,22 +47,30 @@ namespace Dao::DAQ
      * parse an exception is thrown.
     */
     void DAQServer::applyDAQConfig() {
-        m_log.Debug("parsing DAQ configuration..");
+        m_log.Trace("(server) applying saved configuration..");
+
         daqConfig_ = std::make_unique<DAQConfiguration>(daqRawConfig_, m_log);
-        m_log.Info("DAQ configuration successfully applied");
+
+        m_log.Info("(server) applied saved configuration");
     }
 
     /* Clears the currently active DAQ configuration; the saved raw
      * DAQ configuration is untouched.
     */
     void DAQServer::resetDAQConfig() {
+        m_log.Trace("(server) resetting applied configuration..");
+
         daqConfig_.reset();
+
+        m_log.Debug("(server) reset configuration");
     }
 
     /* Prepares any resources required to carry out DAQ sessions
      * according to the current DAQ configuration.
     */
     void DAQServer::prepareDAQResources() {
+        m_log.Trace("(server) allocating DAQs..");
+
         /* In the event a DAQ resource has finished its capture
          * for the current DAQ session, it will invoke this
          * callback to inform the DAQ server of its completion.
@@ -69,14 +80,15 @@ namespace Dao::DAQ
          * and in the case all have finished, the server will
          * automatically end the DAQ session.
         */
-        auto doneCallback = [&](std::string const& resourceID) -> void {
-            std::thread([this, resourceID]() {
+        auto doneCallback = [&](std::string const& resourceUri) -> void {
+            std::thread([this, resourceUri]() {
                 std::lock_guard lock(reportLock_);
                 ++daqResourcesDone_;
 
-                m_log.Debug(LOGFMT("DAQ resource '{}' finished capture ({} / {} done)", resourceID, daqResourcesDone_, daqResources_.size()));
+                m_log.Debug("(%s) finished acquisition (%d / %d finished)", resourceUri.c_str(), daqResourcesDone_, daqResources_.size());
+
                 if (daqResourcesDone_ == daqResources_.size()) {
-                    m_log.Info(LOGFMT("All DAQ resources have finished capturing ({} done)", daqResources_.size()));
+                    m_log.Info("(server) all %d daqs have finished acquiring", daqResources_.size());
                     Idle();
                 }
             }).detach();
@@ -89,10 +101,14 @@ namespace Dao::DAQ
          * Within this callback the server will transition
          * to the Error state.
         */
-        auto errorCallback = [&](std::string const& resourceID, std::string const& err) -> void {
-            std::thread([&, resourceID, err]() {
+        auto errorCallback = [&](std::string const& resourceUri, std::string const& err) -> void {
+            std::thread([&, resourceUri, err]() {
                 std::lock_guard lock(reportLock_);
-                m_log.Critical(LOGFMT("DAQ resource '{}' had session error: {}", resourceID, err));
+                m_log.Critical(
+                    "(%s) encountered aqcuisition error %s",
+                    resourceUri.c_str(),
+                    err.c_str()
+                );
                 OnFailure();
             }).detach();
         };
@@ -109,38 +125,46 @@ namespace Dao::DAQ
             );
         }
 
-        m_log.Info("DAQ resources have been prepared");
+        m_log.Debug("(server) DAQs allocated");
     }
 
     /* Frees any resources that have been created to carry out DAQ sessions.
     */
     void DAQServer::freeDAQResources() {
+        m_log.Trace("(server) deallocating daqs..");
+
         daqResources_.clear();
-        m_log.Debug("DAQ resources have been freed");
+
+        m_log.Debug("(server) deallocated daqs");
     }
 
     /* Prepares a new DAQ session context and informs all DAQ resources
      * to begin capture.
     */
     void DAQServer::startDAQSession() {
+        m_log.Trace("(server) starting acquisition session..");
+
         std::filesystem::path const sessionDirectory = prepareOutputDirectory();
 
         for (auto& res : daqResources_) {
             res->beginAcquisition(sessionDirectory);
-            m_log.Debug(LOGFMT("started acquisition for DAQ resource {}", res->resourceID));
         }
+
+        m_log.Debug("(server) started acquisition session");
     }
 
     /* Enumerates all DAQ resources and informs them to finish capture
      * of their in-progress DAQ session context.
     */
     void DAQServer::finishDAQSession() {
-        for (auto& res : daqResources_) {
-            res->finishAcquisition();
-            m_log.Debug(LOGFMT("finished acquisition for DAQ resource {}", res->resourceID));
-        }
+        m_log.Trace("(server) finishing acquisition session..");
 
         daqResourcesDone_ = 0;
+        for (auto& res : daqResources_) {
+            res->finishAcquisition();
+        }
+
+        m_log.Debug("(server) finished acquisition session");
     }
 
     /* The following methods provide overrides for the inherited component state-machine.
@@ -156,13 +180,11 @@ namespace Dao::DAQ
     void DAQServer::transition_Standby_Off() { resetDAQConfig(); }
 
     void DAQServer::transition_Running_Error() {
-        m_log.Info("Resetting DAQ server state before entering Error");
         finishDAQSession();
         freeDAQResources();
     }
 
     void DAQServer::transition_Error_Idle() {
-        m_log.Info("Attempting recovery of DAQ server state");
         applyDAQConfig();
         prepareDAQResources();
     }
@@ -186,7 +208,7 @@ namespace Dao::DAQ
             if (!std::filesystem::create_directory(dirPath))
                 throw std::runtime_error("directory already exists");
         } catch (std::exception const& e) {
-            auto const err = fmt::format("failed to create session output directory '{}': {}", dirPath.string(), e.what());
+            auto const err = fmt::format("(server) failed to create session directory: {} ({})", e.what(), dirPath.string());
             throw std::runtime_error(err);
         }
     }
@@ -199,13 +221,14 @@ namespace Dao::DAQ
         std::filesystem::path const rootPath(daqConfig_->sessionParameters().rootStorage);
         std::filesystem::path const sessionDirectory = rootPath / timestamp();
         createDirectory(sessionDirectory);
-        m_log.Info(LOGFMT("Created session directory: {}", sessionDirectory.string()));
+
+        m_log.Debug("(server) created session directory %s", sessionDirectory.c_str());
 
         for (auto const& smem : daqConfig_->smemResources()) {
             if (smem.fileRollover) {
                 auto const subdir = sessionDirectory / smem.localName;
                 createDirectory(subdir);
-                m_log.Debug(LOGFMT("Created session sub-dir for smem resource '{}': {}", smem.absPath, subdir.string()));
+                m_log.Debug("(server) created session sub-directory %s", subdir.c_str());
             }
         }
 

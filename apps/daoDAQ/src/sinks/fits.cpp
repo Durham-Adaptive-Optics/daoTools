@@ -71,11 +71,6 @@ namespace Dao::DAQ
         nFiles_(0),
         file_(nullptr) {
         //
-        log_.Debug(LOGFMT(
-            "Fits exporter created for DAQ resource '{}' (rollover: {})",
-            parentID_,
-            params.fileRollover ? fmt::format("{} samples", params.fileRollover.value()) : "None"
-        ));
     }
 
     /* Ensures the active datafile is safely closed before
@@ -83,8 +78,6 @@ namespace Dao::DAQ
      * issue occurred.
     */
     FitsWriter::~FitsWriter() {
-        log_.Debug(LOGFMT("Destroying fits exporter for DAQ resource '{}'", parentID_));
-
         if (file_) {
             closeDatafile();
         }
@@ -101,7 +94,7 @@ namespace Dao::DAQ
 
         std::filesystem::path const filePath = params_.fileRollover ? (sessionOutputDir_ / params_.localName / fileName_) : (sessionOutputDir_ / fileName_);
 
-        log_.Debug(LOGFMT("Creating fits datafile '{}' for DAQ resource '{}'", filePath.string(), parentID_));
+        log_.Trace("(daq.%s) creating fits datafile %s..", parentID_.c_str(), filePath.string());
 
         try {
             FITS_CALL(fits_create_file, &file_, filePath.string().c_str());
@@ -109,6 +102,8 @@ namespace Dao::DAQ
             file_ = nullptr;
             throw;
         }
+
+        log_.Debug("(daq.%s) created fits datafile %s", parentID_.c_str(), filePath.string());
 
         nFileSamples = 0;
         ++nFiles_;
@@ -118,8 +113,9 @@ namespace Dao::DAQ
      * issue occurred.
     */
     void FitsWriter::closeDatafile() {
+        log_.Trace("(daq.%s) closing fits datafile %s..", parentID_.c_str(), fileName_.c_str());
         FITS_CALL(fits_close_file, file_);
-        log_.Debug(LOGFMT("Fits datafile '{}' closed for DAQ resource '{}'", fileName_, parentID_));
+        log_.Debug("(daq.%s) closed fits datafile %s..", parentID_.c_str(), fileName_.c_str());
         file_ = nullptr;
     }
 
@@ -127,19 +123,11 @@ namespace Dao::DAQ
      * throws if an issue occurred.
     */
     void FitsWriter::write(QueueType const& sample) {
-        if (file_ && params_.fileRollover && params_.fileRollover.value() == nFileSamples) {
-            log_.Debug(LOGFMT(
-                "Fits datafile '{}' reached capacity ({} samples) for DAQ resource '{}'",
-                fileName_,
-                params_.fileRollover.value(),
-                parentID_
-            ));
+        if (file_ && params_.fileRollover && params_.fileRollover.value() == nFileSamples)
             closeDatafile();
-        }
 
-        if (!file_) {
+        if (!file_)
             newDatafile();
-        }
 
         auto& [info, buffer] = const_cast<QueueType&>(sample);  // cast const away for C API.
         long* axes = const_cast<long*>(axes_.data()); // cast const away for C API.

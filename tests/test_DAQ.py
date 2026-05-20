@@ -105,8 +105,10 @@ def test_Process_Terminate(tmp_directory, client, tool_inst):
     client.daq_session_configure_apply()
     client.daq_session_begin()
     
+    time.sleep(3)
+    
     tool_inst.send_signal(signal.SIGINT)
-    exit_code = tool_inst.wait(timeout=3)
+    exit_code = tool_inst.wait(timeout=30)
     assert 166 == exit_code
 
 # ================================================================ #

@@ -15,28 +15,33 @@ namespace Dao::DAQ
     FileDAQ::FileDAQ(FileParameters const& params, ServerDoneCallback doneCallback, ServerErrorCallback errorCallback, Dao::Log::Logger& log) :
         IDAQ(doneCallback, errorCallback, params.absPath, log),
         params_(params) {
+        //
+        log_.Debug("(%s) created", resourceID.c_str());
     }
 
     FileDAQ::~FileDAQ() {
-        log_.Debug(LOGFMT("file DAQ resource has been destroyed '{}'", resourceID));
+        log_.Debug("(%s) destroyed", resourceID.c_str());
     }
 
     /* Launch an async task to copy the file to the DAQ session output directory.
     */
     void FileDAQ::beginAcquisition(std::filesystem::path const& outputPath) {
         std::thread([this, outputPath]() {
+            log_.Debug("(%s) file-copy thread launched", resourceID.c_str());
+
             std::filesystem::path const fileSourcePath { params_.absPath };
             std::filesystem::path const fileOutputPath = outputPath / fileSourcePath.filename().string();
 
             try {
                 std::filesystem::copy_file(fileSourcePath, fileOutputPath);
             } catch (std::exception const& e) {
-                auto const err = LOGFMT("copying '{}' failed because {}", fileSourcePath.string(), e.what());
-                errorCallback_(resourceID, err);
+                errorCallback_(
+                    resourceID,
+                    fmt::format("file copy failed ({})", fileSourcePath.string(), e.what())
+                );
                 return;
             }
 
-            log_.Debug(LOGFMT("copy succeeded for file DAQ resource '{}'", fileSourcePath.string()));
             doneCallback_(resourceID);
         }).detach();
     }

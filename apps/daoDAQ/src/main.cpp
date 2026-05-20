@@ -10,7 +10,6 @@
 
 #define APP_NAME            "daoDAQ"
 #define APP_VERSION_TAG     "v3.0.0"
-#define DEFAULT_LOGFILE     "daoDAQ.logs"
 #define DEFAULT_TCP_PORT    62000
 
 /* ---------------------------------------------------------------- */
@@ -21,30 +20,11 @@
 #include <fstream>
 #include <csignal>
 #include <string>
+#include <cstdlib>
 
 /* ---------------------------------------------------------------- */
 
 #define SAFE_EXIT 166
-
-/* Read in a DAQ configuration from a file and provide it to the DAQ server instance.
- * If doing so fails for whatever reason, a log message is emitted.
-*/
-void uploadDAQConfig(Dao::DAQ::DAQServer& daqServer, std::string const& filePath, Dao::Log::Logger& log) {
-    try {
-        if (filePath.length()) {
-            std::ifstream daqConfigFile(filePath);
-            std::string const daqConfig {
-                std::istreambuf_iterator<char>(daqConfigFile),
-                std::istreambuf_iterator<char>()
-            };
-            daqServer.uploadDAQConfig(daqConfig);
-        }
-    } catch (std::exception const& e) {
-        log.Warning(
-            LOGFMT("failed to provide initial DAQ configuration to DAQ server because {}", e.what())
-        );
-    }
-}
 
 Dao::Log::LEVEL pickLoggingVerbosity(size_t const& verbosity) {
     if (0 == verbosity) {
@@ -100,6 +80,12 @@ int main(int argc, char* argv[]) {
 
     CLI11_PARSE(app, argc, argv);
 
+    auto const DAODATA = std::getenv("DAODATA");
+    if (!DAODATA) {
+        fmt::print(stderr, "ERROR: DAODATA directory must be present!\n");
+        return EXIT_FAILURE;
+    }
+
     /* Blocks the application main thread until designated termination signals
      * are received from the OS; at which point the thread is unblocked and
      * the application can proceed to terminate gracefully.
@@ -107,13 +93,23 @@ int main(int argc, char* argv[]) {
     {
         auto const logSink = stdoutLogging ? Dao::Log::Logger::DESTINATION::SCREEN : Dao::Log::Logger::DESTINATION::FILE;
         auto const logVerbosity = pickLoggingVerbosity(logVerbosityCount);
-        Dao::Log::Logger log(APP_NAME, logSink, DEFAULT_LOGFILE);
+        auto const logfilePath = std::filesystem::path(DAODATA) / "daoDAQ.logs";
+        Dao::Log::Logger log(APP_NAME, logSink, logfilePath.string());
         log.SetLevel(logVerbosity);
 
+        log.Info("(process) new process started");
         Dao::DAQ::DAQServer daqServer(DEFAULT_TCP_PORT, log);
-
         if (daqConfigPath.length()) {
-            uploadDAQConfig(daqServer, daqConfigPath, log);
+            try {
+                std::ifstream daqConfigFile(daqConfigPath);
+                std::string const daqConfig {
+                    std::istreambuf_iterator<char>(daqConfigFile),
+                    std::istreambuf_iterator<char>()
+                };
+                daqServer.uploadDAQConfig(daqConfig);
+            } catch (std::exception const& e) {
+                log.Error("(process) failed to load config file %s", e.what());
+            }
         }
 
         int signum;
@@ -121,9 +117,9 @@ int main(int argc, char* argv[]) {
         sigemptyset(&sigset);
         sigaddset(&sigset, SIGINT);
         pthread_sigmask(SIG_BLOCK, &sigset, nullptr);
+        log.Info("(process) awaiting termination signal");
         sigwait(&sigset, &signum);
-
-        log.Info(LOGFMT("termination signal received ({})", strsignal(signum)));
+        log.Info(LOGFMT("(process) received termination signal {}", strsignal(signum)));
     }
 
     return SAFE_EXIT;
