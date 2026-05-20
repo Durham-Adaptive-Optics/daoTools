@@ -28,13 +28,13 @@
 
 Dao::Log::LEVEL pickLoggingVerbosity(size_t const& verbosity) {
     if (0 == verbosity) {
-        return Dao::Log::LEVEL::INFO;
+        return Dao::Log::LEVEL::TRACE;
     }
     if (1 == verbosity) {
         return Dao::Log::LEVEL::DEBUG;
     }
     else {
-        return Dao::Log::LEVEL::TRACE;
+        return Dao::Log::LEVEL::INFO;
     }
 }
 
