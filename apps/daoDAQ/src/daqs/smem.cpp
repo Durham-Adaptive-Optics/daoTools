@@ -16,11 +16,11 @@ SmemDAQ::SmemDAQ(SmemParameters const& params, ServerDoneCallback doneCallback, 
     stopToken_(false),
     runSession_(false),
     smem_ {},
-    cvPredicate_(false),
-    daqThread_([this]() { this->daqThreadEntry(); }),
-    sinkThread_([this]() { this->sinkThreadEntry(); }) {
+    cvPredicate_(false) {
     //
     establishResourceConnection();
+    daqThread_ = std::thread([this]() { this->daqThreadEntry(); });
+    sinkThread_ = std::thread([this]() { this->sinkThreadEntry(); });
 }
 
 /* Signals DAQ and sink threads to exit gracefully and blocks until they

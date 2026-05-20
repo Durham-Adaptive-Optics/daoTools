@@ -39,8 +39,11 @@ def test_Smem_Missing(tmp_directory, client, tool_inst):
         }]
     }
     client.daq_session_configure_upload(yaml.dump(daqConfig))
-    client.daq_session_configure_apply()
-    client.daq_session_begin()
+    
+    try: 
+        client.daq_session_configure_apply()
+    except Exception as e:
+        pass
 
     expect_error_state(client)
     
@@ -51,8 +54,6 @@ def test_Smem_Missing(tmp_directory, client, tool_inst):
 ])
 def test_Smem_Multidimensional(tmp_directory, client, tool_inst, shape, dtype):
     smem_tester_(tmp_directory, client, tool_inst, shape, dtype, rollover=False, eager_start=False)
-
-
 
 ''' Tests for ensuring Files are correctly captured '''
 
