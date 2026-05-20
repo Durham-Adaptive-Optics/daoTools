@@ -18,7 +18,7 @@ namespace Dao::DAQ
     }
 
     FileDAQ::~FileDAQ() {
-        log_.Debug(LOGFMT("file DAQ resource has been destroyed '{}'", resourceID_));
+        log_.Debug(LOGFMT("file DAQ resource has been destroyed '{}'", resourceID));
     }
 
     /* Launch an async task to copy the file to the DAQ session output directory.
@@ -32,13 +32,15 @@ namespace Dao::DAQ
                 std::filesystem::copy_file(fileSourcePath, fileOutputPath);
             } catch (std::exception const& e) {
                 auto const err = LOGFMT("copying '{}' failed because {}", fileSourcePath.string(), e.what());
-                errorCallback_(resourceID_, err);
+                errorCallback_(resourceID, err);
                 return;
             }
 
             log_.Debug(LOGFMT("copy succeeded for file DAQ resource '{}'", fileSourcePath.string()));
-            doneCallback_(resourceID_);
+            doneCallback_(resourceID);
         }).detach();
     }
+
+    void FileDAQ::finishAcquisition() {};
 }
 

@@ -33,7 +33,7 @@ namespace Dao::DAQ
     */
     struct IDAQ {
         IDAQ(ServerDoneCallback doneCallback, ServerErrorCallback errorCallback, std::string const& resourceID, Dao::Log::Logger& log)
-            : resourceID_(resourceID), doneCallback_(doneCallback), errorCallback_(errorCallback), log_(log) {
+            : resourceID(resourceID), doneCallback_(doneCallback), errorCallback_(errorCallback), log_(log) {
         }
 
         virtual ~IDAQ() = default;
@@ -41,7 +41,7 @@ namespace Dao::DAQ
         virtual void beginAcquisition(std::filesystem::path const& outputPath) = 0;
         virtual void finishAcquisition() = 0;
 
-        std::string const resourceID_;
+        std::string const resourceID;
 
         protected:
         ServerDoneCallback doneCallback_;
@@ -54,8 +54,9 @@ namespace Dao::DAQ
     struct FileDAQ final : public IDAQ {
         FileDAQ(FileParameters const& params, ServerDoneCallback doneCallback, ServerErrorCallback errorCallback, Dao::Log::Logger& log);
         ~FileDAQ();
+
         void beginAcquisition(std::filesystem::path const& outputPath) override;
-        void finishAcquisition() override {};
+        void finishAcquisition() override;
 
         auto const& params() const { return params_; }
 

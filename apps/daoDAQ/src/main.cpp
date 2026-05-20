@@ -69,8 +69,8 @@ int main(int argc, char* argv[]) {
 
     CLI::App app("Dao Data Acquisition (DAQ) Software", APP_NAME);
 
-    app.add_flag_callback("--version, -v", []() {
-        std::cout << fmt::format("{} {}", APP_NAME, APP_VERSION_TAG) << std::endl;
+    app.add_flag_callback("--version", []() {
+        fmt::print("{} {}\n", APP_NAME, APP_VERSION_TAG);
         throw CLI::Success();
     }, "Print application version");
 
@@ -93,36 +93,38 @@ int main(int argc, char* argv[]) {
     );
 
     app.add_flag(
-        "--verbose-logging, -l",
+        "--verbose-logging, -v",
         logVerbosityCount,
-        "Increase verbosity of logs (default: informative+)"
+        "Increase verbosity of logs (default: INFO)"
     );
 
     CLI11_PARSE(app, argc, argv);
-
-    // setup application logger ..
-    auto const logSink = stdoutLogging ? Dao::Log::Logger::DESTINATION::SCREEN : Dao::Log::Logger::DESTINATION::FILE;
-    auto const logVerbosity = pickLoggingVerbosity(logVerbosityCount);
-    Dao::Log::Logger log(APP_NAME, logSink, DEFAULT_LOGFILE);
-    log.SetLevel(logVerbosity);
-
-    // // setup and run the application server ..
-    Dao::DAQ::DAQServer daqServer(DEFAULT_TCP_PORT, log);
-    if (daqConfigPath.length())
-        uploadDAQConfig(daqServer, daqConfigPath, log);
 
     /* Blocks the application main thread until designated termination signals
      * are received from the OS; at which point the thread is unblocked and
      * the application can proceed to terminate gracefully.
     */
-    int signum;
-    sigset_t sigset;
-    sigemptyset(&sigset);
-    sigaddset(&sigset, SIGINT);
-    pthread_sigmask(SIG_BLOCK, &sigset, nullptr);
-    sigwait(&sigset, &signum);
+    {
+        auto const logSink = stdoutLogging ? Dao::Log::Logger::DESTINATION::SCREEN : Dao::Log::Logger::DESTINATION::FILE;
+        auto const logVerbosity = pickLoggingVerbosity(logVerbosityCount);
+        Dao::Log::Logger log(APP_NAME, logSink, DEFAULT_LOGFILE);
+        log.SetLevel(logVerbosity);
 
-    log.Info(LOGFMT("termination signal received ({}); process terminating gracefully", strsignal(signum)));
+        Dao::DAQ::DAQServer daqServer(DEFAULT_TCP_PORT, log);
+
+        if (daqConfigPath.length()) {
+            uploadDAQConfig(daqServer, daqConfigPath, log);
+        }
+
+        int signum;
+        sigset_t sigset;
+        sigemptyset(&sigset);
+        sigaddset(&sigset, SIGINT);
+        pthread_sigmask(SIG_BLOCK, &sigset, nullptr);
+        sigwait(&sigset, &signum);
+
+        log.Info(LOGFMT("termination signal received ({})", strsignal(signum)));
+    }
 
     return SAFE_EXIT;
 }

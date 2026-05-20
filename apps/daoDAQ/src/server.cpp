@@ -20,7 +20,10 @@ namespace Dao::DAQ
     }
 
     DAQServer::~DAQServer() {
-        m_log.Debug("DAQ-Server destroyed");
+        m_log.Debug("Destroying DAQ-Server..");
+        Idle();
+        Disable();
+        Stop();
     }
 
     /* Takes the supplied DAQ YAML configuration string and saves it
@@ -124,7 +127,7 @@ namespace Dao::DAQ
 
         for (auto& res : daqResources_) {
             res->beginAcquisition(sessionDirectory);
-            m_log.Debug(LOGFMT("started acquisition for DAQ resource {}", res->resourceID_));
+            m_log.Debug(LOGFMT("started acquisition for DAQ resource {}", res->resourceID));
         }
     }
 
@@ -134,7 +137,7 @@ namespace Dao::DAQ
     void DAQServer::finishDAQSession() {
         for (auto& res : daqResources_) {
             res->finishAcquisition();
-            m_log.Debug(LOGFMT("finished acquisition for DAQ resource {}", res->resourceID_));
+            m_log.Debug(LOGFMT("finished acquisition for DAQ resource {}", res->resourceID));
         }
 
         daqResourcesDone_ = 0;
