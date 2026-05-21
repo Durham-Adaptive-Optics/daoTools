@@ -136,7 +136,12 @@ def smem_tester_(tmp_directory, client, tool_inst, shape, dtype, rollover: bool,
     client.daq_session_configure_upload(yaml.dump(daqConfig))
     client.daq_session_configure_apply()
     client.daq_session_begin()
-    time.sleep(3)
+    
+    # give time for the smem threads to enter acquisition, without
+    # this delay we may start writing samples out before the smem threads
+    # are actually in their DAQ loops - thus it never collects all N
+    # samples written out and the test will timeout.
+    time.sleep(1)
 
     # Write samples to smem
     sample_history = []
@@ -158,7 +163,7 @@ def smem_tester_(tmp_directory, client, tool_inst, shape, dtype, rollover: bool,
         sample = new_sample()
         smem.set_data(sample)
         sample_history_add()
-        time.sleep(0.25) # feed sample in slowly as we want to ensure correctness, not test performance.
+        time.sleep(0.1) # feed sample in slowly as we want to ensure correctness, not test performance.
     
     # Await record to finish
     client.daq_session_await_finish(timeout=1)
