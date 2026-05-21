@@ -6,7 +6,7 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = 'daoTools'
+project = 'daoTools User Documentation'
 copyright = '2026, CfaI Software Group'
 author = 'CfaI Software Group'
 
@@ -23,5 +23,5 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
+html_theme = 'alabaster'
 html_static_path = ['_static']
-# html_theme = 'traditional'

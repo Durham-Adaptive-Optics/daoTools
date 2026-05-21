@@ -192,7 +192,6 @@ Configuration Example
 .. code-block:: yaml
 
    root_storage: /path/to/data/root
-   group_name: my_session
 
    sources:
      - uri: file:///path/to/my/file.ext
