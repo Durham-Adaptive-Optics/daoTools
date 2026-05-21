@@ -294,6 +294,7 @@ void SmemDAQ::sinkSamples() {
             auto const& sample = qSample.value();
             writer->write(sample);
             ++nSamplesWritten;
+            log_.Trace(LOGFMT("n({}) samples exported for {}", nSamplesWritten, resourceID)); // @todo remove-me.
         }
     }
 
