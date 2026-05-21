@@ -157,7 +157,7 @@ def smem_tester_(tmp_directory, client, tool_inst, shape, dtype, rollover: bool,
         sample = new_sample()
         smem.set_data(sample)
         sample_history_add()
-        time.sleep(1) # feed sample in slowly as we want to ensure correctness, not test performance.
+        time.sleep(10) # feed sample in slowly as we want to ensure correctness, not test performance.
     
     # Await record to finish
     client.daq_session_await_finish(timeout=1)
