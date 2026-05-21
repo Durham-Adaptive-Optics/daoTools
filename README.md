@@ -10,6 +10,18 @@ daoBase should be installed. See https://github.com/Durham-Adaptive-Optics/daoBa
 sudo apt install libcli11-dev libcfitsio-dev libyaml-cpp-dev libblas-dev libopenblas-dev
 ````
 
+## ncurses
+on centos:
+````
+sudo yum install ncurses-devel
+````
+
+## CLI11+cfitsio+libyamml+blas+fmt
+````
+sudo apt install libcli11-dev libcfitsio-dev libyaml-cpp-dev libopenblas-dev libfmt-dev
+````
+
+We recommand to use magicPlot
 Some of our plot tool uses magicPlot (optional)
 ```
 pip install magicPlot

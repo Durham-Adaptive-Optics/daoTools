@@ -1,0 +1,43 @@
+import os
+
+bld.program(
+    target='daoDAQ',
+    source=bld.path.ant_glob('src/**/*.cpp'),
+
+    includes=[
+        'include',
+        '../../include',
+        f"{os.getenv('DAOROOT')}/include"
+    ],
+
+    libpath=[
+        f"{os.getenv('DAOROOT')}/lib",
+        f"{os.getenv('DAOROOT')}/lib64"
+    ],
+
+    lib=[
+        'dao',
+        'daoNuma',
+        'daoProto',
+        'pthread'
+    ],
+
+    cxxflags=[
+        '-O3',
+        '-Wall',
+        '-Wextra',
+        '-pipe',
+        '-fdiagnostics-color=always',
+        '-std=c++17'
+    ],
+
+    use=[
+        'daoTools',
+        'CLI11',
+        'cfitsio',
+        'FMT',
+        'ZMQ',
+        'PROTOBUF',
+        'YAMLCPP'
+    ]
+)
