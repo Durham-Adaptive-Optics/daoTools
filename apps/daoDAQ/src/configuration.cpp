@@ -53,8 +53,6 @@ namespace Dao::DAQ
         load(
             YAML::Load(daqRaqConfig)
         );
-
-        log_.Debug("parsed configuration");
     }
 
     DAQConfiguration::~DAQConfiguration() {

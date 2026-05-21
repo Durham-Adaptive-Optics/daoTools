@@ -77,7 +77,7 @@ namespace Dao::DAQ
                 std::lock_guard lock(reportLock_);
                 ++daqResourcesDone_;
 
-                m_log.Debug(LOGFMT("{} finished acquisition (%d / %d done)", resourceUri, daqResourcesDone_, daqResources_.size()));
+                m_log.Debug(LOGFMT("{} finished acquisition ({} / {} done)", resourceUri, daqResourcesDone_, daqResources_.size()));
 
                 if (daqResourcesDone_ == daqResources_.size()) {
                     m_log.Info(LOGFMT("all daqs have finished acquiring ({})", daqResources_.size()));

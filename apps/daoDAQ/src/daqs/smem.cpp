@@ -42,7 +42,7 @@ SmemDAQ::~SmemDAQ() {
     log_.Debug(LOGFMT("waiting for sink-thread to join for {}", resourceID));
     sinkThread_.join();
 
-    log_.Debug("destroyed smem resource {}", resourceID);
+    log_.Debug(LOGFMT("destroyed smem resource {}", resourceID));
 }
 
 /* Connect to the shared memory resource; an exception is thrown
@@ -82,7 +82,7 @@ void SmemDAQ::configureThread(Optional<CoreID> const& core) {
     CPU_ZERO(&affinitySet);
     CPU_SET(core.value(), &affinitySet);
     if (pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &affinitySet)) {
-        log_.Error("failed to pin smem resource thread ({})", strerror(errno));
+        log_.Error(LOGFMT("failed to pin smem resource thread ({})", strerror(errno)));
     }
 }
 
@@ -96,7 +96,7 @@ void SmemDAQ::beginAcquisition(std::filesystem::path const& outputPath) {
         while (!queue_.empty())
             queue_.pop();
 
-        log_.Debug("cleared sample queue for {}", resourceID.c_str());
+        log_.Debug(LOGFMT("cleared sample queue for {}", resourceID));
     }
 
     {
@@ -131,11 +131,11 @@ void SmemDAQ::daqThreadEntry() {
         {
             std::unique_lock cvGuard(cvLock_);
             cvSignal_.wait(cvGuard, [&]() {
-                log_.Debug(
+                log_.Debug(LOGFMT(
                     "daq-thread for {} - {}",
                     resourceID,
                     cvPredicate_ ? "resuming" : "blocked"
-                );
+                ));
                 return cvPredicate_;
             });
         }
@@ -168,11 +168,11 @@ void SmemDAQ::sinkThreadEntry() {
         {
             std::unique_lock cvGuard(cvLock_);
             cvSignal_.wait(cvGuard, [&]() {
-                log_.Debug(
+                log_.Debug(LOGFMT(
                     "sink-thread for {} - {}",
                     resourceID,
                     cvPredicate_ ? "resuming" : "blocked"
-                );
+                ));
                 return cvPredicate_;
             });
         }
@@ -203,11 +203,11 @@ void SmemDAQ::acquireSamples() {
     bool sampleAvailable { params_.eagerStart.value() };
     size_t lastSampleId = smInfo_->cnt0;
 
-    log_.Debug(
+    log_.Debug(LOGFMT(
         "collecting samples for {} [{}]",
         params_.absPath,
         params_.eagerStart.value() ? "eager-start" : ""
-    );
+    ));
 
     /* note(tom): we avoid logging in the hot-path here as we do not
      * want to pay the penalty of enqueing and formatting logs etc.

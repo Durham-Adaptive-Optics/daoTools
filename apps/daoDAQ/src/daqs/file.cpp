@@ -16,11 +16,11 @@ namespace Dao::DAQ
         IDAQ(doneCallback, errorCallback, params.absPath, log),
         params_(params) {
         //
-        log_.Debug("created file resource {}", resourceID);
+        log_.Debug(LOGFMT("created file resource {}", resourceID));
     }
 
     FileDAQ::~FileDAQ() {
-        log_.Debug("destroyed file resource {} ", resourceID);
+        log_.Debug(LOGFMT("destroyed file resource {} ", resourceID));
     }
 
     /* Launch an async task to copy the file to the DAQ session output directory.
