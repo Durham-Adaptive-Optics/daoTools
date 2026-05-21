@@ -19,7 +19,8 @@ bld.program(
         'dao',
         'daoNuma',
         'daoProto',
-        'pthread'
+        'pthread',
+	'stdc++fs'
     ],
 
     cxxflags=[
