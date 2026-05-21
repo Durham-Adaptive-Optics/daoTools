@@ -33,6 +33,15 @@ waf configure --prefix=$DAOROOT
 waf
 waf install
 ```
+
+# Build Documentation
+Run the `make` command as follows to view the various options for building the documention.
+
+```
+cd docs
+make
+```
+
 # Example
 It is possible to create just the shared memory for an example. See examples below
 ## staring a simple clock
