@@ -136,6 +136,7 @@ def smem_tester_(tmp_directory, client, tool_inst, shape, dtype, rollover: bool,
     client.daq_session_configure_upload(yaml.dump(daqConfig))
     client.daq_session_configure_apply()
     client.daq_session_begin()
+    time.sleep(3)
 
     # Write samples to smem
     sample_history = []
@@ -160,7 +161,7 @@ def smem_tester_(tmp_directory, client, tool_inst, shape, dtype, rollover: bool,
         time.sleep(0.25) # feed sample in slowly as we want to ensure correctness, not test performance.
     
     # Await record to finish
-    client.daq_session_await_finish(timeout=30)
+    client.daq_session_await_finish(timeout=1)
     
     # Validate
     listing = os.listdir(tmp_directory)
