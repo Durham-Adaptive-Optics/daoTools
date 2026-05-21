@@ -5,6 +5,7 @@
 
 /*==========================================================================*/
 #include <stdio.h>
+#include <inttypes.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -128,7 +129,8 @@ static int realTimeLoop()
             {
                 daoShmImage2Shm((float *)latency, 1, &latencyShm[0]);
             }
-            printf("\r f1ID = %ld, f2ID = %ld, diff = %ld, negTs = %d, elapsedTimeNs = %ld", frameId0, frameId1, frameIdDiff, nbNegTs, elapsedTimeNs);
+            printf("\r f1ID = %" PRId64 ", f2ID = %" PRId64 ", diff = %" PRId64 ", negTs = %d, elapsedTimeNs = %" PRId64,
+                   frameId0, frameId1, frameIdDiff, nbNegTs, elapsedTimeNs);
         }
         else
         {
@@ -221,4 +223,3 @@ int main(int argc, char **argv)
     return(sExit);
 }
 /*==========================================================================*/
-

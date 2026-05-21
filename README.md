@@ -5,10 +5,9 @@ Useful tools using daoBase
 ## daoBase
 daoBase should be installed. See https://github.com/Durham-Adaptive-Optics/daoBase
 
-## cblas
-daoTools provides basic MVM tools using CBLAS. On Ubuntu
+## other dependencies (CLI11+cfitsio+libyamml+blas)
 ````
-sudo apt install libblas-dev libopenblas-dev
+sudo apt install libcli11-dev libcfitsio-dev libyaml-cpp-dev libblas-dev libopenblas-dev
 ````
 
 ## ncurses
@@ -23,6 +22,7 @@ sudo apt install libcli11-dev libcfitsio-dev libyaml-cpp-dev libopenblas-dev lib
 ````
 
 We recommand to use magicPlot
+Some of our plot tool uses magicPlot (optional)
 ```
 pip install magicPlot
 ```
