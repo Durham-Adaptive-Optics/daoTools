@@ -16,19 +16,17 @@ namespace Dao::DAQ
         IDAQ(doneCallback, errorCallback, params.absPath, log),
         params_(params) {
         //
-        log_.Debug("(%s) created", resourceID.c_str());
+        log_.Debug("created file resource {}", resourceID);
     }
 
     FileDAQ::~FileDAQ() {
-        log_.Debug("(%s) destroyed", resourceID.c_str());
+        log_.Debug("destroyed file resource {} ", resourceID);
     }
 
     /* Launch an async task to copy the file to the DAQ session output directory.
     */
     void FileDAQ::beginAcquisition(std::filesystem::path const& outputPath) {
         std::thread([this, outputPath]() {
-            log_.Debug("(%s) file-copy thread launched", resourceID.c_str());
-
             std::filesystem::path const fileSourcePath { params_.absPath };
             std::filesystem::path const fileOutputPath = outputPath / fileSourcePath.filename().string();
 

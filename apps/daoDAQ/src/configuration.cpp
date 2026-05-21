@@ -50,18 +50,15 @@ namespace Dao::DAQ
     DAQConfiguration::DAQConfiguration(std::string const& daqRaqConfig, Dao::Log::Logger& log) :
         log_(log) {
         //
-        log_.Trace("(server.config) parsing configuration..");
-
         load(
             YAML::Load(daqRaqConfig)
         );
 
-        log_.Debug("(server.config) parsed configuration");
+        log_.Debug("parsed configuration");
     }
 
     DAQConfiguration::~DAQConfiguration() {
-        log_.Trace("(server.config) destroying configuration..");
-        log_.Debug("(server.config) destroyed configuration");
+        log_.Debug("destroyed configuration");
     }
 
     /* ---------------------------------------------------------------- */
@@ -82,13 +79,13 @@ namespace Dao::DAQ
 
         int buffLen {};
         if (DAO_SUCCESS != daoToolsLocalName(params.absPath.c_str(), nullptr, &buffLen)) {
-            auto const err = fmt::format("(server.config) failed to get smem local-name length {}", params.absPath);
+            auto const err = fmt::format("failed to get smem local-name length {}", params.absPath);
             throw std::runtime_error(err);
         }
 
         char buff[buffLen];
         if (DAO_SUCCESS != daoToolsLocalName(params.absPath.c_str(), buff, nullptr)) {
-            auto const err = fmt::format("(server.config) failed to get smem local-name {}", params.absPath);
+            auto const err = fmt::format("failed to get smem local-name {}", params.absPath);
             throw std::runtime_error(err);
         }
         params.localName = buff;
@@ -103,7 +100,7 @@ namespace Dao::DAQ
         // load source policies..
         if (auto const& sourcesNode = ymlDoc["sources"]; sourcesNode) {
             if (sourcesNode.Type() != YAML::NodeType::Sequence) {
-                std::string const err = fmt::format("(server.config) 'sources' must be a list");
+                std::string const err = fmt::format("'sources' must be a list");
                 throw std::runtime_error(err);
             }
 
@@ -113,7 +110,7 @@ namespace Dao::DAQ
 
                 auto const& uriLocation = locationFromURI(uri);
                 if (auto [_, inserted] = sourceLookup_.insert(uriLocation); !inserted) {
-                    std::string const err = fmt::format("(server.config) duplicate source {}", uri);
+                    std::string const err = fmt::format("duplicate source {}", uri);
                     throw std::runtime_error(err);
                 }
 
@@ -133,12 +130,12 @@ namespace Dao::DAQ
             }
         }
         else {
-            throw std::runtime_error("(server.config) missing 'sources' list");
+            throw std::runtime_error("missing 'sources' list");
         }
 
         //
         if (!numResources()) {
-            throw std::runtime_error("(server.config) empty 'sources' list");
+            throw std::runtime_error("empty 'sources' list");
         }
     }
 };

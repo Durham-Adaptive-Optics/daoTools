@@ -28,13 +28,13 @@
 
 Dao::Log::LEVEL pickLoggingVerbosity(size_t const& verbosity) {
     if (0 == verbosity) {
-        return Dao::Log::LEVEL::TRACE;
+        return Dao::Log::LEVEL::INFO;
     }
     if (1 == verbosity) {
         return Dao::Log::LEVEL::DEBUG;
     }
     else {
-        return Dao::Log::LEVEL::INFO;
+        return Dao::Log::LEVEL::TRACE;
     }
 }
 
@@ -97,7 +97,7 @@ int main(int argc, char* argv[]) {
         Dao::Log::Logger log(APP_NAME, logSink, logfilePath.string());
         log.SetLevel(logVerbosity);
 
-        log.Info("(process) new process started");
+        log.Info("new process started");
         Dao::DAQ::DAQServer daqServer(DEFAULT_TCP_PORT, log);
         if (daqConfigPath.length()) {
             try {
@@ -108,7 +108,7 @@ int main(int argc, char* argv[]) {
                 };
                 daqServer.uploadDAQConfig(daqConfig);
             } catch (std::exception const& e) {
-                log.Error("(process) failed to load config file %s", e.what());
+                log.Error(LOGFMT("failed to load config file {}", e.what()));
             }
         }
 
@@ -117,9 +117,9 @@ int main(int argc, char* argv[]) {
         sigemptyset(&sigset);
         sigaddset(&sigset, SIGINT);
         pthread_sigmask(SIG_BLOCK, &sigset, nullptr);
-        log.Info("(process) awaiting termination signal");
+        log.Info("main-thread awaiting termination signal..");
         sigwait(&sigset, &signum);
-        log.Info(LOGFMT("(process) received termination signal {}", strsignal(signum)));
+        log.Info(LOGFMT("main-thread received termination signal {}", strsignal(signum)));
     }
 
     return SAFE_EXIT;

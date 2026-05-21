@@ -18,21 +18,17 @@ SmemDAQ::SmemDAQ(SmemParameters const& params, ServerDoneCallback doneCallback, 
     smem_ {},
     cvPredicate_(false) {
     //
-    log_.Trace("(daq.smem %s) creating..", resourceID.c_str());
-
     establishResourceConnection();
     daqThread_ = std::thread([this]() { this->daqThreadEntry(); });
     sinkThread_ = std::thread([this]() { this->sinkThreadEntry(); });
 
-    log_.Debug("(daq.smem %s) created", resourceID.c_str());
+    log_.Debug(LOGFMT("created smem resource {}", resourceID));
 }
 
 /* Signals DAQ and sink threads to exit gracefully and blocks until they
  * have exited.
 */
 SmemDAQ::~SmemDAQ() {
-    log_.Trace("(daq.smem %s) destroying..", resourceID.c_str());
-
     {
         std::unique_lock lock(cvLock_);
         stopToken_ = true;
@@ -40,13 +36,13 @@ SmemDAQ::~SmemDAQ() {
         cvSignal_.notify_all();
     }
 
+    log_.Debug(LOGFMT("waiting for daq-thread to join for {}", resourceID));
     daqThread_.join();
-    log_.Debug("(daq.smem %s) daq-thread has joined", resourceID.c_str());
 
+    log_.Debug(LOGFMT("waiting for sink-thread to join for {}", resourceID));
     sinkThread_.join();
-    log_.Debug("(daq.smem %s) sink-thread has joined", resourceID.c_str());
 
-    log_.Debug("(daq.smem %s) destroyed", resourceID.c_str());
+    log_.Debug("destroyed smem resource {}", resourceID);
 }
 
 /* Connect to the shared memory resource; an exception is thrown
@@ -54,7 +50,7 @@ SmemDAQ::~SmemDAQ() {
 */
 void SmemDAQ::establishResourceConnection() {
     if (DAO_SUCCESS != daoShmShm2Img(params_.absPath.c_str(), &smem_)) {
-        std::string const err = fmt::format("(daq.smem %s) failed to open smem {}", resourceID, params_.absPath);
+        std::string const err = fmt::format("failed to open smem {}", params_.absPath);
         throw std::runtime_error(err);
     }
 
@@ -67,7 +63,7 @@ void SmemDAQ::establishResourceConnection() {
         for now.
     */
     if (_DATATYPE_COMPLEX_FLOAT == smem_.md->atype || _DATATYPE_COMPLEX_DOUBLE == smem_.md->atype) {
-        std::string const err = fmt::format("(daq.smem %s) complex-valued arrays are not currently supported", resourceID);
+        std::string const err = fmt::format("complex-valued arrays are not currently supported ({})", resourceID);
         throw std::runtime_error(err);
     }
 
@@ -86,7 +82,7 @@ void SmemDAQ::configureThread(Optional<CoreID> const& core) {
     CPU_ZERO(&affinitySet);
     CPU_SET(core.value(), &affinitySet);
     if (pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &affinitySet)) {
-        log_.Error("(daq.smem %s) failed to pin thread ({})", strerror(errno));
+        log_.Error("failed to pin smem resource thread ({})", strerror(errno));
     }
 }
 
@@ -95,14 +91,12 @@ void SmemDAQ::configureThread(Optional<CoreID> const& core) {
  * by calling the session finish method.
 */
 void SmemDAQ::beginAcquisition(std::filesystem::path const& outputPath) {
-    log_.Trace("(daq.smem % s) starting acquisition..", resourceID.c_str());
-
     {
         std::lock_guard qGuard(qLock_);
         while (!queue_.empty())
             queue_.pop();
 
-        log_.Debug("(daq.smem %s) cleared queue", resourceID.c_str());
+        log_.Debug("cleared sample queue for {}", resourceID.c_str());
     }
 
     {
@@ -112,8 +106,6 @@ void SmemDAQ::beginAcquisition(std::filesystem::path const& outputPath) {
         cvPredicate_ = true;
         cvSignal_.notify_all();
     }
-
-    log_.Debug("(daq.smem %s) started acquisition", resourceID.c_str());
 }
 
 /* Signals both the DAQ and sink threads to end their in-progress DAQ session
@@ -121,15 +113,9 @@ void SmemDAQ::beginAcquisition(std::filesystem::path const& outputPath) {
  * to either begin a new DAQ session or to exit.
 */
 void SmemDAQ::finishAcquisition() {
-    log_.Trace("(daq.smem %s) finishing acquisition", resourceID.c_str());
-
-    {
-        std::unique_lock lock(cvLock_);
-        cvPredicate_ = false;
-        runSession_.store(false);
-    }
-
-    log_.Debug("(daq.smem %s) finished acquisition", resourceID.c_str());
+    std::unique_lock lock(cvLock_);
+    cvPredicate_ = false;
+    runSession_.store(false);
 }
 
 /* Entry point for the DAQ thread; this is the thread that captures the
@@ -137,7 +123,7 @@ void SmemDAQ::finishAcquisition() {
  * sinking to the disk.
 */
 void SmemDAQ::daqThreadEntry() {
-    log_.Debug("(daq.smem %s) daq-thread launched", resourceID.c_str());
+    log_.Debug(LOGFMT("daq-thread launched for {}", resourceID));
 
     configureThread(params_.daqThreadAffinity);
 
@@ -146,8 +132,8 @@ void SmemDAQ::daqThreadEntry() {
             std::unique_lock cvGuard(cvLock_);
             cvSignal_.wait(cvGuard, [&]() {
                 log_.Debug(
-                    "(daq.smem %s) daq-thread .. %s",
-                    resourceID.c_str(),
+                    "daq-thread for {} - {}",
+                    resourceID,
                     cvPredicate_ ? "resuming" : "blocked"
                 );
                 return cvPredicate_;
@@ -166,7 +152,7 @@ void SmemDAQ::daqThreadEntry() {
         }
     }
 
-    log_.Debug("(daq.smem %s) daq-thread exited", resourceID.c_str());
+    log_.Debug(LOGFMT("daq-thread exited for {}", resourceID));
 }
 
 /* Entry point for the sink thread; this is the thread that processes
@@ -174,7 +160,7 @@ void SmemDAQ::daqThreadEntry() {
  * in the data-format specified by our resource parameters.
 */
 void SmemDAQ::sinkThreadEntry() {
-    log_.Debug("(daq.smem %s) sink-thread launched", resourceID.c_str());
+    log_.Debug(LOGFMT("sink-thread launched for {}", resourceID));
 
     configureThread(params_.sinkThreadAffinity);
 
@@ -183,8 +169,8 @@ void SmemDAQ::sinkThreadEntry() {
             std::unique_lock cvGuard(cvLock_);
             cvSignal_.wait(cvGuard, [&]() {
                 log_.Debug(
-                    "(daq.smem %s) sink-thread .. %s",
-                    resourceID.c_str(),
+                    "sink-thread for {} - {}",
+                    resourceID,
                     cvPredicate_ ? "resuming" : "blocked"
                 );
                 return cvPredicate_;
@@ -203,7 +189,7 @@ void SmemDAQ::sinkThreadEntry() {
         }
     }
 
-    log_.Debug("(daq.smem %s) sink-thread exited", resourceID.c_str());
+    log_.Debug(LOGFMT("sink-thread exited for {}", resourceID));
 }
 
 /* Captures data-samples from the shared memory resource an enqueues them for
@@ -218,9 +204,9 @@ void SmemDAQ::acquireSamples() {
     size_t lastSampleId = smInfo_->cnt0;
 
     log_.Debug(
-        "(daq.smem %s) collecting samples.. [eager=%s]",
-        resourceID.c_str(),
-        params_.eagerStart.value() ? "yes" : "no"
+        "collecting samples for {} [{}]",
+        params_.absPath,
+        params_.eagerStart.value() ? "eager-start" : ""
     );
 
     /* note(tom): we avoid logging in the hot-path here as we do not
@@ -261,7 +247,7 @@ void SmemDAQ::acquireSamples() {
         sampleAvailable = smInfo_->cnt0 > lastSampleId;
     }
 
-    log_.Debug("(daq.smem %s) stopped collecting samples", resourceID.c_str());
+    log_.Debug(LOGFMT("stopped collecting samples for {}", resourceID));
 }
 
 /* Writes samples that are enqueued by the DAQ thread, to the disk in the desired
@@ -270,11 +256,16 @@ void SmemDAQ::acquireSamples() {
  * to the disk, or the DAQ server sends a signal to end our DAQ session.
 */
 void SmemDAQ::sinkSamples() {
-    log_.Debug("(daq.smem %s) sinking samples..", resourceID.c_str());
+    std::filesystem::path output {};
+    {
+        std::unique_lock lock(cvLock_);
+        output = sessionOutputDir_;
+    }
 
-    // @todo sessionOutputDir_ may have a data-race here (no mutex)?
-    auto writer = std::make_unique<FitsWriter>(params_, sessionOutputDir_, *smem_.md, log_, resourceID);
+    auto writer = std::make_unique<FitsWriter>(params_, output, *smem_.md, log_, resourceID);
     size_t nSamplesWritten {};
+
+    log_.Debug(LOGFMT("sinking samples for {} ({})", resourceID, output.string()));
 
     /* note(tom): we avoid logging in the hot-path here as we do not
      * want to pay the penalty of enqueing and formatting logs etc.
@@ -306,10 +297,11 @@ void SmemDAQ::sinkSamples() {
         }
     }
 
-    log_.Debug("(daq.smem %s) stopped sinking samples", resourceID.c_str());
+    log_.Debug(LOGFMT("stopped sinking samples for {}", resourceID));
 
-    if (0 == nSamplesWritten)
-        log_.Warning("(daq.smem %s) received no samples to export to disk -- may indicate daq-thread issue", resourceID.c_str());
+    if (0 == nSamplesWritten) {
+        log_.Warning(LOGFMT("no samples written to disk for {}", resourceID));
+    }
 }
 
 

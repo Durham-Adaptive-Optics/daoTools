@@ -94,8 +94,6 @@ namespace Dao::DAQ
 
         std::filesystem::path const filePath = params_.fileRollover ? (sessionOutputDir_ / params_.localName / fileName_) : (sessionOutputDir_ / fileName_);
 
-        log_.Trace("(daq.%s) creating fits datafile %s..", parentID_.c_str(), filePath.c_str());
-
         try {
             FITS_CALL(fits_create_file, &file_, filePath.c_str());
         } catch (...) {
@@ -103,7 +101,7 @@ namespace Dao::DAQ
             throw;
         }
 
-        log_.Debug("(daq.%s) created fits datafile %s", parentID_.c_str(), filePath.c_str());
+        log_.Debug(LOGFMT("created fits datafile {} for {}", filePath.string(), parentID_));
 
         nFileSamples = 0;
         ++nFiles_;
@@ -113,10 +111,10 @@ namespace Dao::DAQ
      * issue occurred.
     */
     void FitsWriter::closeDatafile() {
-        log_.Trace("(daq.%s) closing fits datafile %s..", parentID_.c_str(), fileName_.c_str());
         FITS_CALL(fits_close_file, file_);
-        log_.Debug("(daq.%s) closed fits datafile %s..", parentID_.c_str(), fileName_.c_str());
         file_ = nullptr;
+
+        log_.Debug(LOGFMT("closed fits datafile {} for {}", fileName_, parentID_));
     }
 
     /* Writes the provided shared-memory sample into the active FITS datafile.
