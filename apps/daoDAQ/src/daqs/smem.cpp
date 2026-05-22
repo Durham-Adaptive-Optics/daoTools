@@ -68,6 +68,7 @@ void SmemDAQ::establishResourceConnection() {
     }
 
     sampleMemSize_ = smem_.memsize - sizeof(IMAGE_METADATA) - smem_.md->NBkw * sizeof(IMAGE_KEYWORD);
+    log_.Debug(LOGFMT("sample buffer size for {} is {} bytes", params_.absPath, sampleMemSize_));
 }
 
 /* Configures calling thread according to the provided parameters
@@ -199,7 +200,7 @@ void SmemDAQ::sinkThreadEntry() {
  * to finish.
 */
 void SmemDAQ::acquireSamples() {
-    IMAGE_METADATA const volatile* smInfo_ = static_cast<IMAGE_METADATA const volatile*>(smem_.md);
+    IMAGE_METADATA volatile const* smInfo_ = static_cast<IMAGE_METADATA volatile const*>(smem_.md);
     bool sampleAvailable { params_.eagerStart.value() };
     size_t lastSampleId = smInfo_->cnt0;
 
@@ -227,8 +228,9 @@ void SmemDAQ::acquireSamples() {
             std::memcpy(qSample.second.get(), smem_.array.V, sampleMemSize_);
 
             // drop the sample if the copy was potentially interrupted.
-            bool const copyInterupted = (smInfo_->cnt0 > sampleId || 1 == smInfo_->write);
-            if (!copyInterupted) {
+            bool const copyInterupt_Full = smInfo_->cnt0 > sampleId;
+            bool const copyInterrupt_Partial = 1 == smInfo_->write;
+            if (copyInterupt_Full || copyInterrupt_Partial) {
                 std::lock_guard qGuard(qLock_);
 
                 // enqueue the copied sample data for sinking to the disk by the sink-thread
@@ -237,6 +239,17 @@ void SmemDAQ::acquireSamples() {
                 if (queueHasSpace) {
                     queue_.push(std::move(qSample));
                 }
+                else {
+                    log_.Warning(LOGFMT("daq-thread for {} dropped sample-{} due to full queue", sampleId, params_.absPath));
+                }
+            }
+            else {
+                log_.Warning(LOGFMT(
+                    "daq-thread for {} dropped sample-{} due to copy corruption ({})",
+                    sampleId,
+                    params_.absPath,
+                    copyInterupt_Full ? "full" : "partial"
+                ));
             }
 
             lastSampleId = sampleId;
