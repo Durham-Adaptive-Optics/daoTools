@@ -240,7 +240,7 @@ void SmemDAQ::acquireSamples() {
                     queue_.push(std::move(qSample));
                 }
                 else {
-                    log_.Warning(LOGFMT("daq-thread for {} dropped sample-{} due to full queue", sampleId, params_.absPath));
+                    log_.Warning(LOGFMT("daq-thread for {} dropped sample-{} due to full queue", params_.absPath, sampleId));
                 }
             }
             else {
