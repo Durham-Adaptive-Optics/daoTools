@@ -246,8 +246,8 @@ void SmemDAQ::acquireSamples() {
             else {
                 log_.Warning(LOGFMT(
                     "daq-thread for {} dropped sample-{} due to copy corruption ({})",
-                    sampleId,
                     params_.absPath,
+                    sampleId,
                     copyInterupt_Full ? "full" : "partial"
                 ));
             }
