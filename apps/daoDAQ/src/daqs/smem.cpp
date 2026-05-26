@@ -231,6 +231,14 @@ void SmemDAQ::acquireSamples() {
             bool const copyInterupt_Full = smInfo_->cnt0 > sampleId;
             bool const copyInterrupt_Partial = 1 == smInfo_->write;
             if (copyInterupt_Full || copyInterrupt_Partial) {
+                log_.Warning(LOGFMT(
+                    "daq-thread for {} dropped sample-{} due to copy corruption ({})",
+                    params_.absPath,
+                    sampleId,
+                    copyInterupt_Full ? "full" : "partial"
+                ));
+            }
+            else {
                 std::lock_guard qGuard(qLock_);
 
                 // enqueue the copied sample data for sinking to the disk by the sink-thread
@@ -242,14 +250,6 @@ void SmemDAQ::acquireSamples() {
                 else {
                     log_.Warning(LOGFMT("daq-thread for {} dropped sample-{} due to full queue", params_.absPath, sampleId));
                 }
-            }
-            else {
-                log_.Warning(LOGFMT(
-                    "daq-thread for {} dropped sample-{} due to copy corruption ({})",
-                    params_.absPath,
-                    sampleId,
-                    copyInterupt_Full ? "full" : "partial"
-                ));
             }
 
             lastSampleId = sampleId;
