@@ -2,16 +2,19 @@
 """
 Image Display - Real-time image display from shared memory
 
-Usage: imgDisplay.py <shmName> [options]
+Usage: daoImgDisp.py <shmName> [options]
+       daoImgDisp.py -s <shmName> [options]
 
 Options:
+  -s, --shm    Shared memory path
   --fps        Update rate in Hz (default: 10)
   --cmap       Colormap (default: viridis)
   --help       Show this help message
 
 Examples:
-  imgDisplay.py /tmp/img.im.shm
-  imgDisplay.py /tmp/img.im.shm --fps 20 --cmap inferno
+  daoImgDisp.py /tmp/img.im.shm
+  daoImgDisp.py -s /tmp/img.im.shm
+  daoImgDisp.py -s /tmp/img.im.shm --fps 20 --cmap inferno
 """
 
 import dao
@@ -29,17 +32,29 @@ def parse_args():
         epilog="""
 Examples:
   %(prog)s /tmp/img.im.shm
-  %(prog)s /tmp/img.im.shm --fps 20
-  %(prog)s /tmp/img.im.shm --fps 20 --cmap inferno
+  %(prog)s -s /tmp/img.im.shm
+  %(prog)s -s /tmp/img.im.shm --fps 20
+  %(prog)s -s /tmp/img.im.shm --fps 20 --cmap inferno
         """
     )
-    parser.add_argument('shmName',
+    parser.add_argument('shmName', nargs='?',
+                        help='Shared memory path (e.g. /tmp/img.im.shm)')
+    parser.add_argument('-s', '--shm', dest='shmFlag',
                         help='Shared memory path (e.g. /tmp/img.im.shm)')
     parser.add_argument('--fps',  type=float, default=10.0,
                         help='Update rate in Hz (default: 10)')
     parser.add_argument('--cmap', default='viridis',
                         help='Colormap: viridis, inferno, plasma, grey (default: viridis)')
-    return parser.parse_args()
+
+    args = parser.parse_args()
+
+    # -s takes priority, fallback to positional
+    if args.shmFlag:
+        args.shmName = args.shmFlag
+    if not args.shmName:
+        parser.error("shmName is required — pass it as positional or with -s/--shm")
+
+    return args
 
 
 COLORMAPS = {
@@ -191,7 +206,7 @@ def main():
                            slot=mouse_moved)
 
     # --- State ---
-    state = {'frozen': False, 'cmap': args.cmap}
+    state = {'frozen': False}
 
     def toggle_freeze(checked):
         state['frozen'] = checked
