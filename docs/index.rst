@@ -11,3 +11,4 @@ daoTools User Documentation documentation
    :caption: Contents:
 
    daoDAQ
+   daoDAQParser
