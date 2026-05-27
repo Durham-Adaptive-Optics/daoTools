@@ -1,13 +1,13 @@
 /**
  * @file    daoTools.h
  * @brief   Durham AO RTC library
- * 
- * Durham AO RTC Tools library description file. 
- *  
+ *
+ * Durham AO RTC Tools library description file.
+ *
  * @author  S. Cetre
  * @date    28/10/2022
  *
- * 
+ *
  */
 
 #ifndef _DAOTOOLS_H
@@ -17,20 +17,24 @@
 #define RES_MAX_VAL 8192
 #define FILTER_ORDER 3
 
-/**
- * RES filter structure to store precalc, cmd and residual
- */
-typedef struct
-{
+ /**
+  * RES filter structure to store precalc, cmd and residual
+  */
+typedef struct {
     float precal[RES_MAX_VAL];
     float dlCmd[FILTER_ORDER][RES_MAX_VAL];
     float dlRes[FILTER_ORDER][RES_MAX_VAL];
     int step;
 } daoFilterHistory;
 
-uint32_t daoComputeChecksum(const void *data, size_t length_bytes);
+#ifdef __cplusplus
+extern "C"
+#endif
+int daoToolsLocalName(const char* shmPath, char* localName, int* len);
 
-unsigned daoToolsIp2Int(const char * ip); 
+uint32_t daoComputeChecksum(const void* data, size_t length_bytes);
+
+unsigned daoToolsIp2Int(const char* ip);
 void daoToolsInsertShmNamePrefix(const char* base_string,
                                  const char* prefix,
                                  char* final_string); 
@@ -161,15 +165,15 @@ int_fast8_t daoShmCopyToPosition(IMAGE *imageIn, IMAGE *imageOut, int nbVal, int
 #endif
 
 // Fallback for clock_nanosleep
-int clock_nanosleep(clockid_t clock_id, int flags, const struct timespec *request, struct timespec *remain);
+int clock_nanosleep(clockid_t clock_id, int flags, const struct timespec* request, struct timespec* remain);
 
 // Fallback for sched_
 #include <sched.h>  // needed for struct sched_param
 
-int sched_setscheduler(pid_t pid, int policy, const struct sched_param *param);
+int sched_setscheduler(pid_t pid, int policy, const struct sched_param* param);
 
 #endif // __APPLE__
 
-void daoRtSetup(int rt_priority);                     
+void daoRtSetup(int rt_priority);
 
 #endif

@@ -9,5 +9,6 @@ waf3-*-*/
 .lock-waf_*_build
 
 build/
-
+docs/_build
 *.tar.bz2
+.vscode

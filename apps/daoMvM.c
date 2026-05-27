@@ -110,8 +110,12 @@ void * realTimeLoop(void *thread_data)
             // MATRIX 
             if (inputShm[0].md[0].atype == _DATATYPE_FLOAT)
             {
-                cblas_sgemv(CblasRowMajor, CblasNoTrans, nInputs, nOutputs, alpha,
-                    matrixShm[0].array.F, nInputs, inputShm[0].array.F, 1, beta, outputShm[0].array.F, 1);
+                //cblas_sgemv(CblasRowMajor, CblasNoTrans, nInputs, nOutputs, alpha,
+                //    matrixShm[0].array.F, nInputs, inputShm[0].array.F, 1, beta, outputShm[0].array.F, 1);
+                cblas_sgemv(CblasRowMajor, CblasNoTrans, nOutputs, nInputs, alpha,
+                    matrixShm[0].array.F, nInputs,   // lda = nInputs (leading dimension = ncols for row-major)
+                    inputShm[0].array.F, 1,
+                    beta, outputShm[0].array.F, 1);
             }
             else
             {

@@ -1,30 +1,173 @@
 #!/usr/bin/env python3
 
-import sys
+################################################
+#                  IMPORTS
+################################################
+
+import gc
 import os
-import numpy as np
-from astropy.io import fits
-import subprocess
-import time
 import signal
+import subprocess
+import sys
 
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QCheckBox, QHeaderView, QLineEdit, QPushButton, QFileDialog, QLabel, QSpinBox,
-    QTabWidget, QSplitter, QTextEdit, QListWidget, QMessageBox, QTableView,
-    QComboBox, QMainWindow, QStatusBar, QToolBar, QAction, QDialog, QGridLayout,
-    QRadioButton , QButtonGroup, QDoubleSpinBox
-)
-from PyQt5.QtCore import QDir, Qt, QTimer, QAbstractTableModel
-from PyQt5.QtGui import QIcon
-
+import dao
+import yaml
+import magicplot
+import numpy as np
+from daoDAQClient import DAQState, DAQClient
+from astropy.io import fits
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
+from PyQt5.QtCore import QAbstractTableModel, QDir, Qt, QTimer
+from PyQt5.QtGui import QIcon
+from PyQt5.QtWidgets import (
+    QAction, QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog,
+    QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout, QGroupBox,
+    QHBoxLayout, QLabel, QLineEdit, QListWidget,
+    QMainWindow, QMessageBox, QPushButton, QRadioButton, QSpinBox,
+    QStackedWidget, QStatusBar, QSplitter, QTabWidget, QTableView,
+    QAbstractItemView, QTextEdit, QToolBar, QVBoxLayout, QWidget,
+    QTreeWidget, QTreeWidgetItem
+)
 
-import magicplot
-import dao
-import gc
+################################################
+#               Custom Widgets
+################################################
 
+class DaqSessionConfig(QWidget):
+    ''' PyQt5 widget for configuring a DAQ session '''
+    
+    def __init__(self): 
+        super().__init__()
+        self.createUI()
+    
+    def createUI(self):
+        groupBox = QGroupBox("Required Parameters")
+        layout = QFormLayout()
+        
+        defaultRootStorage = os.getenv("DAODATA", "")
+        self.pathDisplay = QLineEdit(defaultRootStorage)
+        self.pathDisplay.setReadOnly(True)
+        
+        selectBtn = QPushButton("Pick")
+        selectBtn.clicked.connect(self.selectDirectory)
+        
+        inputLayout = QHBoxLayout()
+        inputLayout.addWidget(self.pathDisplay)
+        inputLayout.addWidget(selectBtn)
+        
+        layout.addRow("Root Storage:", inputLayout)
+        
+        groupBox.setLayout(layout)
+        
+        mainLayout = QVBoxLayout()
+        mainLayout.addWidget(groupBox)
+        self.setLayout(mainLayout)
+
+    def selectDirectory(self):
+        path = QFileDialog.getExistingDirectory(self, "Select Directory")
+        if path:
+            self.pathDisplay.setText(path)
+            
+class FileDaqConfig(QWidget):
+    ''' PyQt5 widget for configuring a DAQ file resource '''
+    
+    def __init__(self, sourcePath: str): 
+        super().__init__()
+        self.source = sourcePath
+        self.createUI()
+    
+    def createUI(self):
+        groupBox = QGroupBox("Required Parameters")
+        layout = QFormLayout()
+        
+        self.pathDisplay = QLineEdit(self.source)
+        self.pathDisplay.setReadOnly(True)
+        layout.addRow("File Path", self.pathDisplay)
+
+        groupBox.setLayout(layout)
+        mainLayout = QVBoxLayout()
+        mainLayout.addWidget(groupBox)
+        self.setLayout(mainLayout)
+
+
+class SmemDaqConfig(QWidget):
+    ''' PyQt5 widget for configuring a DAQ smem resource '''
+    NUMERIC_MAX_SENTINEL: int = 999999999
+    
+    def __init__(self, sourcePath: str): 
+        super().__init__()
+        self.source = sourcePath
+        self.createUI()
+        
+    def createUI(self):
+        mainLayout = QVBoxLayout()
+        
+        requiredGroup = QGroupBox("Required Parameters")
+        requiredLayout = QFormLayout()
+        
+        self.pathDisplay = QLineEdit(self.source)
+        self.pathDisplay.setReadOnly(True)
+        requiredLayout.addRow("Shared Memory Path:", self.pathDisplay)
+        
+        requiredGroup.setLayout(requiredLayout)
+        
+        optionalGroup = QGroupBox("Optional Parameters")
+        optionalLayout = QFormLayout()
+        
+        self.formatInput = QComboBox()
+        self.formatInput.addItems(["fits"])
+        self.formatInput.setCurrentIndex(0)
+        optionalLayout.addRow("Export As:", self.formatInput)
+        
+        self.samplesInput = QSpinBox()
+        self.samplesInput.setMinimum(-1)
+        self.samplesInput.setMaximum(self.NUMERIC_MAX_SENTINEL)
+        self.samplesInput.setValue(-1)
+        optionalLayout.addRow("Sample Limit:", self.samplesInput)
+        
+        self.fileRolloverInput = QSpinBox()
+        self.fileRolloverInput.setMinimum(-1)
+        self.fileRolloverInput.setMaximum(self.NUMERIC_MAX_SENTINEL)
+        self.fileRolloverInput.setValue(-1)
+        optionalLayout.addRow("File Rollover:", self.fileRolloverInput)
+        
+        self.daqAffinityInput = QSpinBox()
+        self.daqAffinityInput.setMinimum(-1)
+        self.daqAffinityInput.setMaximum(self.NUMERIC_MAX_SENTINEL)
+        self.daqAffinityInput.setValue(-1)
+        optionalLayout.addRow("DAQ Affinity:", self.daqAffinityInput)
+        
+        self.sinkAffinityInput = QSpinBox()
+        self.sinkAffinityInput.setMinimum(-1)
+        self.sinkAffinityInput.setMaximum(self.NUMERIC_MAX_SENTINEL)
+        self.sinkAffinityInput.setValue(-1)
+        optionalLayout.addRow("Sink Affinity:", self.sinkAffinityInput)
+        
+        self.bufferLimitInput = QSpinBox()
+        self.bufferLimitInput.setMinimum(-1)
+        self.bufferLimitInput.setMaximum(self.NUMERIC_MAX_SENTINEL)
+        self.bufferLimitInput.setValue(-1)
+        optionalLayout.addRow("Buffer Limit:", self.bufferLimitInput)
+        
+        checkboxLayout = QHBoxLayout()
+        self.metadataOnlyInput = QCheckBox("Metadata Only")
+        self.metadataOnlyInput.setChecked(False)
+        self.eagerStartInput = QCheckBox("Eager Start")
+        self.eagerStartInput.setChecked(True)
+        checkboxLayout.addWidget(self.metadataOnlyInput)
+        checkboxLayout.addWidget(self.eagerStartInput)
+        checkboxLayout.addStretch()
+        optionalLayout.addRow("", checkboxLayout)
+        
+        optionalGroup.setLayout(optionalLayout)
+        
+        mainLayout.addWidget(requiredGroup)
+        mainLayout.addWidget(optionalGroup)
+        mainLayout.addStretch()
+        
+        self.setLayout(mainLayout)
+            
 class NumpyTableModel(QAbstractTableModel):
     """Model for displaying and editing NumPy arrays in table view."""
     def __init__(self, data, shm, parent=None):
@@ -207,6 +350,10 @@ class SetDataDialog(QDialog):
                 "max": self.maxEdit.value()
             }
 
+################################################
+#           daoShmViewer UI
+################################################
+
 class daoShmViewer(QMainWindow):
     """Main application window for the DAO Shared Memory Viewer."""
     def __init__(self):
@@ -313,18 +460,14 @@ class daoShmViewer(QMainWindow):
         self.search_filter.textChanged.connect(self.filter_files)
         file_browser_layout.addWidget(self.search_filter)
         
-        self.tableWidget = QTableWidget(self)
-        self.tableWidget.setColumnCount(2)
-        self.tableWidget.setHorizontalHeaderLabels(["Select", "Filename"])
-        self.tableWidget.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        self.tableWidget.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        self.tableWidget.setSelectionBehavior(QTableWidget.SelectRows)
+        self.file_list_widget = QListWidget(self)
+        self.file_list_widget.setSelectionMode(QAbstractItemView.ExtendedSelection)
         
         # Add keyboard navigation support
-        self.tableWidget.keyPressEvent = self.tableKeyPressEvent
+        self.file_list_widget.keyPressEvent = self.shmListKeyPressEvent
         
         # Add table to layout
-        file_browser_layout.addWidget(self.tableWidget)
+        file_browser_layout.addWidget(self.file_list_widget)
         
         # Store reference to the container widget
         self.file_browser_widget = file_browser_widget
@@ -332,29 +475,29 @@ class daoShmViewer(QMainWindow):
         # Initial file listing
         self.updateFileList()
 
-    def tableKeyPressEvent(self, event):
+    def shmListKeyPressEvent(self, event):
         """Handle key press events in the tableWidget for navigation.
         
         This allows up/down arrows to change the selected row and automatically
         trigger the same behavior as if the cell was clicked.
         """
         # Get the current row
-        currentRow = self.tableWidget.currentRow()
+        currentRow = self.file_list_widget.currentRow()
         
         # Handle Up/Down arrow keys
         if event.key() == Qt.Key_Up and currentRow > 0:
             # Move to the row above
             newRow = currentRow - 1
-            self.tableWidget.setCurrentCell(newRow, 1)
-            self.onCellClicked(newRow, 1)
-        elif event.key() == Qt.Key_Down and currentRow < self.tableWidget.rowCount() - 1:
+            self.file_list_widget.setCurrentRow(newRow)
+            self.onShmClicked(self.file_list_widget.item(newRow))
+        elif event.key() == Qt.Key_Down and currentRow < self.file_list_widget.count() - 1:
             # Move to the row below
             newRow = currentRow + 1
-            self.tableWidget.setCurrentCell(newRow, 1)
-            self.onCellClicked(newRow, 1)
+            self.file_list_widget.setCurrentRow(newRow)
+            self.onShmClicked(self.file_list_widget.item(newRow))
         else:
             # For all other keys, use the default event handler
-            super(self.tableWidget.__class__, self.tableWidget).keyPressEvent(event)
+            super(self.file_list_widget.__class__, self.file_list_widget).keyPressEvent(event)
 
     def setup_tab_widget(self):
         """Setup the tabbed control panel."""
@@ -362,105 +505,122 @@ class daoShmViewer(QMainWindow):
         self.tabWidget.setMinimumSize(400, 300)  # Increased minimum height from 200 to 300
         self.tabWidget.setTabsClosable(True)
         self.tabWidget.setMovable(True)
-        # self.tabWidget.setTabPosition(QTabWidget.normalGeometry)
-        self.tabWidget.setTabShape(QTabWidget.Triangular)
-        # self.tabWidget.setUsesScrollButtons(True)
-        self.tabWidget.setDocumentMode(True)
+        self.tabWidget.setTabsClosable(False)
         
-        # Tab 2: File Metadata
+        # Tab 1: File Metadata
         self.setup_metadata_tab()
         
-        # Tab 1: Recording controls
-        self.setup_recording_tab()
+        # Tab 2: Recording controls
+        self.setup_daq_tab()
         
-        # Tab 3: Multi-Record
-        self.setup_multi_record_tab()
-        
-        # Tab 4: Load
+        # Tab 3: Load
         self.setup_load_tab()
         
-        # Tab 5: Snapshot
+        # Tab 4: Snapshot
         self.setup_snapshot_tab()
         
-        # Tab 6: Tmux Sessions
+        # Tab 5: Tmux Sessions
         self.setup_tmux_tab()
 
-    def setup_recording_tab(self):
+    def setup_daq_tab(self):
         """Setup the recording tab."""
-        recordingTab = QWidget()
-        recordingLayout = QVBoxLayout()
         
-        self.filenameEdit = QLineEdit()
-        self.filenameEdit.setReadOnly(True)
-        self.filenameEdit.mousePressEvent = self.openFileDialog
+        self.daqTimer = QTimer()
+        self.daqTimer.timeout.connect(self.daqSync)
+        self.daqTimer.setInterval(250)
         
-        self.frameCounter = QSpinBox()
-        self.frameCounter.setRange(1, 10000)
-        self.frameCounter.setValue(1)
+        self.daqSourceNames = []
+        self.daqWidgetArea = QStackedWidget()
+        self.daqView = QTreeWidget()
+        self.daqView.header().hide()
+        self.daqView.itemClicked.connect(self.displayDaqConfig)
+        self.initDaqConfig()
         
-        self.recordButton = QPushButton("Record")        
-        recordingLayout.addWidget(QLabel("Filename:"))
-        recordingLayout.addWidget(self.filenameEdit)
-        recordingLayout.addWidget(QLabel("Number of Frames:"))
-        recordingLayout.addWidget(self.frameCounter)
-        recordingLayout.addWidget(self.recordButton)
-        
-        recordingTab.setLayout(recordingLayout)
-        self.tabWidget.addTab(recordingTab, "Recording")
+        # create (bottom) action buttons
+        buttonLayout = QHBoxLayout()
 
+        self.addDaqSrcBtn = QPushButton("Add File")
+        self.addDaqSrcBtn.clicked.connect(self.daqAddBtnCallback)
+        buttonLayout.addWidget(self.addDaqSrcBtn)
+
+        delDaqSrcBtn = QPushButton("Delete")
+        delDaqSrcBtn.clicked.connect(self.deleteDaqSrc)
+        buttonLayout.addWidget(delDaqSrcBtn)
+
+        clearDaqSrcsBtn = QPushButton("Clear")
+        clearDaqSrcsBtn.clicked.connect(self.initDaqConfig)
+        buttonLayout.addWidget(clearDaqSrcsBtn)
+        
+        importBtn = QPushButton("Import")
+        importBtn.clicked.connect(self.importDaqConfig)
+        buttonLayout.addWidget(importBtn)
+
+        exportBtn = QPushButton("Export")
+        exportBtn.clicked.connect(self.exportDaqConfigToFile)
+        buttonLayout.addWidget(exportBtn)
+        
+        self.daqBtn = QPushButton("Start DAQ")
+        self.daqBtn.clicked.connect(self.startDaq)
+        buttonLayout.addWidget(self.daqBtn)
+
+        # assemble widgets into a new tab
+        hLayout = QHBoxLayout()
+        hLayout.addWidget(self.daqView, 1)
+        hLayout.addWidget(self.daqWidgetArea, 3)
+        
+        layout = QVBoxLayout()
+        layout.addLayout(hLayout)
+        layout.addLayout(buttonLayout)
+        
+        widget = QWidget()
+        widget.setLayout(layout)
+        self.tabWidget.addTab(widget, "DAQ")
+        
     def setup_metadata_tab(self):
         """Setup the metadata tab."""
+        def open_file_dialog():
+            filePath, _ = QFileDialog.getSaveFileName(self, "Select Output File", os.getenv("DAODATA", os.getcwd()))
+            if filePath:
+                self.quickRecPathInput.setText(filePath)
+            
         metadataTab = QWidget()
         metadataLayout = QVBoxLayout()
+
+        quickRecLayout = QHBoxLayout()
+        
+        self.quickRecSampleInput = QSpinBox()
+        self.quickRecSampleInput.setMinimum(1)
+        self.quickRecSampleInput.setValue(1)
+        self.quickRecSampleInput.setMaximum(999999)
+        self.quickRecSampleInput.hide()
+        
+        self.quickRecPathInput = QLineEdit()
+        self.quickRecPathInput.setReadOnly(True)
+        self.quickRecPathInput.setPlaceholderText("Click me to select output path...")
+        self.quickRecPathInput.mousePressEvent = lambda event: open_file_dialog()
+        self.quickRecPathInput.hide()
+        
+        self.quickRecordButton = QPushButton("Quick Record")
+        self.quickRecordButton.clicked.connect(lambda: self.record_file(self.quickRecPathInput.text(), self.quickRecSampleInput.value()))
+        self.quickRecordButton.hide()
+        
+        quickRecLayout.addWidget(self.quickRecSampleInput)
+        quickRecLayout.addWidget(self.quickRecPathInput)
+        quickRecLayout.addWidget(self.quickRecordButton)
         
         self.metadataText = QTextEdit()
         self.metadataText.setReadOnly(True)
         
-        metadataLayout.addWidget(QLabel("File Metadata:"))
         metadataLayout.addWidget(self.metadataText)
+        metadataLayout.addLayout(quickRecLayout)
         metadataLayout.addStretch()
         metadataTab.setLayout(metadataLayout)
         self.tabWidget.addTab(metadataTab, "Metadata")
 
-    def setup_multi_record_tab(self):
-        """Setup the multi-record tab."""
-        multiRecordTab = QWidget()
-        multiRecordLayout = QVBoxLayout()
-        
-        self.multiRecordList = QListWidget()
-        self.multiRecordFilenameEdit = QLineEdit()
-        self.multiRecordFilenameEdit.setReadOnly(True)
-        self.multiRecordFilenameEdit.mousePressEvent = self.openFolderDialog
-        
-        self.multiFrameCounter = QSpinBox()
-        self.multiFrameCounter.setRange(0, 1000)
-        self.multiFrameCounter.setValue(1)
-        
-        self.multiRecordButton = QPushButton("Record Selected Files")
-        
-        # Master file label will be updated when a master is selected
-        self.masterFileLabel = QLabel("Selected Files: (No master selected)")
-        self.masterFileLabel.setStyleSheet("font-weight: bold;")
-        
-        multiRecordLayout.addWidget(self.masterFileLabel)
-        multiRecordLayout.addWidget(self.multiRecordList)
-        
-        # Connect list item selection to update master file display
-        self.multiRecordList.itemSelectionChanged.connect(self.updateMasterFileDisplay)
-        
-        multiRecordLayout.addWidget(QLabel("Save to Folder:"))
-        multiRecordLayout.addWidget(self.multiRecordFilenameEdit)
-        multiRecordLayout.addWidget(QLabel("Number of Frames:"))
-        multiRecordLayout.addWidget(self.multiFrameCounter)
-        multiRecordLayout.addWidget(self.multiRecordButton)
-        
-        multiRecordTab.setLayout(multiRecordLayout)
-        self.tabWidget.addTab(multiRecordTab, "Multi-Record (0)")
-
     def setup_load_tab(self):
         """Setup the load tab."""
         loadTab = QWidget()
-        loadLayout = QVBoxLayout()
+        loadForm = QFormLayout()
         
         self.loadFilenameEdit = QLineEdit()
         self.loadFilenameEdit.setReadOnly(True)
@@ -469,32 +629,31 @@ class daoShmViewer(QMainWindow):
         self.loadButton = QPushButton("Load")
         self.zeroButton = QPushButton("Zero")
         
-        loadLayout.addWidget(QLabel("Filename:"))
-        loadLayout.addWidget(self.loadFilenameEdit)
-        loadLayout.addWidget(self.loadButton)
-        # loadLayout.addWidget(self.setDataButton)
+        loadForm.addRow("Filename", self.loadFilenameEdit)
+        loadForm.addWidget(self.loadButton)
         
-        loadTab.setLayout(loadLayout)
+        loadTab.setLayout(loadForm)
         self.tabWidget.addTab(loadTab, "Load")
 
     def setup_snapshot_tab(self):
         """Setup the snapshot tab."""
         snapShotTab = QWidget()
-        snapShotLayout = QVBoxLayout()
+        snapShotForm = QFormLayout()
         
         self.snapshot_FilenameEdit = QLineEdit()
         self.snapshot_FilenameEdit.setReadOnly(True)
         self.snapshot_FilenameEdit.mousePressEvent = self.openLoadSnapshotDialog
         
+        btnLayout = QHBoxLayout()
         self.snapshot_SaveButton = QPushButton("Save Snapshot")
         self.snapshot_LoadButton = QPushButton("Load Snapshot")
+        btnLayout.addWidget(self.snapshot_LoadButton)
+        btnLayout.addWidget(self.snapshot_SaveButton)
+
+        snapShotForm.addRow("Filename", self.snapshot_FilenameEdit)
+        snapShotForm.addRow(btnLayout)
         
-        snapShotLayout.addWidget(QLabel("Filename:"))
-        snapShotLayout.addWidget(self.snapshot_FilenameEdit)
-        snapShotLayout.addWidget(self.snapshot_SaveButton)
-        snapShotLayout.addWidget(self.snapshot_LoadButton)
-        
-        snapShotTab.setLayout(snapShotLayout)
+        snapShotTab.setLayout(snapShotForm)
         self.tabWidget.addTab(snapShotTab, "Snapshot")
 
     def setup_tmux_tab(self):
@@ -506,7 +665,6 @@ class daoShmViewer(QMainWindow):
         self.tmuxConnectButton = QPushButton("Connect to Session")
         self.tmuxConnectButton.clicked.connect(self.connect_to_tmux_session)
         
-        tmuxLayout.addWidget(QLabel("Tmux Sessions:"))
         tmuxLayout.addWidget(self.tmuxSessionList)
         tmuxLayout.addWidget(self.tmuxConnectButton)
         
@@ -521,12 +679,11 @@ class daoShmViewer(QMainWindow):
 
     def setup_connections(self):
         """Setup signal-slot connections."""
-        self.tableWidget.cellClicked.connect(self.onCellClicked)
-        self.recordButton.clicked.connect(lambda: self.record_file(self.filenameEdit.text(), self.frameCounter.value()))
+        self.file_list_widget.itemClicked.connect(self.onShmClicked)
+        self.file_list_widget.selectionModel().selectionChanged.connect(self.onShmSelectionChanged)
         self.loadButton.clicked.connect(self.loadFile)
         self.snapshot_SaveButton.clicked.connect(self.snapshot_SaveFunction)
         self.snapshot_LoadButton.clicked.connect(self.snapshot_LoadFunction)
-        self.multiRecordButton.clicked.connect(self.record_multiple_files)
         self.tabWidget.currentChanged.connect(self.on_tab_changed)
 
     def show_create_shm_dialog(self):
@@ -572,42 +729,31 @@ class daoShmViewer(QMainWindow):
 
     def updateFileList(self):
         """Update the list of shared memory files."""
-        # Save currently selected files
-        selected_files = set()
+        self.file_list_widget.clear()
         
-        for row in range(self.tableWidget.rowCount()):
-            checkBox = self.tableWidget.cellWidget(row, 0)
-            if checkBox and checkBox.isChecked():
-                filenameItem = self.tableWidget.item(row, 1)
-                if filenameItem:
-                    selected_files.add(filenameItem.text())
-
         # Get updated file list
         fileList = self.dir.entryInfoList(self.filters, QDir.Files)
-        self.tableWidget.setRowCount(len(fileList))
         
         # Populate table
-        filenames = []
-        for row, fileInfo in enumerate(fileList):
+        for fileInfo in fileList:
             filename = fileInfo.fileName()
-            filenames.append(filename)
-            
-            checkBox = QCheckBox(self)
-            if filename in selected_files:
-                checkBox.setChecked(True)
-            # Connect checkbox state change to updateMultiRecordList
-            checkBox.stateChanged.connect(self.updateMultiRecordList)
-            filenameItem = QTableWidgetItem(filename)
-            self.tableWidget.setCellWidget(row, 0, checkBox)
-            self.tableWidget.setItem(row, 1, filenameItem)
-        
-        # Update multi-record list
-        self.updateMultiRecordList()
+            self.file_list_widget.addItem(filename)
         
         # Apply current search filter
         self.filter_files()
 
-    def onCellClicked(self, row, column):
+    def onShmSelectionChanged(self):
+        """ Handle when the user changes the cell selected in the shm table """
+        numShmsSelected = len(self.file_list_widget.selectionModel().selectedRows())
+        
+        if numShmsSelected == 1:
+            self.addDaqSrcBtn.setText("Add Shm")
+        elif numShmsSelected > 1:
+            self.addDaqSrcBtn.setText("Add Shms")
+        else:
+            self.addDaqSrcBtn.setText("Add File")
+            
+    def onShmClicked(self, item):
         """Handle cell click in the file table."""
         if self.timer.isActive():           
             self.timer.stop()
@@ -620,23 +766,22 @@ class daoShmViewer(QMainWindow):
             # time.sleep(0.1)
             gc.collect()
             
-        filenameItem = self.tableWidget.item(row, 1)
-        if not filenameItem:
-            return
-            
         try:
-            # Get the filename and update UI
-            filename = filenameItem.text()
-            output_filename = filename.replace(".im.shm", ".npy")
-            self.filenameEdit.setText(output_filename)
+            filename = item.text()
             
             # Open the shared memory
             self.shm = dao.shm(f"/tmp/{filename}", logLevel=0)
             self.lastCounter = self.shm.get_counter()
             
+            # reset and show quick-record form for this shm.
+            self.quickRecSampleInput.setValue(1)
+            self.quickRecPathInput.setText("")
+            self.quickRecSampleInput.show()
+            self.quickRecPathInput.show()
+            self.quickRecordButton.show()
+            
             # Update metadata and selected files list
             self.updateMetadata(filename)
-            self.updateMultiRecordList()
             
             # Determine visualization type based on data shape
             data = self.shm.get_data()
@@ -743,8 +888,9 @@ class daoShmViewer(QMainWindow):
             diff = self.newCounter - self.lastCounter
             self.lastCounter = self.newCounter
             
+            shmSource = self.shm.get_meta_data()["name"].decode("utf-8")
             frequency = 0 if diff == 0 else 10*diff
-            self.updateMetadata(self.filenameEdit.text(), frequency)
+            self.updateMetadata(shmSource, frequency)
             
             if diff != 0:
                 if self.TABLE or self.ShowTable:
@@ -763,9 +909,17 @@ class daoShmViewer(QMainWindow):
             self.show_error(f"Error updating data: {e}")
 
     def record_file(self, filename, frames):
-        """Record data to a file."""
+        """ Perform a quick record of the shm - this saved N samples to a numpy file """
         if not self.shm:
             self.show_error("No shared memory selected")
+            return
+            
+        if not filename:
+            self.show_error("No output path specified")
+            return
+            
+        if frames == 0:
+            self.show_error("No frames to record")
             return
             
         try:
@@ -777,7 +931,7 @@ class daoShmViewer(QMainWindow):
             else:
                 buffer = np.zeros((frames, *data.shape), dtype=data.dtype)
                 self.statusBar.showMessage(f"Recording {frames} frames...")
-                for i in frames:
+                for i in range(frames):
                     buffer[i] = self.shm.get_data(check=True)
                     if i % 10 == 0:  # Update status every 10 frames
                         self.statusBar.showMessage(f"Recording frames: {i+1}/{frames}")
@@ -790,62 +944,243 @@ class daoShmViewer(QMainWindow):
         except Exception as e:
             self.show_error(f"Error saving data: {e}")
 
-    def record_multiple_files(self):
-        """Record multiple selected files."""
-        output_dir = self.multiRecordFilenameEdit.text()
-        if not output_dir:
-            self.show_error("Please select an output directory")
-            return
-            
-        frames = self.multiFrameCounter.value()
-        if frames <= 0:
-            self.show_error("Number of frames must be greater than 0")
-            return
-            
-        # Get list of selected files
-        selected_files = []
-        for row in range(self.tableWidget.rowCount()):
-            checkBox = self.tableWidget.cellWidget(row, 0)
-            if checkBox and checkBox.isChecked():
-                filenameItem = self.tableWidget.item(row, 1)
-                if filenameItem:
-                    selected_files.append(filenameItem.text())
-        
-        if not selected_files:
-            self.show_error("No files selected")
-            return
-        
-        # Get master file (currently selected item in multiRecordList)
-        master_file = None
-        if self.multiRecordList.currentItem():
-            master_file = self.multiRecordList.currentItem().text()
-            
-        # Print the list of files with master file highlighted
-        print("\nSelected Files for Recording:")
-        for filename in selected_files:
-            if filename == master_file:
-                print(f" * {filename} (MASTER)")
-            else:
-                print(f"   {filename}")
-        print(f"\nTotal files: {len(selected_files)}")
-        
-        if master_file:
-            print(f"Master file: {master_file}")
+    def daqAddSource(self, configUI):
+        '''  Adds shared-memory(s) or a file to the DAQ configuration tab '''
+        self.daqWidgetArea.addWidget(configUI)
+        daqViewItem = QTreeWidgetItem(self.daqViewSrcsLeaf, [configUI.source])
+        daqViewItem.setData(0, Qt.UserRole, self.daqWidgetArea.indexOf(configUI))
+        self.daqSourceNames.append(configUI.source)
+        self.daqView.expandItem(self.daqViewSrcsLeaf)
+    
+    def daqAddBtnCallback(self):
+        ''' Adds shared-memory(s) or a file to the DAQ configuration tab from UI '''
+        selectedShms = self.file_list_widget.selectedItems()
+        if len(selectedShms):
+            for shmItem in selectedShms:
+                shmSource = f"/tmp/{shmItem.text()}"
+                if not shmSource in self.daqSourceNames:
+                    configUI = SmemDaqConfig(shmSource)
+                    self.daqAddSource(configUI)
         else:
-            print("No master file selected")
+            fileSource, _ = QFileDialog.getOpenFileName(self, "Select File", os.getcwd())
+            if fileSource and (fileSource not in self.daqSourceNames):
+                configUI = FileDaqConfig(fileSource)
+                self.daqAddSource(configUI)
+
+    def displayDaqConfig(self, item, column):
+        ''' Presents the config UI of the selected DAQ item '''
+        index = item.data(0, Qt.UserRole)
+        if index != None:
+            self.daqWidgetArea.setCurrentIndex(index)
+
+    def initDaqConfig(self):
+        ''' Ensures all DAQ config UI state is reset and then restores back to initial state '''
+        # wipe config UIs.
+        uiWidgets = [self.daqWidgetArea.widget(i) for i in range(self.daqWidgetArea.count())]
+        for w in uiWidgets: self.daqWidgetArea.removeWidget(w)
+
+        # reset DAQ view.
+        self.daqView.clear()
+        
+        # reset source names list
+        self.daqSourceNames.clear()
+        
+        # reset to initial state 
+        sessionConfigUI = DaqSessionConfig()
+        self.daqWidgetArea.addWidget(sessionConfigUI)
+        QTreeWidgetItem(self.daqView, ["DAQ Session"]).setData(0, Qt.UserRole, self.daqWidgetArea.indexOf(sessionConfigUI))
+        self.daqViewSrcsLeaf = QTreeWidgetItem(self.daqView, ["DAQ Sources"])
+
+    def deleteDaqSrc(self):
+        # ensure a DAQ source was selected to delete.
+        if self.daqView.selectedItems() == 0:
+            return
+        
+        item = self.daqView.selectedItems()[0]
+        if item.parent() != self.daqViewSrcsLeaf:
+            return
+        
+        # delete its UI widget.
+        index = item.data(0, Qt.UserRole)
+        w = self.daqWidgetArea.widget(index)
+        self.daqWidgetArea.removeWidget(w)
+        
+        # remove source from lookup
+        self.daqSourceNames.remove(w.source)
+        
+        # rebuild view to obtain correct indicies.
+        self.daqViewSrcsLeaf.takeChildren()
+        for  i in range(1, self.daqWidgetArea.count()):
+            w = self.daqWidgetArea.widget(i)
+            QTreeWidgetItem(self.daqViewSrcsLeaf, [w.source]).setData(0, Qt.UserRole, self.daqWidgetArea.indexOf(w))
+
+    def exportDaqConfig(self) -> dict:
+        ''' Export DAQ config to Python object '''
+        config = {"sources": []}
             
-        self.statusBar.showMessage(f"Files list printed to console. Recording not implemented yet.")
+        for i in range(self.daqWidgetArea.count()):
+            configUI = self.daqWidgetArea.widget(i)
+                
+            if isinstance(configUI, DaqSessionConfig):
+                config["root_storage"] = configUI.pathDisplay.text()
+            elif isinstance(configUI, FileDaqConfig):
+                config["sources"].append({
+                    # required params
+                    "uri": f"file://{configUI.pathDisplay.text()}"
+                })
+            elif isinstance(configUI, SmemDaqConfig):
+                params = {
+                    # required params
+                    "uri": f"smem://{configUI.pathDisplay.text()}",
+                        
+                    # optional params
+                    "format": configUI.formatInput.currentText(),
+                    "metadata_only": configUI.metadataOnlyInput.isChecked(),
+                    "eager_start": configUI.eagerStartInput.isChecked()
+                }
 
-    def openFileDialog(self, event):
-        """Open file dialog for saving."""
-        options = QFileDialog.Options()
-        fileName, _ = QFileDialog.getSaveFileName(
-            self, "Save File", self.filenameEdit.text(), 
-            "Numpy Files (*.npy)", options=options
+                # omit parameters from export that aren't specified in UI.
+                optional = lambda val: val if val != -1 else None
+                if (param := optional(configUI.samplesInput.value())) and (param is not None):      params["samples"] = param
+                if (param := optional(configUI.fileRolloverInput.value())) and (param is not None): params["file_rollover"] = param
+                if (param := optional(configUI.daqAffinityInput.value())) and (param is not None):  params["daq_affinity"] = param
+                if (param := optional(configUI.sinkAffinityInput.value())) and (param is not None): params["sink_affinity"] = param
+                if (param := optional(configUI.bufferLimitInput.value())) and (param is not None):  params["buffer_limit"] = param
+
+                #
+                config["sources"].append(params)
+            else:
+                raise RuntimeError(f"unknown config widget {configUI}")
+                
+        return config
+
+    def exportDaqConfigToFile(self):
+        ''' Allows the user to select a output location and saves the current DAQ config to disk '''
+        filepath, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save DAQ Config File",
+            os.getenv("DAODATA", os.getcwd()),
+            "YAML Files (*.yml *.yaml);;All Files (*)"
         )
-        if fileName:
-            self.filenameEdit.setText(fileName)
+        
+        if not filepath:
+            return
+        
+        try:
+            with open(filepath, "w") as file:
+                yaml.safe_dump(self.exportDaqConfig(), file)
+        except Exception as e:
+            self.show_error(f"failed to export DAQ configuration to disk: {e}")
+            return
 
+    def importDaqConfig(self):
+        ''' Allows the user to select a DAQ config file and loads it into the DAQ UI tab '''
+        filepath, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select DAQ Config File",
+            os.getenv("DAODATA", os.getcwd()),
+            "YAML Files (*.yml *.yaml);;All Files (*)"
+        )
+        
+        if not filepath:
+            return
+        
+        self.initDaqConfig() # wipes current config to clean slate.
+        
+        try:
+            with open(filepath, "r") as file:
+                config = yaml.safe_load(file)
+                
+                # load DAQ session config.
+                node = config
+                sessionUI = self.daqWidgetArea.widget(0)
+                sessionUI.pathDisplay.setText(node["root_storage"])
+                
+                # load each DAQ source config
+                node = config["sources"]
+                for sourceConfig in node:
+                    optional = lambda name: sourceConfig[name] if name in sourceConfig else None
+                        
+                    uri = sourceConfig["uri"]
+                    uriClass, uriPath = uri.split("://")
+                    if uriClass == "smem":
+                        # required params..
+                        smemUI = SmemDaqConfig(uriPath)
+                        
+                        # optional params..
+                        formatInput = optional("format")
+                        metadataOnlyParam = optional("metadata_only")
+                        samplesParam = optional("samples")
+                        fileRolloverParam = optional("file_rollover")
+                        daqAffinityParam = optional("daq_affinity")
+                        sinkAffinityParam = optional("sink_affinity")
+                        bufferLimitParam = optional("buffer_limit")
+                        eagerStartParam = optional("eager_start")
+                        
+                        if formatInput != None:         smemUI.formatInput.setCurrentText(formatInput)                        
+                        if metadataOnlyParam != None:   smemUI.metadataOnlyInput.setChecked(metadataOnlyParam)
+                        if samplesParam != None:        smemUI.samplesInput.setValue(samplesParam)
+                        if fileRolloverParam != None:   smemUI.fileRolloverInput.setValue(fileRolloverParam)
+                        if daqAffinityParam != None:    smemUI.daqAffinityInput.setValue(daqAffinityParam)
+                        if sinkAffinityParam != None:   smemUI.sinkAffinityInput.setValue(sinkAffinityParam)
+                        if bufferLimitParam != None:    smemUI.bufferLimitInput.setValue(bufferLimitParam)
+                        if eagerStartParam != None:     smemUI.eagerStartInput.setChecked(eagerStartParam)
+                    
+                        self.daqAddSource(smemUI)
+                    elif uriClass == "file":
+                        # required params..
+                        fileUI = FileDaqConfig(uriPath)
+
+                        self.daqAddSource(fileUI)
+                    else:
+                        raise RuntimeError(f"invalid URI class '{uriClass}' for source '{uri}'")
+                
+        except Exception as e:
+            self.show_error(f"failed to import DAQ configuration: {e}")
+            return
+
+    def daqSync(self):
+        ''' Periodically invoked by the DAQ timer when a session is in progress to sync the UI with the DAQ tool '''
+        try:
+            client = DAQClient()
+            if client.state() == DAQState.Ready:
+                self.daqBtn.clicked.disconnect(self.finishDaq)
+                self.daqBtn.clicked.connect(self.startDaq)
+                self.daqBtn.setText("Start DAQ")
+                self.daqTimer.stop()
+        except Exception as e:
+             self.daqTimer.stop()
+             self.show_error(f"failed to sync DAQ session: {e}")
+
+    def startDaq(self):
+        ''' Uses the daoDAQ tool to carry out a DAQ session '''
+        try:
+            client = DAQClient()
+            daqConfigString = yaml.dump(self.exportDaqConfig())
+            client.daq_session_configure_upload(daqConfigString)
+            client.daq_session_configure_apply()
+            client.daq_session_begin()
+        except Exception as e:
+            self.show_error(f"failed to start DAQ session: {e}")
+        else:
+            self.daqBtn.setText("Finish DAQ")
+            self.daqBtn.clicked.disconnect(self.startDaq)
+            self.daqBtn.clicked.connect(self.finishDaq)
+            self.daqTimer.start()
+            
+    def finishDaq(self):
+        ''' Finishes the current DAQ session '''
+        try:
+            client = DAQClient()
+            client.daq_session_finish()
+        except Exception as e:
+            self.show_error(f"failed to finish DAQ session: {e}")
+        finally:
+            self.daqTimer.stop()
+            self.daqBtn.clicked.disconnect(self.finishDaq)
+            self.daqBtn.clicked.connect(self.startDaq)
+            self.daqBtn.setText("Start DAQ")
+            
     def openLoadFileDialog(self, event):
         """Open file dialog for loading."""
         options = QFileDialog.Options()
@@ -906,40 +1241,6 @@ class daoShmViewer(QMainWindow):
         except Exception as e:
             self.metadataText.setText(f"Error getting metadata: {e}")
 
-    def updateMultiRecordList(self, *args):
-        """Update the list of files for multi-recording.
-        
-        This function can be called directly or as a slot from a signal.
-        """
-        # Guard against calling before the widget is created
-        if not hasattr(self, 'multiRecordList'):
-            return
-            
-        # Remember the selected item
-        current_item = self.multiRecordList.currentItem()
-        current_text = current_item.text() if current_item else None
-        
-        self.multiRecordList.clear()
-        
-        # Get all currently checked files
-        for row in range(self.tableWidget.rowCount()):
-            checkBox = self.tableWidget.cellWidget(row, 0)
-            if checkBox and checkBox.isChecked():
-                filenameItem = self.tableWidget.item(row, 1)
-                if filenameItem:
-                    self.multiRecordList.addItem(filenameItem.text())
-        
-        # Restore previously selected item if still in list
-        if current_text:
-            items = self.multiRecordList.findItems(current_text, Qt.MatchExactly)
-            if items:
-                self.multiRecordList.setCurrentItem(items[0])
-        
-        # Update count in tab name
-        if hasattr(self, 'tabWidget'):
-            count = self.multiRecordList.count()
-            self.tabWidget.setTabText(2, f"Multi-Record ({count})")
-
     def updateMasterFileDisplay(self):
         """Update the master file label based on the selected item."""
         current_item = self.multiRecordList.currentItem()
@@ -978,7 +1279,7 @@ class daoShmViewer(QMainWindow):
                         if hdu.data is not None and hasattr(hdu.data, 'shape'):
                             hdu_shape = hdu.data.shape
                             hdu_base_dtype = np.dtype(hdu.data.dtype.kind + str(hdu.data.dtype.itemsize))
-                            x
+                            
                             # Check if this HDU matches our requirements
                             if hdu_shape == shm_shape and hdu_base_dtype == shm_base_dtype:
                                 data = hdu.data
@@ -1242,13 +1543,13 @@ class daoShmViewer(QMainWindow):
             
         search_text = self.search_filter.text().lower()
         
-        for row in range(self.tableWidget.rowCount()):
-            filenameItem = self.tableWidget.item(row, 1)
+        for row in range(self.file_list_widget.count()):
+            filenameItem = self.file_list_widget.item(row)
             if filenameItem:
                 filename = filenameItem.text().lower()
                 # Show row if search text is empty or if filename contains search text
                 show_row = not search_text or search_text in filename
-                self.tableWidget.setRowHidden(row, not show_row)
+                self.file_list_widget.setRowHidden(row, not show_row)
 
 def main():
     """Main application entry point."""
