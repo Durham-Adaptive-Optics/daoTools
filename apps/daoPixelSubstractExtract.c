@@ -43,12 +43,13 @@ struct timespec tnow;
 double tnowdouble;
 double tlastupdatedouble;
 
-
+int normalizeFlag = 0;   // 0 = no normalization, 1 = normalize output
 char inAShmName[32];
 int semNb = 0;
 char inBShmName[32];
 char maskShmName[32];
 char extractShmName[32];
+char normShmName[32];
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -66,11 +67,12 @@ static void ShowHelp(void)
     daoInfo("   arguments:\n");
     daoInfo("   -h               display this message and exit\n");
     daoInfo("   -d               display program debug output\n");
+    daoInfo("   -N               normalize output image\n");
     daoInfo("   -S               list of SHM (full path separated by space)\n");
     daoInfo("   -s               semaphore number\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage:\n");
-    daoInfo("   -S <input A SHM> <input B SHM> <mask SHM> <extract SHM> -s <semNb> -L\n");
+    daoInfo("   -S <input A SHM> <input B SHM> <mask SHM> <extract SHM> <norm SHM> -s <semNb> -L\n");
     daoInfo("\n");
 }
 
@@ -83,15 +85,18 @@ static int realTimeLoop()
     IMAGE *inBShm;
     IMAGE *maskShm;
     IMAGE *extractShm;
+    IMAGE *normShm;
 
     inAShm = (IMAGE*) malloc(sizeof(IMAGE));
     inBShm = (IMAGE*) malloc(sizeof(IMAGE));
     maskShm = (IMAGE*) malloc(sizeof(IMAGE));
     extractShm = (IMAGE*) malloc(sizeof(IMAGE));
+    normShm = (IMAGE*) malloc(sizeof(IMAGE));
     daoShmShm2Img(inAShmName, &inAShm[0]);
     daoShmShm2Img(inBShmName, &inBShm[0]);
     daoShmShm2Img(maskShmName, &maskShm[0]);
     daoShmShm2Img(extractShmName, &extractShm[0]);
+    daoShmShm2Img(normShmName, &normShm[0]);
 
     daoInfo("Starting loop, (%s - %s) (%s) -> %s \n",inAShmName, inBShmName, maskShmName, extractShmName);
     fflush(stdout);
@@ -101,6 +106,9 @@ static int realTimeLoop()
     double calTime;
     clock_gettime(CLOCK_REALTIME, &t[1]);
     int waitCounter = 0;
+    float sum=0.0;
+    int nbValue = extractShm[0].md[0].size[0]*extractShm[0].md[0].size[1];
+    int k=0;
     usleep(2000000);
     while (end ==0)
     {
@@ -110,16 +118,21 @@ static int realTimeLoop()
         if (daoShmWaitForSemaphoreTimeout(inAShm, semNb, &timeout) != -1)
         {
             clock_gettime(CLOCK_REALTIME, &t[2]);
-            daoToolsShmSubstractExtract(inAShm, inBShm, maskShm, extractShm);
-
+            daoToolsShmSubstractExtractFinalize(inAShm, inBShm, maskShm, extractShm, normShm, normalizeFlag);
+            
+            for (k=0; k<nbValue; k++)
+            {
+                sum += extractShm[0].array.F[k];   
+            }
             clock_gettime(CLOCK_REALTIME, &t[1]);
             elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
             elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
             calTime = (t[1].tv_sec - t[2].tv_sec) * 1e3;
             calTime += (t[1].tv_nsec - t[2].tv_nsec) / 1e6;
-            printf("\rcal time = %8.3f us, fps = %8.3f Hz", 
+            printf("\rcal time = %8.3f us, fps = %8.3f Hz, totalFlux = %f", 
                    1000*calTime,
-                   1e6 / (1000 * elapsedTime));
+                   1e6 / (1000 * elapsedTime), sum);
+            sum = 0.0;
         }
         else
         {
@@ -175,15 +188,21 @@ static void DecodeArgs(int argc, char **argv)
                         daoDebug("will sleep for %d usec\n",a1);
                         (void)usleep(a1);
                         break;
+            case 'N':
+                        normalizeFlag = 1;
+                        daoInfo("Output normalization ENABLED\n");
+                        break;
             case 'S':
                     	(void)sscanf(*argv++,"%s",inAShmName); argc -= 1;
                     	(void)sscanf(*argv++,"%s",inBShmName); argc -= 1;
                     	(void)sscanf(*argv++,"%s",maskShmName); argc -= 1;
                     	(void)sscanf(*argv++,"%s",extractShmName); argc -= 1;
+                    	(void)sscanf(*argv++,"%s",normShmName); argc -= 1;
                         daoInfo("image in A       : %s\n", inAShmName);
                         daoInfo("image in B       : %s\n", inBShmName);
                         daoInfo("mask             : %s\n", maskShmName);
                         daoInfo("extracted image  : %s\n", extractShmName);
+                        daoInfo("normalization    : %s\n", normShmName);
                         break;
             case 's':	
                         (void)sscanf(*argv++,"%d", &semNb);

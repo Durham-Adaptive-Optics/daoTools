@@ -103,6 +103,16 @@ daoLeakyIntegrator = bld.program(
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
+daoLeakyIntegratorMap = bld.program(
+	source = 'daoLeakyIntegratorMap.c',
+	target = 'daoLeakyIntegratorMap',
+	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+	linkflags = my_link_flags,
+	ldflags = ['-ldao' , '-lpthread', '-lm'] + my_ld_flags,
+	use = 'daoTools',
+	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
+	)
+
 # daoDMSend = bld.program(
 # 	source = 'daoDMSend.c',
 # 	target = 'daoDMSend',

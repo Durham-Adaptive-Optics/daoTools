@@ -94,17 +94,18 @@ static int realTimeLoop()
     mcShm = (IMAGE*) malloc(sizeof(IMAGE));
     daoShmShm2Img(mcShmName, &mcShm[0]);
 
+    daoInfo("%dx%d\n", inShm[0].md[0].size[0], inShm[0].md[0].size[1]);
     // Create LO SHM
     loShm = (IMAGE*) malloc(sizeof(IMAGE));
     daoToolsInsertShmNamePrefix(inShmName, "LO", loShmName);
-    size[0] = inShm[0].md[0].size[0];
+    size[0] = mcShm[0].array.UI32[0];
     size[1] = inShm[0].md[0].size[1];
     daoShmImageCreate(loShm, loShmName, 2, size, inShm[0].md[0].atype, 1, 0);
 
     // Create HO SHM
     hoShm = (IMAGE*) malloc(sizeof(IMAGE));
     daoToolsInsertShmNamePrefix(inShmName, "HO", hoShmName);
-    size[0] = inShm[0].md[0].size[0];
+    size[0] = inShm[0].md[0].size[0]-mcShm[0].array.UI32[0];
     size[1] = inShm[0].md[0].size[1];
     daoShmImageCreate(hoShm, hoShmName, 2, size, inShm[0].md[0].atype, 1, 0);
 
@@ -133,13 +134,11 @@ static int realTimeLoop()
 
             for (k=0; k<mcShm[0].array.UI32[0]; k++)
             {
-                loShm[0].array.D[k] = inShm[0].array.D[k];
-                hoShm[0].array.D[k] = 0;
+                loShm[0].array.F[k] = inShm[0].array.F[k];
             }
             for (k=mcShm[0].array.UI32[0]; k<inSize; k++)
             {
-                loShm[0].array.D[k] = 0;
-                hoShm[0].array.D[k] = inShm[0].array.D[k];
+                hoShm[0].array.F[k-mcShm[0].array.UI32[0]] = inShm[0].array.F[k];
             }
 
             daoShmImagePart2ShmFinalize(&loShm[0]);
