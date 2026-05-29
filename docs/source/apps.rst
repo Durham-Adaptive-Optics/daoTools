@@ -274,6 +274,17 @@ Data Conversion & I/O
 Simulation
 ----------
 
+daoReconstructor.py
+~~~~~~~~~~~~~~~~~~~
+
+Minimal Python MVM reconstructor script for debugging and offline testing. Reads an input SHM, multiplies by a reconstruction matrix SHM, and writes to an output SHM:
+
+.. code-block:: bash
+
+    daoReconstructor.py -i <input_shm> -r <recon_shm> -o <output_shm>
+
+Runs at reduced scheduling priority (``nice +10``). Intended as a reference implementation — for production use the C ``daoMvM`` binary.
+
 daoTurbulenceSimulator.py
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
