@@ -418,4 +418,4 @@ daoShmAdd = bld.program(
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
-#bld.recurse("daoDAQ")
+bld.recurse("daoDAQ")
