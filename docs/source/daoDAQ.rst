@@ -1,4 +1,4 @@
-DAO Data Acquisition Tool (v3.0.0)
+DAO Data Acquisition Tool (v3.1.x)
 ===================================
 
 The DAO Data Acquisition Tool (``daoDAQ``) facilitates acquisition of various data sources within a DAO RTC system. It ships with ``daoTools`` and can be verified via ``daoDAQ --version``.

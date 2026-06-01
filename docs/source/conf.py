@@ -15,7 +15,7 @@
 
 project = 'daoTools'
 copyright = '2026, David Barr, Sylvain Cetre'
-author = 'David Barr, Sylvain Cetre'
+author = 'David Barr, Sylvain Cetre, Thomas N. Davies'
 
 # The full version, including alpha/beta/rc tags
 release = '0.1'
@@ -37,7 +37,6 @@ html_theme = 'sphinx_rtd_theme'
 
 html_theme_options = {
     'logo_only': False,
-    'display_version': True,
     'prev_next_buttons_location': 'bottom',
     'style_external_links': False,
     'vcs_pageview_mode': '',
