@@ -35,10 +35,19 @@ def make_colormap(name):
     colors = COLORMAPS.get(name, COLORMAPS['grey'])
     return pg.ColorMap(np.linspace(0, 1, len(colors)), colors)
 
+def strip_border(data):
+    """Zero out first/last row and column."""
+    d = data.copy()
+    d[0,  :] = 0
+    d[-1, :] = 0
+    d[:,  0] = 0
+    d[:, -1] = 0
+    return d
+
 
 def parse_args():
     p = argparse.ArgumentParser(description='Real-time image display from shared memory')
-    p.add_argument('shmName',           help='Shared memory path')
+    p.add_argument('shmName',            help='Shared memory path')
     p.add_argument('--fps',  type=float, default=10.0, help='Update rate in Hz')
     p.add_argument('--cmap', default='grey', choices=COLORMAPS.keys())
     p.add_argument('--size', type=int,   default=600,  help='Display size in pixels')
@@ -107,7 +116,7 @@ def main():
     line2.addStretch()
     layout.addLayout(line2)
 
-    # --- Line 3: cmap + freeze ---
+    # --- Line 3: cmap + border + freeze ---
     line3 = QtWidgets.QHBoxLayout()
 
     line3.addWidget(QtWidgets.QLabel("Cmap:"))
@@ -116,6 +125,11 @@ def main():
         cmap_combo.addItem(name)
     cmap_combo.setCurrentText(args.cmap)
     line3.addWidget(cmap_combo)
+
+    border_cb = QtWidgets.QCheckBox("Strip border")
+    border_cb.setChecked(False)
+    border_cb.setToolTip("Zero out first/last row and column (removes encoded border pixels from autoscale)")
+    line3.addWidget(border_cb)
 
     freeze_btn = QtWidgets.QPushButton("Freeze")
     freeze_btn.setCheckable(True)
@@ -198,6 +212,9 @@ def main():
             return
         if data.ndim != 2:
             return
+
+        if border_cb.isChecked():
+            data = strip_border(data)
 
         vmin = data.min() if autoscale_cb.isChecked() else min_spin.value()
         vmax = data.max() if autoscale_cb.isChecked() else max_spin.value()
