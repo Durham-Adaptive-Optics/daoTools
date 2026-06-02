@@ -115,6 +115,8 @@ def main():
         QPushButton:pressed { background-color: #555; }
         QPushButton:checked { background-color: #1a5a8a; border-color: #2a8aba; }
         QCheckBox, QLabel   { color: #cccccc; }
+        QCheckBox::indicator          { width: 14px; height: 14px; }
+        QCheckBox::indicator:unchecked { background-color: #aaaaaa; border: 1px solid #ccc; }
         QDoubleSpinBox, QComboBox {
             background-color: #3a3a3a; color: #cccccc; border: 1px solid #555;
         }
