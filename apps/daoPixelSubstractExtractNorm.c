@@ -1,5 +1,5 @@
 /*****************************************************************************
-  Durham AO project
+  DAO project
   s.cetre
  *****************************************************************************/
 
@@ -43,12 +43,11 @@ struct timespec tnow;
 double tnowdouble;
 double tlastupdatedouble;
 
-IMAGE *outShm;
-IMAGE *clockShm;
-
-char outShmName[32];
-char clockShmName[32];
+char inAShmName[32];
 int semNb = 0;
+char inBShmName[32];
+char maskShmName[32];
+char extractShmName[32];
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -67,10 +66,12 @@ static void ShowHelp(void)
     daoInfo("   arguments:\n");
     daoInfo("   -h               display this message and exit\n");
     daoInfo("   -d               display program debug output\n");
-    /*
-     **	Post init tests
-     */
-    daoInfo("   -L shm clockShm real time control loop\n");
+    daoInfo("   -N               normalize output image\n");
+    daoInfo("   -S               list of SHM (full path separated by space)\n");
+    daoInfo("   -s               semaphore number\n");
+    daoInfo("   -L               start real-time loop\n");
+    daoInfo("   usage:\n");
+    daoInfo("   -S <input A SHM> <input B SHM> <mask SHM> <extract SHM> <norm SHM> -s <semNb> -L\n");
     daoInfo("\n");
 }
 
@@ -79,52 +80,69 @@ static int realTimeLoop()
 {
     // register interrupt signal to terminate the main loop
     signal(SIGINT, endme);
+    IMAGE *inAShm;
+    IMAGE *inBShm;
+    IMAGE *maskShm;
+    IMAGE *extractShm;
 
-    daoInfo("Starting loop, %s \n", outShmName);
+    inAShm = (IMAGE*) malloc(sizeof(IMAGE));
+    inBShm = (IMAGE*) malloc(sizeof(IMAGE));
+    maskShm = (IMAGE*) malloc(sizeof(IMAGE));
+    extractShm = (IMAGE*) malloc(sizeof(IMAGE));
+    daoShmShm2Img(inAShmName, &inAShm[0]);
+    daoShmShm2Img(inBShmName, &inBShm[0]);
+    daoShmShm2Img(maskShmName, &maskShm[0]);
+    daoShmShm2Img(extractShmName, &extractShm[0]);
+
+    daoInfo("Starting loop, (%s - %s) (%s) -> %s \n",inAShmName, inBShmName, maskShmName, extractShmName);
     fflush(stdout);
-    outShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(outShmName, &outShm[0]);
-    clockShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(clockShmName, &clockShm[0]);
-
-    int outSize = outShm[0].md[0].size[0]*outShm[0].md[0].size[1];
-    struct timespec t[4];
-    double elapsedTime;
-    clock_gettime(CLOCK_REALTIME, &t[1]);
-    int k;
-    float outCmd[outSize];
+    struct timespec t[3];
     struct timespec timeout;
+    double elapsedTime;
+    double calTime;
+    clock_gettime(CLOCK_REALTIME, &t[1]);
+    int waitCounter = 0;
+    float sum=0.0;
+    int nbValue = extractShm[0].md[0].size[0]*extractShm[0].md[0].size[1];
+    int k=0;
+    usleep(2000000);
     while (end ==0)
     {
+        t[0] = t[1];
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
-        // Wait for the clock frame using semaphore
-        if (daoShmWaitForSemaphoreTimeout(clockShm, semNb, &timeout) != DAO_TIMEOUT)
+        if (daoShmWaitForSemaphoreTimeout(inAShm, semNb, &timeout) != -1)
         {
-            t[0] = t[1];
-            outShm[0].md[0].cnt2 = clockShm[0].md[0].cnt2;
             clock_gettime(CLOCK_REALTIME, &t[2]);
-            for (k = 0; k < outSize; k++)
+            daoToolsShmSubstractExtractNorm(inAShm, inBShm, maskShm, extractShm);
+            
+            for (k=0; k<nbValue; k++)
             {
-                outCmd[k] = 1 - 2 * (float)rand() / (float)RAND_MAX;
+                sum += extractShm[0].array.F[k];   
             }
-
-            daoShmImage2Shm((float *)outCmd, outSize, &outShm[0]);
-
             clock_gettime(CLOCK_REALTIME, &t[1]);
             elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
             elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
-            printf("\rfps = %.3f Hz, out[%6.3f, %6.3f,...,%6.3f]", 1e6 / (1000 * elapsedTime),
-                   outShm[0].array.F[0],
-                   outShm[0].array.F[1],
-                   outShm[0].array.F[outSize - 1]);
-            fflush(stdout);
+            calTime = (t[1].tv_sec - t[2].tv_sec) * 1e3;
+            calTime += (t[1].tv_nsec - t[2].tv_nsec) / 1e6;
+            printf("\rcal time = %8.3f us, fps = %8.3f Hz, totalFlux = %f", 
+                   1000*calTime,
+                   1e6 / (1000 * elapsedTime), sum);
+            sum = 0.0;
         }
+        else
+        {
+            waitCounter += 1;
+            printf("\rWAIT %d", waitCounter);
+        }
+        fflush(stdout);
     }
 
 
     daoInfo("EXITING MAIN LOOP\n");
     fflush(stdout);
+
+
 
     return 0;
 }
@@ -139,17 +157,21 @@ static void DecodeArgs(int argc, char **argv)
 
     argv += 1;	argc -= 1;					/* skip program name */
 
-    while (argc-- > 0) {
+    while (argc-- > 0) 
+    {
         daoDebug("DecodeArgs: working on '%s'/%d\n",*argv,argc);
         str = *argv++;
-        if (str[0] != '-') {
+        if (str[0] != '-')
+        {
             daoError("Do not know arg '%s'\n",str);
             ShowHelp();
             exit(1);
         }
 
         switch (str[1]) {
-            case 'h':	ShowHelp(); exit(0);
+            case 'h':	
+                        ShowHelp();
+                        exit(0);
             case 'd':	
                         (void)sscanf(*argv++,"%d",&daoLogLevel); argc -= 1;
                         break;
@@ -157,18 +179,27 @@ static void DecodeArgs(int argc, char **argv)
                         daoInfo("%s\n",*argv);
                         argv += 1; argc -= 1;
                         break;
-
             case 'u':
                         (void)sscanf(*argv++,"%d",&a1); argc -= 1;
                         daoDebug("will sleep for %d usec\n",a1);
                         (void)usleep(a1);
                         break;
             case 'S':
-                        daoInfo("Simple writer from SHM real time control, listening to a SHM clock\n");
-                    	(void)sscanf(*argv++,"%s",outShmName); argc -= 1;
-                        (void)sscanf(*argv++,"%s",clockShmName); argc -= 1;
+                    	(void)sscanf(*argv++,"%s",inAShmName); argc -= 1;
+                    	(void)sscanf(*argv++,"%s",inBShmName); argc -= 1;
+                    	(void)sscanf(*argv++,"%s",maskShmName); argc -= 1;
+                    	(void)sscanf(*argv++,"%s",extractShmName); argc -= 1;
+                        daoInfo("image in A       : %s\n", inAShmName);
+                        daoInfo("image in B       : %s\n", inBShmName);
+                        daoInfo("mask             : %s\n", maskShmName);
+                        daoInfo("extracted image  : %s\n", extractShmName);
+                        break;
+            case 's':	
+                        (void)sscanf(*argv++,"%d", &semNb);
+                        daoInfo("inputShm sem     : %d \n", semNb);
                         break;
             case 'L':
+                        daoInfo("Substract and Extract from SHM real time control\n");
                         realTimeLoop();
                         break;
             default:

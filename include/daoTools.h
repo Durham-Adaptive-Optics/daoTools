@@ -36,111 +36,127 @@ uint32_t daoComputeChecksum(const void* data, size_t length_bytes);
 
 unsigned daoToolsIp2Int(const char* ip);
 void daoToolsInsertShmNamePrefix(const char* base_string,
-    const char* prefix,
-    char* final_string);
+                                 const char* prefix,
+                                 char* final_string); 
 
-int_fast8_t daoToolsShmCalibrate(IMAGE* inShm,
-    IMAGE* ffShm,
-    IMAGE* bgShm,
-    IMAGE* calShm);
+int_fast8_t daoToolsShmCalibrate(IMAGE *inShm,
+                                 IMAGE *ffShm,
+                                 IMAGE *bgShm,
+                                 IMAGE *calShm);
 
-int_fast8_t daoToolsShmCalibrate64(IMAGE* inShm,
-    IMAGE* ffShm,
-    IMAGE* bgShm,
-    IMAGE* calShm);
+int_fast8_t daoToolsShmCalibrate64(IMAGE *inShm,
+                                    IMAGE *ffShm,
+                                    IMAGE *bgShm,
+                                    IMAGE *calShm);
 
-int_fast8_t daoToolsShmCalibratePws(IMAGE* inShm,
-    IMAGE* ffShm,
-    IMAGE* bgShm,
-    IMAGE* maskShm,
-    IMAGE* calShm,
-    IMAGE* fluxShm);
+int_fast8_t daoToolsShmCalibratePws(IMAGE *inShm, 
+                                    IMAGE *ffShm,
+                                    IMAGE *bgShm, 
+                                    IMAGE *maskShm, 
+                                    IMAGE *calShm, 
+                                    IMAGE *fluxShm);
 
-int_fast8_t daoToolCog(float* img,
-    int height,
-    int width,
-    float* centX,
-    float* centY);
-int_fast8_t daoToolsCommandFilter(float* command,
-    int nbVal,
-    daoFilterHistory* filterHistory,
-    float* servoFilter,
-    float* commandOffset,
-    float* filteredCommand);
-int_fast8_t daoToolsLeakyIntegrator(float* command,
-    int nbVal,
-    float leaky,
-    float gain,
-    float* commandOffset,
-    float* filteredCommand);
-int_fast8_t daoToolsLeakyIntegratorDouble(double* command,
-    int nbVal,
-    double leaky,
-    double gain,
-    double* commandOffset,
-    double* filteredCommand);
-int_fast8_t daoToolsLeakyModalIntegrator(float* command,
-    int nbVal,
-    float* leaky,
-    float* gain,
-    float* commandOffset,
-    float* filteredCommand);
-int_fast8_t daoToolsLeakyModalIntegratorDouble(double* command,
-    int nbVal,
-    double* leaky,
-    double* gain,
-    double* commandOffset,
-    double* filteredCommand);
-int_fast8_t daoCentroidSpots(float* image,
-    int imageSize,
-    float* ref,
-    int boxSize,
-    int nSuba,
-    float threshold,
-    float* cent);
-int_fast8_t daoCentroidSpotsRelative(float* image,
-    int imageSize,
-    float* ref,
-    int boxSize,
-    int nSuba,
-    float threshold,
-    float* cent);
+int_fast8_t daoToolCog(float *img,
+                       int height,
+                       int width,
+                       float *centX,
+                       float *centY);
+int_fast8_t daoToolsCommandFilter(float *command,
+                                  int nbVal,
+                                  daoFilterHistory *filterHistory,
+                                  float *servoFilter,
+                                  float *commandOffset,
+                                  float *filteredCommand);
+int_fast8_t daoToolsLeakyIntegrator(float *command,
+                                     int nbVal,
+                                     float leaky,
+                                     float gain,
+                                     float *commandOffset,
+                                     float *filteredCommand);
+int_fast8_t daoToolsLeakyIntegratorDouble(double *command,
+                                           int nbVal,
+                                           double leaky,
+                                           double gain,
+                                           double *commandOffset,
+                                           double *filteredCommand);
+int_fast8_t daoToolsLeakyModalIntegrator(float *command,
+                                         int nbVal,
+                                         float *leaky,
+                                         float *gain,
+                                         float *commandOffset,
+                                         float *filteredCommand);
+int_fast8_t daoToolsLeakyModalIntegratorDouble(double *command,
+                                              int nbVal,
+                                              double *leaky,
+                                              double *gain,
+                                              double *commandOffset,
+                                              double *filteredCommand);
+int_fast8_t daoCentroidSpots(float * image,
+                             int imageSize,
+                             float * ref,
+                             int boxSize,
+                             int nSuba,
+                             float threshold,
+                             float * cent);
+int_fast8_t daoCentroidSpotsRelative(float *image,
+                                     int imageSize,
+                                     float *ref,
+                                     int boxSize,
+                                     int nSuba,
+                                     float threshold,
+                                     float *cent);
 
-int_fast8_t daoCentroidPws(float* im, float* slopes,
-    float* slopesRef, int* wfsPixId, int* wfsPixIdMap,
-    float* flux, int nbPix,
-    int imSize, int pupSize);
+int_fast8_t daoCentroidPws(float *im, float *slopes,
+                           float *slopesRef, int *wfsPixId, int *wfsPixIdMap,
+                           float *flux, int nbPix,
+                           int imSize, int pupSize);
 
-void daoDescrambleOcam2Image(uint8_t img[], int imgRows, int imgCols, uint16_t* img16[],
-    int descrambler[], int descramblerSize, uint16_t output[]);
+void daoDescrambleOcam2Image(uint8_t img[], int imgRows, int imgCols, uint16_t *img16[],
+                             int descrambler[], int descramblerSize, uint16_t output[]);
 
-int_fast8_t daoToolsShmExtract(IMAGE* inShm,
-    IMAGE* maskShm,
-    IMAGE* outShm);
+int_fast8_t daoToolsShmExtract(IMAGE *inShm,
+                               IMAGE *maskShm,
+                               IMAGE *outShm);
 
-int_fast8_t daoToolsShmSubstractExtract(IMAGE* inAShm,
-    IMAGE* inBShm,
-    IMAGE* maskShm,
-    IMAGE* outShm);
+int_fast8_t daoToolsShmSubstractExtractFinalize(IMAGE *inAShm,
+                                IMAGE *inBShm,
+                                IMAGE *maskShm,
+                                IMAGE *outShm,
+                                IMAGE *normShm,
+                                int normalize);
 
-int_fast8_t daoToolsHighPassFilter(float* H,
-    const float* C,
-    const float* CPrev,
-    const float* HPrev,
-    float fCutoff,
-    float fLoop,
-    int size);
+int_fast8_t daoToolsShmSubstractExtract(IMAGE *inAShm,
+                                IMAGE *inBShm,
+                                IMAGE *maskShm,
+                                IMAGE *outShm,
+                                IMAGE *normShm,
+                                int normalize);
 
-int_fast8_t daoToolsHighPassFilterDouble(double* H,
-    const double* C,
-    const double* CPrev,
-    const double* HPrev,
-    double fCutoff,
-    double fLoop,
-    int size);
+int_fast8_t daoToolsShmSubstractExtractNorm(IMAGE* inAShm,
+                                            IMAGE* inBShm,
+                                            IMAGE* maskShm,
+                                            IMAGE* outShm);
 
-int_fast8_t daoDmCombine(IMAGE** imageCube, IMAGE* image, int nbChannel, int nbVal, int removePiston, double clipping);
-int_fast8_t daoShmCopyToPosition(IMAGE* imageIn, IMAGE* imageOut, int nbVal, int position, int finalize);
+int_fast8_t daoToolsImgNormalize(IMAGE *img);
+
+int_fast8_t daoToolsHighPassFilter(float *H,           
+                                   const float *C,  
+                                   const float *CPrev,
+                                   const float *HPrev,
+                                   float fCutoff, 
+                                   float fLoop,
+                                   int size);
+
+int_fast8_t daoToolsHighPassFilterDouble(double *H,           
+                                         const double *C,  
+                                         const double *CPrev,
+                                         const double *HPrev,
+                                         double fCutoff, 
+                                         double fLoop,
+                                         int size);
+
+int_fast8_t daoDmCombine(IMAGE **imageCube, IMAGE *image, int nbChannel, int nbVal, int removePiston, double clipping);
+int_fast8_t daoShmCopyToPosition(IMAGE *imageIn, IMAGE *imageOut, int nbVal, int position, int finalize);
 
 #ifdef __APPLE__
 

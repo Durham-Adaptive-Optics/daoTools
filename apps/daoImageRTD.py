@@ -74,7 +74,7 @@ if __name__ == '__main__':
         data=im
         dmax=data.max()
         a.set_data(data)
-        a.set_clim(0,dmax)
+        #a.set_clim(0,dmax)
         fig.canvas.draw()
         fig.canvas.flush_events()
         time.sleep(1/60.)

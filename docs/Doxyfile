@@ -1,0 +1,36 @@
+# Doxyfile 1.8.20
+
+# This file describes the settings to be used by the documentation system
+# doxygen (www.doxygen.org) for a project.
+
+DOXYFILE_ENCODING      = UTF-8
+
+PROJECT_NAME           = "daoTools"
+PROJECT_NUMBER         =
+PROJECT_BRIEF          = "DAO RTC Tools Library"
+
+INPUT                  = ../../include \
+                         ../../src \
+                         ../../apps \
+                         ../../gui \
+                         ../../scripts
+
+RECURSIVE              = YES
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+OUTPUT_DIRECTORY       = build/doxygen
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+HAVE_DOT               = NO
+
+FILE_PATTERNS          = *.c \
+                         *.cpp \
+                         *.h \
+                         *.hpp \
+                         *.py
+
+EXTENSION_MAPPING      = py=Python
+
+QUIET                  = NO
+WARNINGS               = YES

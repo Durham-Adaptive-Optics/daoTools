@@ -79,8 +79,9 @@ struct arg_struct {
 static int end     = 0;
 
 // termination function for SIGINT callback
-static void endme() 
+static void endme(int _a)
 {
+    (void)_a;
     end = 1;
 }
 

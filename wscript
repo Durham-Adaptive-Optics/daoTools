@@ -135,3 +135,11 @@ def build(bld):
 	for file in files:
 		bld.install_files(bld.env.PREFIX+'/bin', file, chmod=0o0755, relative_trick=False)
 
+docs = 'docs'
+
+def build_docs(conf):
+	os.system("doxygen docs/Doxyfile")
+	os.system(f"make -C {docs} html")
+
+def clean_docs(conf):
+	os.system(f"make -C {docs} clean")

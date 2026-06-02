@@ -47,10 +47,7 @@ double dt_update; // time since last update
 double dt_update_lim = 3600.0; // if no command is received during this time, set DM to zero V [sec]
 
 char inShmName[32];
-char outShmName[32];
-char fcShmName[32];
-char fpsShmName[32];
-char enaShmName[32];
+char mcShmName[32];
 int semNb=0;
 
 static int   		end     = 0;		           // termination flag
@@ -74,7 +71,7 @@ static void ShowHelp(void)
     daoInfo("   -s               semaphore number\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage:\n");
-    daoInfo("   daoHighPassFilter -S <in SHM> <out SHM> <fc SHM> <fps SHM> <ena SHM> -s <semNb> -L\n");
+    daoInfo("   daoModesCutOff -S <modes SHM> <modes cutoff SHM> -s <semNb> -L\n");
     printf("\n");
 }
 
@@ -86,54 +83,45 @@ static int realTimeLoop()
 
     uint32_t size[2];
     IMAGE *inShm;
-    IMAGE *inShmPrev;
-    IMAGE *outShm;
-    IMAGE *outShmPrev;
+    IMAGE *mcShm;
+    IMAGE *loShm;
+    IMAGE *hoShm;
 
-    IMAGE *fcShm;
-    IMAGE *fpsShm;
-    IMAGE *enaShm;
-
-    fcShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(fcShmName, &fcShm[0]);
-    fpsShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(fpsShmName, &fpsShm[0]);
-    enaShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(enaShmName, &enaShm[0]);
-
-    char inShmNamePrev[32];
-    char outShmNamePrev[32];
+    char loShmName[32];
+    char hoShmName[32];
 
     inShm = (IMAGE*) malloc(sizeof(IMAGE));
     daoShmShm2Img(inShmName, &inShm[0]);
-    // Create Prev SHM
-    inShmPrev = (IMAGE*) malloc(sizeof(IMAGE));
-    daoToolsInsertShmNamePrefix(inShmName, "Prev", inShmNamePrev);
+    mcShm = (IMAGE*) malloc(sizeof(IMAGE));
+    daoShmShm2Img(mcShmName, &mcShm[0]);
+
+    // Create LO SHM
+    loShm = (IMAGE*) malloc(sizeof(IMAGE));
+    daoToolsInsertShmNamePrefix(inShmName, "LO", loShmName);
     size[0] = inShm[0].md[0].size[0];
     size[1] = inShm[0].md[0].size[1];
-    daoShmImageCreate(inShmPrev, inShmNamePrev, 2, size, inShm[0].md[0].atype, 1, 0);
+    daoShmImageCreate(loShm, loShmName, 2, size, inShm[0].md[0].atype, 1, 0);
 
-    outShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(outShmName, &outShm[0]);
-    // Create Prev SHM
-    outShmPrev = (IMAGE*) malloc(sizeof(IMAGE));
-    daoToolsInsertShmNamePrefix(outShmName, "Prev", outShmNamePrev);
+    // Create HO SHM
+    hoShm = (IMAGE*) malloc(sizeof(IMAGE));
+    daoToolsInsertShmNamePrefix(inShmName, "HO", hoShmName);
     size[0] = inShm[0].md[0].size[0];
     size[1] = inShm[0].md[0].size[1];
-    daoShmImageCreate(outShmPrev, inShmNamePrev, 2, size, inShm[0].md[0].atype, 1, 0);
+    daoShmImageCreate(hoShm, hoShmName, 2, size, inShm[0].md[0].atype, 1, 0);
 
-    printf("Starting loop, (%s,%s) -> (%s,%s)\n",
-           inShmName, inShmNamePrev, outShmName, outShmNamePrev);
+    printf("Starting loop, (%s) -> (%s,%s)\n",
+           inShmName, loShmName, hoShmName);
 
     fflush(stdout);
 
-    int inSize = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
+    uint32_t inSize = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
 
     struct timespec t[3];
     struct timespec timeout;
     double elapsedTime;
     double compTime;
     int cnt=0;
+    uint32_t k=0;
     clock_gettime(CLOCK_REALTIME, &t[1]);
     while (end ==0)
     {
@@ -143,57 +131,31 @@ static int realTimeLoop()
         if (daoShmWaitForSemaphoreTimeout(inShm, semNb, &timeout) != DAO_TIMEOUT)
         {
             clock_gettime(CLOCK_REALTIME, &t[2]);
-            
-            if (enaShm[0].array.UI32[0] == 1)
+
+            for (k=0; k<inSize; k++)
             {
-                if (inShm[0].md[0].atype == _DATATYPE_DOUBLE)
+                if (k<mcShm[0].array.UI32[0])
                 {
-                    daoToolsHighPassFilterDouble(outShm[0].array.D,
-                                                 inShm[0].array.D,  
-                                                 outShmPrev[0].array.D,  
-                                                 inShmPrev[0].array.D,  
-                                                 fcShm[0].array.D[0],
-                                                 fpsShm[0].array.D[0],
-                                                 inSize);
+                    loShm[0].array.F[k] = inShm[0].array.F[k];
+                    hoShm[0].array.F[k] = 0;
                 }
                 else
                 {
-                    daoToolsHighPassFilter(outShm[0].array.F,
-                                           inShm[0].array.F,  
-                                           outShmPrev[0].array.F,  
-                                           inShmPrev[0].array.F,  
-                                           fcShm[0].array.F[0],
-                                           fpsShm[0].array.F[0],
-                                           inSize);
-                }
-            }
-            else
-            {
-                if (inShm[0].md[0].atype == _DATATYPE_DOUBLE)
-                {
-                    daoShmImage2Shm(inShm[0].array.D, inSize, outShm);
-                }
-                else
-                {
-                    daoShmImage2Shm(inShm[0].array.F, inSize, outShm);
+                    loShm[0].array.F[k] = 0;
+                    hoShm[0].array.F[k] = inShm[0].array.F[k];
                 }
             }
 
-            daoShmImagePart2ShmFinalize(&outShm[0]);
+            daoShmImagePart2ShmFinalize(&loShm[0]);
+            daoShmImagePart2ShmFinalize(&hoShm[0]);
             
-            // After the call, update previous frame buffers
-            for (int i = 0; i < inSize; ++i) 
-            {
-                outShmPrev[0].array.D[i] = outShm[0].array.D[i];
-                inShmPrev[0].array.D[i] = inShm[0].array.D[i];
-            }
             t[0]=t[1];        
             clock_gettime(CLOCK_REALTIME, &t[1]);
             elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
             elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
             compTime = (t[1].tv_sec - t[2].tv_sec) * 1e3;
             compTime += (t[1].tv_nsec - t[2].tv_nsec) / 1e6;
-            printf("\r HPF enable = %d, compTime = %.3f us, fps = %8.3f Hz", enaShm[0].array.UI32[0], compTime, 1e6/(1000*elapsedTime));
+            printf("\rcompTime = %.3f us, fps = %8.3f Hz", compTime, 1e6/(1000*elapsedTime));
         }
         else
         {
@@ -248,15 +210,9 @@ static void DecodeArgs(int argc, char **argv)
                         break;
             case 'S':
                         (void)sscanf(*argv++,"%s", inShmName);
-                        (void)sscanf(*argv++,"%s", outShmName);
-                        (void)sscanf(*argv++,"%s", fcShmName);
-                        (void)sscanf(*argv++,"%s", fpsShmName);
-                        (void)sscanf(*argv++,"%s", enaShmName);
+                        (void)sscanf(*argv++,"%s", mcShmName);
                         daoInfo("inShmName          = %s\n", inShmName);
-                        daoInfo("outShmName         = %s\n", outShmName);
-                        daoInfo("fcShmName          = %s\n", fcShmName);
-                        daoInfo("fpsShmName         = %s\n", fpsShmName);
-                        daoInfo("enaShmName         = %s\n", enaShmName);
+                        daoInfo("mcShmName          = %s\n", mcShmName);
                         break;
             case 's':	
                         (void)sscanf(*argv++,"%d", &semNb); argc -= 1;

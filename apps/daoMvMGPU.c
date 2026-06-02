@@ -64,8 +64,9 @@ int threadIdCtrl = 0;
 static int end     = 0;
 
 // termination function for SIGINT callback
-static void endme() 
+static void endme(int _a)
 {
+    (void)_a;
     end = 1;
 }
 
@@ -172,7 +173,7 @@ void * realTimeLoop(void *thread_data)
             // Check if the matrix has changed and used the time after the finalize to update the matrix.
             if (cnt0Matrix != matrixShm[0].md[0].cnt0)
             {
-                daoInfo("New Matrix detected (cnt %ld vs %ld), copying to GPU.", cnt0Matrix, matrixShm[0].md[0].cnt0);
+                daoInfo("New Matrix detected (cnt %ld vs %ld), copying to GPU.\n", cnt0Matrix, matrixShm[0].md[0].cnt0);
                 // Copy matrix to GPU memory
                 if (inputShm[0].md[0].atype == _DATATYPE_FLOAT)
                 {
