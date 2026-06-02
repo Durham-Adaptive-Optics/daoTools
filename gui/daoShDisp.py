@@ -13,10 +13,12 @@ Options:
   --fps    Update rate in Hz (default: 10)
   --cmap   Colormap (default: grey)
   --size   Display size in pixels (default: 600)
+  --light  Light mode (default: dark)
 
 Examples:
   daoShDisp.py
   daoShDisp.py -i /tmp/wfs1.im.shm -c /tmp/cent1.im.shm -r /tmp/ref1.im.shm -p /tmp/pup1.im.shm
+  daoShDisp.py --light
 """
 
 import sys
@@ -26,9 +28,6 @@ import numpy as np
 import dao
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore, QtWidgets
-
-pg.setConfigOption('background', '#1e1e1e')
-pg.setConfigOption('foreground', '#cccccc')
 
 COLORMAPS = {
     'grey':    [(0,0,0),(255,255,255)],
@@ -41,6 +40,40 @@ def make_colormap(name):
     colors = COLORMAPS.get(name, COLORMAPS['grey'])
     return pg.ColorMap(np.linspace(0, 1, len(colors)), colors)
 
+def make_stylesheet(light):
+    if light:
+        return """
+            QMainWindow, QWidget { background-color: #f0f0f0; color: #000000; }
+            QPushButton {
+                background-color: #e0e0e0; color: #000000;
+                border: 1px solid #aaa; padding: 4px 8px; border-radius: 3px;
+            }
+            QPushButton:hover   { background-color: #d0d0d0; }
+            QPushButton:pressed { background-color: #bbb; }
+            QPushButton:checked { background-color: #4a90d9; color: #fff; border-color: #2a70b9; }
+            QCheckBox, QLabel   { color: #000000; }
+            QDoubleSpinBox, QComboBox {
+                background-color: #ffffff; color: #000000; border: 1px solid #aaa;
+            }
+        """
+    else:
+        return """
+            QMainWindow, QWidget { background-color: #1e1e1e; color: #cccccc; }
+            QPushButton {
+                background-color: #3a3a3a; color: #cccccc;
+                border: 1px solid #555; padding: 4px 8px; border-radius: 3px;
+            }
+            QPushButton:hover   { background-color: #4a4a4a; }
+            QPushButton:pressed { background-color: #555; }
+            QPushButton:checked { background-color: #1a5a8a; border-color: #2a8aba; }
+            QCheckBox, QLabel   { color: #cccccc; }
+            QCheckBox::indicator { width: 14px; height: 14px; }
+            QCheckBox::indicator:unchecked { background-color: #aaaaaa; border: 1px solid #ccc; }
+            QDoubleSpinBox, QComboBox {
+                background-color: #3a3a3a; color: #cccccc; border: 1px solid #555;
+            }
+        """
+
 
 def parse_args():
     p = argparse.ArgumentParser(description='Shack-Hartmann WFS display')
@@ -48,9 +81,10 @@ def parse_args():
     p.add_argument('-c', '--cent', default='/tmp/centroids.im.shm',  help='Centroids shm')
     p.add_argument('-r', '--ref',  default='/tmp/references.im.shm', help='References shm')
     p.add_argument('-p', '--pup',  default='/tmp/pupMask1.im.shm',   help='Pupil mask shm')
-    p.add_argument('--fps',  type=float, default=10.0, help='Update rate in Hz (default: 10)')
-    p.add_argument('--cmap', default='grey', choices=COLORMAPS.keys())
-    p.add_argument('--size', type=int,   default=600,  help='Display size in pixels (default: 600)')
+    p.add_argument('--fps',   type=float, default=10.0, help='Update rate in Hz (default: 10)')
+    p.add_argument('--cmap',  default='grey', choices=COLORMAPS.keys())
+    p.add_argument('--size',  type=int, default=600,    help='Display size in pixels (default: 600)')
+    p.add_argument('--light', action='store_true',      help='Light mode (default: dark)')
     return p.parse_args()
 
 
@@ -66,6 +100,13 @@ def try_shm(path, label):
 
 def main():
     args = parse_args()
+
+    if args.light:
+        pg.setConfigOption('background', '#f0f0f0')
+        pg.setConfigOption('foreground', '#000000')
+    else:
+        pg.setConfigOption('background', '#1e1e1e')
+        pg.setConfigOption('foreground', '#cccccc')
 
     shm_im   = try_shm(args.shm,  "Image    ")
     shm_cent = try_shm(args.cent, "Centroids")
@@ -89,7 +130,6 @@ def main():
         except Exception:
             pass
 
-    # Pupil mask shape for intensity map
     pup = None
     pup_shape = None
     if shm_pup is not None:
@@ -100,27 +140,11 @@ def main():
         except Exception:
             pass
 
-    # --- App ---
     app = QtWidgets.QApplication(sys.argv)
 
     win = QtWidgets.QMainWindow()
     win.setWindowTitle(f"ShDisp  {args.shm}  [{nx}x{ny}]")
-    win.setStyleSheet("""
-        QMainWindow, QWidget { background-color: #1e1e1e; color: #cccccc; }
-        QPushButton {
-            background-color: #3a3a3a; color: #cccccc;
-            border: 1px solid #555; padding: 4px 8px; border-radius: 3px;
-        }
-        QPushButton:hover   { background-color: #4a4a4a; }
-        QPushButton:pressed { background-color: #555; }
-        QPushButton:checked { background-color: #1a5a8a; border-color: #2a8aba; }
-        QCheckBox, QLabel   { color: #cccccc; }
-        QCheckBox::indicator          { width: 14px; height: 14px; }
-        QCheckBox::indicator:unchecked { background-color: #aaaaaa; border: 1px solid #ccc; }
-        QDoubleSpinBox, QComboBox {
-            background-color: #3a3a3a; color: #cccccc; border: 1px solid #555;
-        }
-    """)
+    win.setStyleSheet(make_stylesheet(args.light))
 
     central = QtWidgets.QWidget()
     win.setCentralWidget(central)
@@ -129,8 +153,9 @@ def main():
     layout.setSpacing(2)
 
     # --- Line 1: stats + freq ---
-    info_label = QtWidgets.QLabel("max=--  mean=--  std=--    0.00 Hz")
-    info_label.setStyleSheet("font-family: monospace; font-size: 11px; color: #cccccc;")
+    info_color = '#000000' if args.light else '#cccccc'
+    info_label = QtWidgets.QLabel("x=--  y=--  val=--    max=--  mean=--  std=--    0.00 Hz")
+    info_label.setStyleSheet(f"font-family: monospace; font-size: 11px; color: {info_color};")
     layout.addWidget(info_label)
 
     # --- Line 2: autoscale + min/max ---
@@ -199,9 +224,11 @@ def main():
     panels_layout.setSpacing(4)
     layout.addWidget(panels)
 
+    gw_bg = '#f0f0f0' if args.light else '#1e1e1e'
+
     # -- WFS image panel --
     gw = pg.GraphicsLayoutWidget()
-    gw.setBackground('#1e1e1e')
+    gw.setBackground(gw_bg)
     gw.setFixedSize(args.size, args.size)
     panels_layout.addWidget(gw)
 
@@ -224,10 +251,9 @@ def main():
     )
     colorbar.setImageItem(img_item, insert_in=plot)
 
-    ref_item = pg.ScatterPlotItem(pen=pg.mkPen('g'), brush=pg.mkBrush(None), symbol='+', size=10)
-    plot.addItem(ref_item)
-
+    ref_item  = pg.ScatterPlotItem(pen=pg.mkPen('g'), brush=pg.mkBrush(None), symbol='+', size=10)
     cent_item = pg.ScatterPlotItem(pen=pg.mkPen('r'), brush=pg.mkBrush(None), symbol='o', size=6)
+    plot.addItem(ref_item)
     plot.addItem(cent_item)
 
     arrow_items = []
@@ -257,7 +283,7 @@ def main():
 
     # -- Intensity map panel (hidden by default) --
     gw_int = pg.GraphicsLayoutWidget()
-    gw_int.setBackground('#1e1e1e')
+    gw_int.setBackground(gw_bg)
     gw_int.setFixedSize(args.size, args.size)
     gw_int.setVisible(False)
     panels_layout.addWidget(gw_int)
@@ -271,7 +297,7 @@ def main():
     plot_int.vb.disableAutoRange()
     plot_int.vb.setRange(xRange=(0, mx), yRange=(0, my), padding=0)
     plot_int.vb.setAspectLocked(True)
-    plot_int.setTitle("Intensity Map", color='#cccccc', size='10pt')
+    plot_int.setTitle("Intensity Map", color=info_color, size='10pt')
 
     int_item = pg.ImageItem()
     plot_int.addItem(int_item)
@@ -284,7 +310,7 @@ def main():
     int_colorbar.setImageItem(int_item, insert_in=plot_int)
 
     # --- Signals ---
-    state = {'frozen': False}
+    state   = {'frozen': False}
     t_ref   = [time.time()]
     cnt_ref = [shm_im.get_counter() if hasattr(shm_im, 'get_counter') else 0]
 
@@ -339,8 +365,7 @@ def main():
         img_item.setImage(disp.T, levels=(vmin, vmax), autoLevels=False)
         colorbar.setLevels((vmin, vmax))
 
-        # Centroid/ref overlays
-        xref = yref = xcur = ycur = dx = dy = None
+        xref = yref = xcur = ycur = None
         if shm_ref is not None and shm_cent is not None and nCent > 0:
             try:
                 cref = shm_ref.get_data()
@@ -369,7 +394,6 @@ def main():
                     plot.addItem(line)
                     arrow_items.append(line)
 
-        # Intensity map
         if intmap_btn.isChecked() and shm_cent is not None and pup is not None and nCent > 0:
             try:
                 cent = shm_cent.get_data()
@@ -385,11 +409,10 @@ def main():
             except Exception:
                 pass
 
-        # Frequency
         try:
             cnt2 = shm_im.get_counter()
-            t2 = time.time()
-            dt = t2 - t_ref[0]
+            t2   = time.time()
+            dt   = t2 - t_ref[0]
             freq = (cnt2 - cnt_ref[0]) / dt if dt > 0 else 0.0
             t_ref[0] = t2; cnt_ref[0] = cnt2
             freq_str = f"{freq:.1f} Hz"
