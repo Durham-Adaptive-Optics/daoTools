@@ -1262,6 +1262,210 @@ int_fast8_t daoToolsShmSubstractExtract(IMAGE *inAShm,
 }
 
 /**
+ * @brief Subastract and Extract an image by applying mask with normalization, assume same type for A and B
+ *
+ * This function subtracts inBShm from inAShm, normalizes the result by the sum of 
+ * pixels within the mask, and extracts only the masked pixels to a vector.
+ *
+ * @param inAShm image
+ * @param inBShm image  - to substract
+ * @param maskShm flat field assumes uint32
+ * @param outShm output extracted normalized image as vector
+ * @return int_fast8_t
+ */
+ int_fast8_t daoToolsShmSubstractExtractNorm(IMAGE* inAShm, IMAGE* inBShm, IMAGE* maskShm, IMAGE* outShm) {
+    daoTrace("\n");
+    int k;
+    int inSize = inAShm[0].md[0].size[0] * inAShm[0].md[0].size[1];
+    outShm[0].md[0].cnt2 = inAShm[0].md[0].cnt2;
+    int cnt = 0;
+    double sum = 0.0;
+    
+    if (inAShm[0].md[0].atype == _DATATYPE_UINT8) {
+        // First pass: compute sum of subtracted pixels within mask
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                double pixelValue = (double)(inAShm[0].array.UI8[k] - inBShm[0].array.UI8[k]);
+                sum += (pixelValue < 1.0) ? 1.0 : pixelValue;
+            }
+        }
+        // Second pass: extract and normalize
+        if (sum != 0.0) {
+            for (k = 0; k < inSize; k++) {
+                if (maskShm[0].array.UI32[k] == 1) {
+                    outShm[0].array.UI8[cnt] = (uint8_t)((double)(inAShm[0].array.UI8[k] - inBShm[0].array.UI8[k]) / sum);
+                    cnt++;
+                }
+            }
+        }
+    }
+    else if (inAShm[0].md[0].atype == _DATATYPE_INT8) {
+        // First pass: compute sum
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                double pixelValue = (double)(inAShm[0].array.SI8[k] - inBShm[0].array.SI8[k]);
+                sum += (pixelValue < 1.0) ? 1.0 : pixelValue;
+            }
+        }
+        // Second pass: extract and normalize
+        if (sum != 0.0) {
+            for (k = 0; k < inSize; k++) {
+                if (maskShm[0].array.UI32[k] == 1) {
+                    outShm[0].array.SI8[cnt] = (int8_t)((double)(inAShm[0].array.SI8[k] - inBShm[0].array.SI8[k]) / sum);
+                    cnt++;
+                }
+            }
+        }
+    }
+    else if (inAShm[0].md[0].atype == _DATATYPE_UINT16) {
+        // First pass: compute sum
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                double pixelValue = (double)(inAShm[0].array.UI16[k] - inBShm[0].array.UI16[k]);
+                sum += (pixelValue < 1.0) ? 1.0 : pixelValue;
+            }
+        }
+        // Second pass: extract and normalize
+        if (sum != 0.0) {
+            for (k = 0; k < inSize; k++) {
+                if (maskShm[0].array.UI32[k] == 1) {
+                    outShm[0].array.UI16[cnt] = (uint16_t)((double)(inAShm[0].array.UI16[k] - inBShm[0].array.UI16[k]) / sum);
+                    cnt++;
+                }
+            }
+        }
+    }
+    else if (inAShm[0].md[0].atype == _DATATYPE_INT16) {
+        // First pass: compute sum
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                double pixelValue = (double)(inAShm[0].array.SI16[k] - inBShm[0].array.SI16[k]);
+                sum += (pixelValue < 1.0) ? 1.0 : pixelValue;
+            }
+        }
+        // Second pass: extract and normalize
+        if (sum != 0.0) {
+            for (k = 0; k < inSize; k++) {
+                if (maskShm[0].array.UI32[k] == 1) {
+                    outShm[0].array.SI16[cnt] = (int16_t)((double)(inAShm[0].array.SI16[k] - inBShm[0].array.SI16[k]) / sum);
+                    cnt++;
+                }
+            }
+        }
+    }
+    else if (inAShm[0].md[0].atype == _DATATYPE_INT32) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                double pixelValue = (double)(inAShm[0].array.SI32[k] - inBShm[0].array.SI32[k]);
+                sum += (pixelValue < 1.0) ? 1.0 : pixelValue;
+            }
+        }
+        // Second pass: extract and normalize
+        if (sum != 0.0) {
+            for (k = 0; k < inSize; k++) {
+                if (maskShm[0].array.UI32[k] == 1) {
+                    outShm[0].array.SI32[cnt] = (int32_t)((double)(inAShm[0].array.SI32[k] - inBShm[0].array.SI32[k]) / sum);
+                    cnt++;
+                }
+            }
+        }
+    }
+    else if (inAShm[0].md[0].atype == _DATATYPE_UINT32) {
+        // First pass: compute sum
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                double pixelValue = (double)(inAShm[0].array.UI32[k] - inBShm[0].array.UI32[k]);
+                sum += (pixelValue < 1.0) ? 1.0 : pixelValue;
+            }
+        }
+        // Second pass: extract and normalize
+        if (sum != 0.0) {
+            for (k = 0; k < inSize; k++) {
+                if (maskShm[0].array.UI32[k] == 1) {
+                    outShm[0].array.UI32[cnt] = (uint32_t)((double)(inAShm[0].array.UI32[k] - inBShm[0].array.UI32[k]) / sum);
+                    cnt++;
+                }
+            }
+        }
+    }
+    else if (inAShm[0].md[0].atype == _DATATYPE_UINT64) {
+        // First pass: compute sum
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                double pixelValue = (double)(inAShm[0].array.UI64[k] - inBShm[0].array.UI64[k]);
+                sum += (pixelValue < 1.0) ? 1.0 : pixelValue;
+            }
+        }
+        // Second pass: extract and normalize
+        if (sum != 0.0) {
+            for (k = 0; k < inSize; k++) {
+                if (maskShm[0].array.UI32[k] == 1) {
+                    outShm[0].array.UI64[cnt] = (uint64_t)((double)(inAShm[0].array.UI64[k] - inBShm[0].array.UI64[k]) / sum);
+                    cnt++;
+                }
+            }
+        }
+    }
+    else if (inAShm[0].md[0].atype == _DATATYPE_INT64) {
+        // First pass: compute sum
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                double pixelValue = (double)(inAShm[0].array.SI64[k] - inBShm[0].array.SI64[k]);
+                sum += (pixelValue < 1.0) ? 1.0 : pixelValue;
+            }
+        }
+        // Second pass: extract and normalize
+        if (sum != 0.0) {
+            for (k = 0; k < inSize; k++) {
+                if (maskShm[0].array.UI32[k] == 1) {
+                    outShm[0].array.SI64[cnt] = (int64_t)((double)(inAShm[0].array.SI64[k] - inBShm[0].array.SI64[k]) / sum);
+                    cnt++;
+                }
+            }
+        }
+    }
+    else if (inAShm[0].md[0].atype == _DATATYPE_FLOAT) {
+        // First pass: compute sum
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                double pixelValue = (double)(inAShm[0].array.F[k] - inBShm[0].array.F[k]);
+                sum += (pixelValue < 1.0) ? 1.0 : pixelValue;
+            }
+        }
+        // Second pass: extract and normalize
+        if (sum != 0.0) {
+            for (k = 0; k < inSize; k++) {
+                if (maskShm[0].array.UI32[k] == 1) {
+                    outShm[0].array.F[cnt] = (float)((double)(inAShm[0].array.F[k] - inBShm[0].array.F[k]) / sum);
+                    cnt++;
+                }
+            }
+        }
+    }
+    else if (inAShm[0].md[0].atype == _DATATYPE_DOUBLE) {
+        // First pass: compute sum
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                double pixelValue = inAShm[0].array.D[k] - inBShm[0].array.D[k];
+                sum += (pixelValue < 1.0) ? 1.0 : pixelValue;
+            }
+        }
+        // Second pass: extract and normalize
+        if (sum != 0.0) {
+            for (k = 0; k < inSize; k++) {
+                if (maskShm[0].array.UI32[k] == 1) {
+                    outShm[0].array.D[cnt] = (inAShm[0].array.D[k] - inBShm[0].array.D[k]) / sum;
+                    cnt++;
+                }
+            }
+        }
+    }
+    daoShmImagePart2ShmFinalize(&outShm[0]);
+
+    return DAO_SUCCESS;
+}
+
+/**
  * @brief Normalize image in place
  *
  * For floating point images:

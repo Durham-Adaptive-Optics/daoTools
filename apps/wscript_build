@@ -311,6 +311,16 @@ daoPixelSubstractExtract = bld.program(
 	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
+daoPixelSubstractExtractNorm = bld.program(
+	source = 'daoPixelSubstractExtractNorm.c',
+	target = 'daoPixelSubstractExtractNorm',
+	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+	linkflags = my_link_flags,
+	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	use= 'daoTools',
+	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
+	)
+
 daoHighPassFilter = bld.program(
 	source = 'daoHighPassFilter.c',
 	target = 'daoHighPassFilter',
