@@ -98,7 +98,7 @@ static int realTimeLoop()
     int validPixSum = 0;
     for (i = 0; i < validPixSize; i++)
     {
-        if (validPixShm[0].array.UI64[i] == 1)
+        if (validPixShm[0].array.UI32[i] == 1)
         {
             validPixSum++;
         }
@@ -110,7 +110,7 @@ static int realTimeLoop()
     int k=0;
     for (i = 0; i < validPixSize; i++)
     {
-        if (validPixShm[0].array.UI64[i] == 1)
+        if (validPixShm[0].array.UI32[i] == 1)
         {
             lut[k] = i;
             k++;

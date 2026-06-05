@@ -171,6 +171,16 @@ daoPixelCalibratePws = bld.program(
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
+daoCalIntensity = bld.program(
+	source = 'daoCalIntensity.c',
+	target = 'daoCalIntensity',
+	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+	linkflags = my_link_flags,
+	ldflags = ['-ldao' , '-lpthread', '-lm'] + my_ld_flags,
+	use= 'daoTools',
+	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
+	)
+
 daoShmCombiner = bld.program(
 	source = 'daoShmCombiner.c',
 	target = 'daoShmCombiner',
