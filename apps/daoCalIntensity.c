@@ -10,13 +10,13 @@
     ff        : flat field (float)
     bg        : background (float)
     validPix  : valid pixel mask (uint32, 1=valid)
-    validSubPix: valid sub-aperture pixel mask (uint32, 1=in subaperture)
+    illumPix: valid sub-aperture pixel mask (uint32, 1=in subaperture)
 
   Output SHM:
     intensity : normalized intensity for each valid pixel (float)
 
   Usage:
-    daoRtcCalIntensity -S <raw> <ff> <bg> <validPix> <validSubPix> <intensity> -s <semNb> -L
+    daoRtcCalIntensity -S <raw> <ff> <bg> <validPix> <illumPix> <intensity> -s <semNb> -L
  *****************************************************************************/
 
  #include <stdio.h>
@@ -54,7 +54,7 @@
  char ffShmName[64];
  char bgShmName[64];
  char validPixShmName[64];
- char validSubPixShmName[64];
+ char illumPixShmName[64];
  char intensityShmName[64];
  int  semNb = 0;
  
@@ -72,7 +72,7 @@
      daoInfo("   -h               display this message and exit\n");
      daoInfo("   -d <level>       debug level\n");
      daoInfo("   -s <semNb>       semaphore number on raw SHM\n");
-     daoInfo("   -S <raw> <ff> <bg> <validPix> <validSubPix> <intensity>\n");
+     daoInfo("   -S <raw> <ff> <bg> <validPix> <illumPix> <intensity>\n");
      daoInfo("   -L               start real-time loop\n");
      daoInfo("\n");
  }
@@ -86,14 +86,14 @@
      IMAGE *ffShm        = (IMAGE*) malloc(sizeof(IMAGE));
      IMAGE *bgShm        = (IMAGE*) malloc(sizeof(IMAGE));
      IMAGE *validPixShm  = (IMAGE*) malloc(sizeof(IMAGE));
-     IMAGE *validSubShm  = (IMAGE*) malloc(sizeof(IMAGE));
+     IMAGE *illumPixShm  = (IMAGE*) malloc(sizeof(IMAGE));
      IMAGE *intensityShm = (IMAGE*) malloc(sizeof(IMAGE));
  
      daoShmShm2Img(rawShmName,       &rawShm[0]);
      daoShmShm2Img(ffShmName,        &ffShm[0]);
      daoShmShm2Img(bgShmName,        &bgShm[0]);
      daoShmShm2Img(validPixShmName,  &validPixShm[0]);
-     daoShmShm2Img(validSubPixShmName, &validSubShm[0]);
+     daoShmShm2Img(illumPixShmName,  &illumPixShm[0]);
      daoShmShm2Img(intensityShmName, &intensityShm[0]);
  
      int imSize = rawShm[0].md[0].size[0] * rawShm[0].md[0].size[1];
@@ -175,7 +175,7 @@
                  float raw = RAW_TO_FLOAT(rawShm[0], idx);
                  float v  = (ff > 0.0f) ? (raw - bg) / ff : 0.0f;
                  cal[k] = v;
-                 if (validSubShm[0].array.UI32[idx] == 1)
+                 if (illumPixShm[0].array.UI32[idx] == 1)
                  {
                      sum += v;
                  }
@@ -189,7 +189,7 @@
              {
                  int idx = lut[k];
                  intensityShm[0].array.F[k] =
-                     cal[k] * invSum * (float)validSubShm[0].array.UI32[idx];
+                     cal[k] * invSum * (float)illumPixShm[0].array.UI32[idx];
              }
  
              // Propagate frame counter from raw image
@@ -264,13 +264,13 @@
                  (void)sscanf(*argv++, "%s", ffShmName);        argc -= 1;
                  (void)sscanf(*argv++, "%s", bgShmName);        argc -= 1;
                  (void)sscanf(*argv++, "%s", validPixShmName);  argc -= 1;
-                 (void)sscanf(*argv++, "%s", validSubPixShmName); argc -= 1;
+                 (void)sscanf(*argv++, "%s", illumPixShmName); argc -= 1;
                  (void)sscanf(*argv++, "%s", intensityShmName); argc -= 1;
                  daoInfo("raw        : %s\n", rawShmName);
                  daoInfo("flatfield  : %s\n", ffShmName);
                  daoInfo("background : %s\n", bgShmName);
                  daoInfo("validPix   : %s\n", validPixShmName);
-                 daoInfo("validSubPix: %s\n", validSubPixShmName);
+                 daoInfo("illumPix   : %s\n", illumPixShmName);
                  daoInfo("intensity  : %s\n", intensityShmName);
                  break;
              case 's':
