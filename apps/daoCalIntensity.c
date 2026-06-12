@@ -53,6 +53,7 @@
  char rawShmName[64];
  char ffShmName[64];
  char bgShmName[64];
+ char refShmName[64];
  char validPixShmName[64];
  char illumPixShmName[64];
  char intensityShmName[64];
@@ -72,7 +73,7 @@
      daoInfo("   -h               display this message and exit\n");
      daoInfo("   -d <level>       debug level\n");
      daoInfo("   -s <semNb>       semaphore number on raw SHM\n");
-     daoInfo("   -S <raw> <ff> <bg> <validPix> <illumPix> <intensity>\n");
+     daoInfo("   -S <raw> <ff> <bg> <ref> <validPix> <illumPix> <intensity>\n");
      daoInfo("   -L               start real-time loop\n");
      daoInfo("\n");
  }
@@ -85,6 +86,7 @@
      IMAGE *rawShm       = (IMAGE*) malloc(sizeof(IMAGE));
      IMAGE *ffShm        = (IMAGE*) malloc(sizeof(IMAGE));
      IMAGE *bgShm        = (IMAGE*) malloc(sizeof(IMAGE));
+     IMAGE *refShm       = (IMAGE*) malloc(sizeof(IMAGE));
      IMAGE *validPixShm  = (IMAGE*) malloc(sizeof(IMAGE));
      IMAGE *illumPixShm  = (IMAGE*) malloc(sizeof(IMAGE));
      IMAGE *intensityShm = (IMAGE*) malloc(sizeof(IMAGE));
@@ -92,6 +94,7 @@
      daoShmShm2Img(rawShmName,       &rawShm[0]);
      daoShmShm2Img(ffShmName,        &ffShm[0]);
      daoShmShm2Img(bgShmName,        &bgShm[0]);
+     daoShmShm2Img(refShmName,       &refShm[0]);
      daoShmShm2Img(validPixShmName,  &validPixShm[0]);
      daoShmShm2Img(illumPixShmName,  &illumPixShm[0]);
      daoShmShm2Img(intensityShmName, &intensityShm[0]);
@@ -124,6 +127,7 @@
  
      // Temporary calibrated pixel buffer (avoids recomputing for normalization)
      float *cal = (float*) malloc(nValid * sizeof(float));
+     float *ref = (float*) malloc(nValid * sizeof(float));
  
      // Detect raw image type
      int rawType = rawShm[0].md[0].atype;
@@ -172,9 +176,11 @@
                  int idx  = lut[k];
                  float ff = ffShm[0].array.F[idx];
                  float bg = bgShm[0].array.F[idx];
+                 float r = refShm[0].array.F[idx];
                  float raw = RAW_TO_FLOAT(rawShm[0], idx);
-                 float v  = (ff > 0.0f) ? (raw - bg) / ff : 0.0f;
+                 float v  = (ff > 0.0f) ? (raw - bg) * ff : 0.0f;
                  cal[k] = v;
+                 ref[k] = r;
                  if (illumPixShm[0].array.UI32[idx] == 1)
                  {
                      sum += v;
@@ -189,7 +195,7 @@
              {
                  int idx = lut[k];
                  intensityShm[0].array.F[k] =
-                     cal[k] * invSum * (float)illumPixShm[0].array.UI32[idx];
+                     (cal[k] - ref[k]) * invSum * (float)illumPixShm[0].array.UI32[idx];
              }
  
              // Propagate frame counter from raw image
@@ -263,12 +269,14 @@
                  (void)sscanf(*argv++, "%s", rawShmName);       argc -= 1;
                  (void)sscanf(*argv++, "%s", ffShmName);        argc -= 1;
                  (void)sscanf(*argv++, "%s", bgShmName);        argc -= 1;
+                 (void)sscanf(*argv++, "%s", refShmName);        argc -= 1;
                  (void)sscanf(*argv++, "%s", validPixShmName);  argc -= 1;
                  (void)sscanf(*argv++, "%s", illumPixShmName); argc -= 1;
                  (void)sscanf(*argv++, "%s", intensityShmName); argc -= 1;
                  daoInfo("raw        : %s\n", rawShmName);
                  daoInfo("flatfield  : %s\n", ffShmName);
                  daoInfo("background : %s\n", bgShmName);
+                 daoInfo("reference  : %s\n", refShmName);
                  daoInfo("validPix   : %s\n", validPixShmName);
                  daoInfo("illumPix   : %s\n", illumPixShmName);
                  daoInfo("intensity  : %s\n", intensityShmName);

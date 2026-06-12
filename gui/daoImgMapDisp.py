@@ -183,7 +183,7 @@ def main():
     line2.addStretch()
     layout.addLayout(line2)
 
-    # --- Line 3: cmap + mask + att + pupil + freeze + crop ---
+    # --- Line 3: cmap + mask attenuation + mask contour + pupil contour + freeze + crop ---
     line3 = QtWidgets.QHBoxLayout()
     line3.addWidget(QtWidgets.QLabel("Cmap:"))
     cmap_combo = QtWidgets.QComboBox()
@@ -203,6 +203,11 @@ def main():
     att_spin.setDecimals(2); att_spin.setValue(args.att)
     att_spin.setEnabled(mask_shm is not None)
     line3.addWidget(att_spin)
+
+    mask_cont_cb = QtWidgets.QCheckBox("Mask")
+    mask_cont_cb.setChecked(False)
+    mask_cont_cb.setEnabled(mask_shm is not None)
+    line3.addWidget(mask_cont_cb)
 
     pup_cb = QtWidgets.QCheckBox("Pupil")
     pup_cb.setChecked(False)
@@ -247,9 +252,15 @@ def main():
     )
     colorbar.setImageItem(img_item, insert_in=plot)
 
+    # Pupil contour — red
     pup_contour = pg.IsocurveItem(level=0.5, pen=pg.mkPen('r', width=1))
     pup_contour.setVisible(False)
     plot.addItem(pup_contour)
+
+    # Mask contour — green
+    mask_contour = pg.IsocurveItem(level=0.5, pen=pg.mkPen('#00cc44', width=1))
+    mask_contour.setVisible(False)
+    plot.addItem(mask_contour)
 
     hline = pg.InfiniteLine(angle=0,  movable=False,
                             pen=pg.mkPen('r', width=1, style=QtCore.Qt.PenStyle.DashLine))
@@ -294,6 +305,14 @@ def main():
             except Exception:
                 pass
 
+    def toggle_mask_cont(checked):
+        mask_contour.setVisible(checked)
+        if checked and mask_shm is not None:
+            try:
+                mask_contour.setData(np.squeeze(mask_shm.get_data()).astype(float).T)
+            except Exception:
+                pass
+
     def toggle_crop(checked):
         if checked and mask_shm is not None:
             try:
@@ -316,6 +335,7 @@ def main():
     freeze_btn.toggled.connect(toggle_freeze)
     cmap_combo.currentTextChanged.connect(change_cmap)
     pup_cb.stateChanged.connect(toggle_pup)
+    mask_cont_cb.stateChanged.connect(toggle_mask_cont)
     crop_btn.toggled.connect(toggle_crop)
 
     def update():
@@ -348,6 +368,12 @@ def main():
         if pup_cb.isChecked() and pup_shm is not None:
             try:
                 pup_contour.setData(np.squeeze(pup_shm.get_data()).astype(float).T)
+            except Exception:
+                pass
+
+        if mask_cont_cb.isChecked() and mask_shm is not None:
+            try:
+                mask_contour.setData(np.squeeze(mask_shm.get_data()).astype(float).T)
             except Exception:
                 pass
 
