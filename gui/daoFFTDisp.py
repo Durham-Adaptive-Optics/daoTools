@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 """
 Fourier Magnitude Display - Real-time display from two shared memories
 
@@ -19,15 +21,15 @@ from pyqtgraph.Qt import QtCore, QtWidgets
 
 
 COLORMAPS = {
-    'viridis': [(68,1,84),(59,82,139),(33,145,140),(94,201,98),(253,231,37)],
-    'inferno': [(0,0,4),(120,28,109),(238,71,41),(252,177,57),(252,255,164)],
-    'plasma':  [(13,8,135),(126,3,168),(204,71,120),(248,149,64),(240,249,33)],
-    'grey':    [(0,0,0),(255,255,255)],
+    "viridis": [(68, 1, 84), (59, 82, 139), (33, 145, 140), (94, 201, 98), (253, 231, 37)],
+    "inferno": [(0, 0, 4), (120, 28, 109), (238, 71, 41), (252, 177, 57), (252, 255, 164)],
+    "plasma":  [(13, 8, 135), (126, 3, 168), (204, 71, 120), (248, 149, 64), (240, 249, 33)],
+    "grey":    [(0, 0, 0), (255, 255, 255)],
 }
 
 
 def make_colormap(name):
-    colors = COLORMAPS.get(name, COLORMAPS['grey'])
+    colors = COLORMAPS.get(name, COLORMAPS["grey"])
     return pg.ColorMap(np.linspace(0, 1, len(colors)), colors)
 
 
@@ -53,6 +55,7 @@ def make_stylesheet(light):
                 background-color: #ffffff; color: #000000; border: 1px solid #aaa;
             }
         """
+
     return """
         QMainWindow, QWidget { background-color: #1e1e1e; color: #cccccc; }
         QPushButton { background-color: #3a3a3a; color: #cccccc;
@@ -67,7 +70,9 @@ def make_stylesheet(light):
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Real-time Fourier magnitude display from shmRe/shmIm")
+    p = argparse.ArgumentParser(
+        description="Real-time Fourier magnitude display from shmRe/shmIm"
+    )
     p.add_argument("shmRe", help="Shared memory path for real part")
     p.add_argument("shmIm", help="Shared memory path for imaginary part")
     p.add_argument("--fps", type=float, default=10.0, help="Update rate in Hz")
@@ -79,16 +84,18 @@ def parse_args():
 
 
 def get_magnitude(shm_re, shm_im, use_log=False):
-    img_re = np.squeeze(shm_re.get_data()).astype(float)
-    img_im = np.squeeze(shm_im.get_data()).astype(float)
+    img_re = np.squeeze(shm_re.get_data()).astype(np.float64)
+    img_im = np.squeeze(shm_im.get_data()).astype(np.float64)
 
     if img_re.shape != img_im.shape:
         raise ValueError(f"Shape mismatch: Re {img_re.shape}, Im {img_im.shape}")
 
-    img = np.sqrt(img_re * img_re + img_im * img_im)
+    img = np.hypot(img_re, img_im)
 
     if use_log:
-        img = np.log10(1.0 + img)
+        img = np.log10(1.0 + np.maximum(img, 0.0))
+
+    img = np.nan_to_num(img, nan=0.0, posinf=0.0, neginf=0.0)
 
     return img
 
@@ -133,7 +140,9 @@ def main():
     layout.setSpacing(2)
 
     info_color = "#000000" if args.light else "#cccccc"
-    info_label = QtWidgets.QLabel("x=--  y=--  val=--    min=--  max=--  mean=--  std=--")
+    info_label = QtWidgets.QLabel(
+        "x=--  y=--  val=--    min=--  max=--  mean=--  std=--"
+    )
     info_label.setStyleSheet(
         f"font-family: monospace; font-size: 11px; color: {info_color};"
     )
@@ -209,7 +218,7 @@ def main():
     colorbar = pg.ColorBarItem(
         values=(float(data0.min()), float(data0.max())),
         colorMap=cmap,
-        label="Magnitude",
+        label="log10(1 + magnitude)" if args.log else "Magnitude",
         interactive=True,
     )
     colorbar.setImageItem(img_item, insert_in=plot)
@@ -298,6 +307,9 @@ def main():
 
         img_item.setImage(data.T, levels=(vmin, vmax), autoLevels=False)
         colorbar.setLevels((vmin, vmax))
+        colorbar.setLabel(
+            "log10(1 + magnitude)" if log_cb.isChecked() else "Magnitude"
+        )
 
         cx, cy = cursor_pos["x"], cursor_pos["y"]
         h, w = data.shape
@@ -309,6 +321,12 @@ def main():
             f"min={vmin:.6g}  max={vmax:.6g}  "
             f"mean={data.mean():.6g}  std={data.std():.6g}"
         )
+
+    log_cb.stateChanged.connect(lambda _: update())
+    border_cb.stateChanged.connect(lambda _: update())
+    autoscale_cb.stateChanged.connect(lambda _: update())
+    min_spin.editingFinished.connect(update)
+    max_spin.editingFinished.connect(update)
 
     timer = QtCore.QTimer()
     timer.timeout.connect(update)
