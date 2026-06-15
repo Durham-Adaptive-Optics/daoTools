@@ -148,52 +148,52 @@ int_fast8_t daoToolsShmCalibrate(IMAGE* inShm, IMAGE* ffShm, IMAGE* bgShm, IMAGE
     calShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
     if (inShm[0].md[0].atype == _DATATYPE_UINT8) {
         for (k = 0; k < calSize; k++) {
-            calShm[0].array.F[k] = ((float)inShm[0].array.UI8[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
+            calShm[0].array.F[k] = ((float)inShm[0].array.UI8[k] - bgShm[0].array.F[k]) * ffShm[0].array.F[k];
         }
     }
     else if (inShm[0].md[0].atype == _DATATYPE_INT8) {
         for (k = 0; k < calSize; k++) {
-            calShm[0].array.F[k] = ((float)inShm[0].array.SI8[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
+            calShm[0].array.F[k] = ((float)inShm[0].array.SI8[k] - bgShm[0].array.F[k]) * ffShm[0].array.F[k];
         }
     }
     else if (inShm[0].md[0].atype == _DATATYPE_UINT16) {
         for (k = 0; k < calSize; k++) {
-            calShm[0].array.F[k] = ((float)inShm[0].array.UI16[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
+            calShm[0].array.F[k] = ((float)inShm[0].array.UI16[k] - bgShm[0].array.F[k]) * ffShm[0].array.F[k];
         }
     }
     else if (inShm[0].md[0].atype == _DATATYPE_INT16) {
         for (k = 0; k < calSize; k++) {
-            calShm[0].array.F[k] = ((float)inShm[0].array.SI16[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
+            calShm[0].array.F[k] = ((float)inShm[0].array.SI16[k] - bgShm[0].array.F[k]) * ffShm[0].array.F[k];
         }
     }
     else if (inShm[0].md[0].atype == _DATATYPE_UINT32) {
         for (k = 0; k < calSize; k++) {
-            calShm[0].array.F[k] = ((float)inShm[0].array.UI32[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
+            calShm[0].array.F[k] = ((float)inShm[0].array.UI32[k] - bgShm[0].array.F[k]) * ffShm[0].array.F[k];
         }
     }
     else if (inShm[0].md[0].atype == _DATATYPE_INT32) {
         for (k = 0; k < calSize; k++) {
-            calShm[0].array.F[k] = ((float)inShm[0].array.SI32[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
+            calShm[0].array.F[k] = ((float)inShm[0].array.SI32[k] - bgShm[0].array.F[k]) * ffShm[0].array.F[k];
         }
     }
     else if (inShm[0].md[0].atype == _DATATYPE_UINT64) {
         for (k = 0; k < calSize; k++) {
-            calShm[0].array.F[k] = ((float)inShm[0].array.UI64[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
+            calShm[0].array.F[k] = ((float)inShm[0].array.UI64[k] - bgShm[0].array.F[k]) * ffShm[0].array.F[k];
         }
     }
     else if (inShm[0].md[0].atype == _DATATYPE_INT64) {
         for (k = 0; k < calSize; k++) {
-            calShm[0].array.F[k] = ((float)inShm[0].array.SI64[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
+            calShm[0].array.F[k] = ((float)inShm[0].array.SI64[k] - bgShm[0].array.F[k]) * ffShm[0].array.F[k];
         }
     }
     else if (inShm[0].md[0].atype == _DATATYPE_FLOAT) {
         for (k = 0; k < calSize; k++) {
-            calShm[0].array.F[k] = ((float)inShm[0].array.F[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
+            calShm[0].array.F[k] = ((float)inShm[0].array.F[k] - bgShm[0].array.F[k]) * ffShm[0].array.F[k];
         }
     }
     else if (inShm[0].md[0].atype == _DATATYPE_DOUBLE) {
         for (k = 0; k < calSize; k++) {
-            calShm[0].array.F[k] = ((float)inShm[0].array.D[k] * ffShm[0].array.F[k]) - bgShm[0].array.F[k];
+            calShm[0].array.F[k] = ((float)inShm[0].array.D[k] - bgShm[0].array.F[k]) * ffShm[0].array.F[k];
         }
     }
     daoShmImagePart2ShmFinalize(&calShm[0]);
