@@ -378,6 +378,7 @@ class daoShmViewer(QMainWindow):
         self.stillRunning = False
         self.current_slice = 0
         self.is_3d = False
+        self.rotation_angle = 270  # Rotation angle: 0, 90, 180, or 270
         
         # Directory to monitor
         self.dir = QDir("/tmp")
@@ -446,6 +447,11 @@ class daoShmViewer(QMainWindow):
         set_data_action = QAction("Set Data", self)
         set_data_action.triggered.connect(self.showSetDataDialog)
         toolbar.addAction(set_data_action)
+        
+        # Rotate action
+        self.rotate_action = QAction(f"Rotate ({self.rotation_angle}°)", self)
+        self.rotate_action.triggered.connect(self.rotate_image)
+        toolbar.addAction(self.rotate_action)
 
     def setup_file_table(self):
         """Setup the file table widget."""
@@ -863,10 +869,12 @@ class daoShmViewer(QMainWindow):
                 self.im.setData(self.shm.get_data().flatten())
             else:
                 self.im = self.graphWidget.getImageItem()
+                data = self.shm.get_data()
                 if self.is_3d:
-                    self.im.setData(self.shm.get_data()[self.current_slice])
+                    rotated_data = self._apply_rotation(data[self.current_slice])
                 else:
-                    self.im.setData(self.shm.get_data())
+                    rotated_data = self._apply_rotation(data)
+                self.im.setData(rotated_data)
                 
             self.graphWidget.updatePanBounds()
             self.graphWidget.viewBox.autoRange()
@@ -875,7 +883,8 @@ class daoShmViewer(QMainWindow):
         """Update the displayed slice for 3D data."""
         if self.shm and self.is_3d and not (self.TABLE or self.ShowTable):
             self.current_slice = value
-            self.im.setData(self.shm.get_data()[value])
+            rotated_data = self._apply_rotation(self.shm.get_data()[value])
+            self.im.setData(rotated_data)
             self.graphWidget.updatePanBounds()
 
     def on_timer_triggered(self):
@@ -901,9 +910,10 @@ class daoShmViewer(QMainWindow):
                     else:
                         data = self.shm.get_data()
                         if self.is_3d:
-                            self.im.setData(data[self.current_slice])
+                            rotated_data = self._apply_rotation(data[self.current_slice])
                         else:
-                            self.im.setData(data)
+                            rotated_data = self._apply_rotation(data)
+                        self.im.setData(rotated_data)
         except Exception as e:
             self.timer.stop()
             self.show_error(f"Error updating data: {e}")
@@ -1396,6 +1406,44 @@ class daoShmViewer(QMainWindow):
             
         except Exception as e:
             self.show_error(f"Error setting data: {e}")
+
+    def rotate_image(self):
+        """Cycle through rotation angles: 0° -> 90° -> 180° -> 270° -> 0°."""
+        # Cycle through rotation angles
+        rotation_cycle = [0, 90, 180, 270]
+        current_index = rotation_cycle.index(self.rotation_angle)
+        next_index = (current_index + 1) % len(rotation_cycle)
+        self.rotation_angle = rotation_cycle[next_index]
+        
+        # Update the button text
+        self.rotate_action.setText(f"Rotate ({self.rotation_angle}°)")
+        
+        # Update the visualization if data is loaded
+        if self.shm and not (self.TABLE or self.ShowTable):
+            if self.FLAT:
+                # For 1D data, just update without rotation
+                self.im.setData(self.shm.get_data().flatten())
+            else:
+                # For 2D/3D data, apply rotation and update
+                data = self.shm.get_data()
+                if self.is_3d:
+                    rotated_data = self._apply_rotation(data[self.current_slice])
+                else:
+                    rotated_data = self._apply_rotation(data)
+                self.im.setData(rotated_data)
+                self.graphWidget.updatePanBounds()
+    
+    def _apply_rotation(self, data):
+        """Apply rotation to 2D array based on current rotation angle."""
+        if self.rotation_angle == 0:
+            return data
+        elif self.rotation_angle == 90:
+            return np.rot90(data, k=1)
+        elif self.rotation_angle == 180:
+            return np.rot90(data, k=2)
+        elif self.rotation_angle == 270:
+            return np.rot90(data, k=3)
+        return data
 
     def toggle_view(self):
         """Toggle between table and graph views."""
