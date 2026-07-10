@@ -754,14 +754,14 @@ int_fast8_t daoCentroidSpots(float* image,
  * @return DAO_SUCCESS on success
  */
 int_fast8_t daoCentroidSpotsRelative(float* image,
-    int imageSize,
+    int imageSizeX,
+    int imageSizeY,
     float* ref,
     int boxSize,
     int nSuba,
     float threshold,
     float* cent) {
     daoTrace("\n");
-
     int x, y, x1, x2, y1, y2;
     float localMax = 0.0f;
     float relativeThreshold = 0.0f;
@@ -799,7 +799,7 @@ int_fast8_t daoCentroidSpotsRelative(float* image,
         /* Compute local max in the subaperture (raw pixels) */
         for (x = x1; x <= x2; x++) {
             for (y = y1; y <= y2; y++) {
-                pixel = (float)image[y * imageSize + x];
+                pixel = (float)image[y * imageSizeX + x];
                 if (pixel > localMax) {
                     localMax = pixel;
                 }
@@ -812,7 +812,7 @@ int_fast8_t daoCentroidSpotsRelative(float* image,
         /* Accumulate moments from thresholded/subtracted pixels */
         for (x = x1; x <= x2; x++) {
             for (y = y1; y <= y2; y++) {
-                pixel = (float)image[y * imageSize + x];
+                pixel = (float)image[y * imageSizeX + x];
 
                 /* Raw flux always accumulates original pixel */
                 flux += pixel;

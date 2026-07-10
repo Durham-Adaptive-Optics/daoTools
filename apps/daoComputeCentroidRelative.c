@@ -117,6 +117,7 @@ static int realTimeLoop()
 
             //usleep(10000);
             daoCentroidSpotsRelative(inShm[0].array.F,
+                             inShm[0].md[0].size[1],
                              inShm[0].md[0].size[0],
                              refShm[0].array.F,
                              subaSize,
