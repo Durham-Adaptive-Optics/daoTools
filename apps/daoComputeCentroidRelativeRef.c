@@ -94,6 +94,7 @@ static int realTimeLoop()
     IMAGE *thresholdShm = (IMAGE*) malloc(sizeof(IMAGE));
     daoShmShm2Img(inShmName, &inShm[0]);
     daoShmShm2Img(centroidShmName, &centroidShm[0]);
+    daoShmShm2Img(subApCentreShmName, &subApCentreShm[0]);
     daoShmShm2Img(refShmName, &refShm[0]);
     daoShmShm2Img(thresholdShmName, &thresholdShm[0]);
 
