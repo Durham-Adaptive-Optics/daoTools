@@ -221,6 +221,16 @@ daoComputeCentroidRelative = bld.program(
 	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto', '-g'],
 	)
 
+daoComputeCentroidRelativeRef = bld.program(
+	source = 'daoComputeCentroidRelativeRef.c',
+	target = 'daoComputeCentroidRelativeRef',
+	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+	linkflags = my_link_flags,
+	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	use= 'daoTools',
+	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto', '-g'],
+	)
+
 daoComputeCentroidPws = bld.program(
 	source = 'daoComputeCentroidPws.c',
 	target = 'daoComputeCentroidPws',

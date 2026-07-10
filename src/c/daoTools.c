@@ -854,6 +854,150 @@ int_fast8_t daoCentroidSpotsRelative(float* image,
 }
 
 /**
+ * @brief Compute centroids relative to reference positions using a *relative* threshold.
+ *
+ * For each subaperture, this function:
+ * 1) extracts a square box centered on the reference position,
+ * 2) finds the local maximum within that box,
+ * 3) builds a relative threshold = (threshold * localMax),
+ * 4) subtracts that threshold from pixels above it (zeros pixels below),
+ * 5) computes a center-of-mass from the thresholded pixels,
+ * 6) returns centroid values *relative* to the reference positions.
+ *
+ * Both reference positions and outputs use Structure-of-Arrays (SoA) layout.
+ *
+ * ### Reference layout (SoA)
+ * The reference array @p ref must contain `2 * nSuba` elements arranged as:
+ * - `ref[0 .. nSuba-1]`         : Reference X positions
+ * - `ref[nSuba .. 2*nSuba-1]`   : Reference Y positions
+ *
+ * ### Output layout (SoA)
+ * The output array @p cent must contain at least `4 * nSuba` elements arranged as:
+ * - `cent[0 .. nSuba-1]`           : X centroids (cx), relative to ref X
+ * - `cent[nSuba .. 2*nSuba-1]`     : Y centroids (cy), relative to ref Y
+ * - `cent[2*nSuba .. 3*nSuba-1]`   : Flux = sum of raw pixels (no threshold)
+ * - `cent[3*nSuba .. 4*nSuba-1]`   : Weight = sum of thresholded pixels (after subtraction)
+ *
+ * ### Notes
+ * - Subaperture bounds are closed intervals `[x1..x2]` and `[y1..y2]`.
+ * - If the thresholded weight is zero, the centroid is set to `(0, 0)`.
+ * - No bounds checking is performed on image edges.
+ *
+ * @param[in]  image      Pointer to the input image (row-major, float)
+ * @param[in]  imageSize  Width and height of the square image (pixels)
+ * @param[in]  ref        Reference positions in SoA layout (size `2*nSuba`)
+ * @param[in]  boxSize    Size of the square subaperture (pixels)
+ * @param[in]  nSuba      Number of subapertures
+ * @param[in]  threshold  Relative threshold factor in [0..1] typically (multiplied by local max)
+ * @param[out] cent       Output array (size >= `4*nSuba`, layout described above)
+ *
+ * @return DAO_SUCCESS on success
+ */
+int_fast8_t daoCentroidSpotsRelativeRef(float* image,
+    int imageSizeX,
+    int imageSizeY,
+    float* subApCentre,
+    float* ref,
+    int boxSize,
+    int nSuba,
+    float threshold,
+    float* cent) {
+    daoTrace("\n");
+    int x, y, x1, x2, y1, y2;
+    float localMax = 0.0f;
+    float relativeThreshold = 0.0f;
+
+    float xNumerator, yNumerator, denominator, pixel, flux, weight;
+
+    /* Reference arrays (SoA layout) */
+    float* centreX = subApCentre;
+    float* centreY = subApCentre + nSuba;
+
+    float* refX = ref;
+    float* refY = ref + nSuba;
+
+    /* Output arrays (SoA layout) */
+    float* cxOut = cent;
+    float* cyOut = cent + nSuba;
+    float* fluxOut = cent + 2 * nSuba;
+    float* wOut = cent + 3 * nSuba;
+
+    for (int s = 0; s < nSuba; ++s) {
+        const float cx = centreX[s];
+        const float cy = centreY[s];
+
+        /* Reset accumulators */
+        xNumerator = 0.0f;
+        yNumerator = 0.0f;
+        denominator = 0.0f;
+        flux = 0.0f;
+        weight = 0.0f;
+        localMax = 0.0f;
+
+        /* Compute subaperture bounds around reference position */
+        x1 = (unsigned int)roundf(cx) - boxSize / 2;
+        x2 = (unsigned int)roundf(cx) + boxSize / 2;
+        y1 = (unsigned int)roundf(cy) - boxSize / 2;
+        y2 = (unsigned int)roundf(cy) + boxSize / 2;
+
+        /* Compute local max in the subaperture (raw pixels) */
+        for (x = x1; x <= x2; x++) {
+            for (y = y1; y <= y2; y++) {
+                pixel = (float)image[y * imageSizeX + x];
+                if (pixel > localMax) {
+                    localMax = pixel;
+                }
+            }
+        }
+
+        /* Relative threshold derived from the local maximum */
+        relativeThreshold = threshold * localMax;
+
+        /* Accumulate moments from thresholded/subtracted pixels */
+        for (x = x1; x <= x2; x++) {
+            for (y = y1; y <= y2; y++) {
+                pixel = (float)image[y * imageSizeX + x];
+
+                /* Raw flux always accumulates original pixel */
+                flux += pixel;
+
+                /* Apply relative threshold with subtraction */
+                if (pixel < relativeThreshold) {
+                    pixel = 0.0f;
+                }
+                else {
+                    pixel = pixel - relativeThreshold;
+                }
+
+                /* Weight/denominator accumulates thresholded pixels */
+                weight += pixel;
+                denominator += pixel;
+
+                /* First moments */
+                xNumerator += pixel * (float)x;
+                yNumerator += pixel * (float)y;
+            }
+        }
+
+        /* Compute relative centroid if weight is non-zero */
+        if (denominator != 0.0f) {
+            cxOut[s] = xNumerator / denominator - cx - refX[s];
+            cyOut[s] = yNumerator / denominator - cy - refY[s];
+        }
+        else {
+            cxOut[s] = 0.0f;
+            cyOut[s] = 0.0f;
+        }
+
+        /* Store diagnostics */
+        fluxOut[s] = flux;
+        wOut[s] = weight;
+    }
+
+    return DAO_SUCCESS;
+}
+
+/**
  * @brief Compute pyramid WFS slopes on the CPU from quadrant samples.
  *
  * @param im Input image buffer.

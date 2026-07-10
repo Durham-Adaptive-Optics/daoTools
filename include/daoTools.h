@@ -107,6 +107,16 @@ int_fast8_t daoCentroidSpotsRelative(float *image,
                                      float threshold,
                                      float *cent);
 
+int_fast8_t daoCentroidSpotsRelativeRef(float *image,
+                                     int imageSizeX,
+                                     int imageSizeY,
+                                     float *subApCentre,
+                                     float *ref,
+                                     int boxSize,
+                                     int nSuba,
+                                     float threshold,
+                                     float *cent);
+
 int_fast8_t daoCentroidPws(float *im, float *slopes,
                            float *slopesRef, int *wfsPixId, int *wfsPixIdMap,
                            float *flux, int nbPix,
