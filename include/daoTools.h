@@ -37,7 +37,9 @@ uint32_t daoComputeChecksum(const void* data, size_t length_bytes);
 unsigned daoToolsIp2Int(const char* ip);
 void daoToolsInsertShmNamePrefix(const char* base_string,
                                  const char* prefix,
-                                 char* final_string); 
+                                 char* final_string);
+
+int_fast8_t daoLogToFile(const char *fileName, const char *errorId, const char *fmt, ...);
 
 int_fast8_t daoToolsShmCalibrate(IMAGE *inShm,
                                  IMAGE *ffShm,

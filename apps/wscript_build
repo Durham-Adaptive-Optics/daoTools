@@ -5,7 +5,7 @@ if platform.system() == "Darwin":
 	my_ld_flags = ['']
 	my_cxx_flags = ['-std=c++14']
 	my_cflags = ['-O3', '-ffast-math']
-	my_link_flags = ['-L'+os.getenv('DAOROOT')+'/lib/']
+	my_link_flags = ['-Lsrc', '-L'+os.getenv('DAOROOT')+'/lib/']
 	if os.path.exists('/opt/homebrew/lib'):
 		my_link_flags.append('-L/opt/homebrew/lib')
 	if os.path.exists('/usr/local/lib'):
@@ -14,7 +14,7 @@ else:
 	my_ld_flags = ['-lrt']
 	my_cxx_flags = ['']
 	my_cflags = ['-Ofast']
-	my_link_flags = ['-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/']
+	my_link_flags = ['-Lsrc', '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/']
 
 telemetry_extra_ldflags = []
 if platform.system() != "Darwin":

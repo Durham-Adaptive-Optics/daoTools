@@ -13,6 +13,9 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <stdarg.h>
+#include <fcntl.h>
+#include <time.h>
 #include "daoTools.h"
 
 /* @brief Extracts the local name from a shared memory absolute path
@@ -130,6 +133,62 @@ void daoToolsInsertShmNamePrefix(const char* base_string, const char* prefix, ch
     size_t prefix_index = base_string_length - suffix_length;
 
     snprintf(final_string, 128, "%.*s%s%s", (int)prefix_index, base_string, prefix, suffix);
+}
+
+/**
+ * @brief Append one line to a log file, in
+ * "<UTC ISO8601 with milliseconds>Z <errorId> <message>" format.
+ *
+ * A single write() on an O_APPEND fd is atomic on a local filesystem, so
+ * any number of processes can share the same log file without interleaving lines.
+ *
+ * @param fileName Path to the log file, or NULL/empty to use "$HOME/dao.log"
+ *                 (falls back to "./dao.log" if $HOME is not set).
+ * @param errorId Short identifier for the logged event.
+ * @param fmt printf-style format string for the message.
+ *
+ * @return DAO_SUCCESS on success, DAO_ERROR if the file could not be opened.
+ */
+int_fast8_t daoLogToFile(const char *fileName, const char *errorId, const char *fmt, ...) {
+    char msg[400];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(msg, sizeof(msg), fmt, args);
+    va_end(args);
+
+    for (char *p = msg; *p != '\0'; p++) {
+        if (*p == '\n' || *p == '\r') *p = ' ';
+    }
+
+    struct timespec now;
+    clock_gettime(CLOCK_REALTIME, &now);
+    struct tm tmUtc;
+    gmtime_r(&now.tv_sec, &tmUtc);
+    char ts[32];
+    size_t tsLen = strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%S", &tmUtc);
+    snprintf(ts + tsLen, sizeof(ts) - tsLen, ".%03ldZ", now.tv_nsec / 1000000);
+
+    char line[512];
+    int n = snprintf(line, sizeof(line), "%s %s %s\n", ts, errorId, msg);
+    if (n <= 0) return DAO_ERROR;
+    if ((size_t)n >= sizeof(line)) n = sizeof(line) - 1;
+
+    char defaultPath[256];
+    if (fileName == NULL || fileName[0] == '\0') {
+        const char *home = getenv("HOME");
+        snprintf(defaultPath, sizeof(defaultPath), "%s/dao.log", home ? home : ".");
+        fileName = defaultPath;
+    }
+
+    int fd = open(fileName, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (fd < 0) return DAO_ERROR;
+    if (write(fd, line, (size_t)n) < 0) {
+        daoError("Failed to write log %s: %s\n", fileName, strerror(errno));
+        close(fd);
+        return DAO_ERROR;
+    }
+    close(fd);
+    return DAO_SUCCESS;
 }
 
 /**
