@@ -16,6 +16,8 @@
 #include <stdarg.h>
 #include <fcntl.h>
 #include <time.h>
+#include <sys/stat.h>
+#include <pthread.h>
 #include "daoTools.h"
 
 /* @brief Extracts the local name from a shared memory absolute path
@@ -135,29 +137,150 @@ void daoToolsInsertShmNamePrefix(const char* base_string, const char* prefix, ch
     snprintf(final_string, 128, "%.*s%s%s", (int)prefix_index, base_string, prefix, suffix);
 }
 
+#define DAO_LOG_TAG_LEN            32
+#define DAO_LOG_MAX_TAGS           256
+#define DAO_LOG_THROTTLE_SECONDS   1
+#define DAO_LOG_MAX_FILE_BYTES     (20L * 1024 * 1024)
+
+typedef struct {
+    unsigned long pathHash;
+    char tag[DAO_LOG_TAG_LEN];
+    time_t lastWrite;
+    unsigned long suppressed;
+} DaoLogThrottleEntry;
+
+static DaoLogThrottleEntry gDaoLogThrottleTable[DAO_LOG_MAX_TAGS];
+static int gDaoLogThrottleCount = 0;
+static pthread_mutex_t gDaoLogThrottleMutex = PTHREAD_MUTEX_INITIALIZER;
+
+/* djb2 hash, used only to distinguish which file a tag's throttle state
+   belongs to (see daoLogToFile()) -- collisions just mean two different
+   paths occasionally share a throttle window, not a correctness issue. */
+static unsigned long daoLogHashPath(const char *s) {
+    unsigned long h = 5381;
+    int c;
+    while ((c = *s++)) h = ((h << 5) + h) + (unsigned long)c;
+    return h;
+}
+
 /**
  * @brief Append one line to a log file, in
- * "<UTC ISO8601 with milliseconds>Z <errorId> <message>" format.
+ * "<UTC ISO8601 with milliseconds>Z <errorId> <message>" format, with
+ * per-tag throttling and size-capped rotation.
+ *
+ * Throttling: at most one line is actually written per (fileName, errorId)
+ * pair per DAO_LOG_THROTTLE_SECONDS second(s) -- the same tag written to
+ * two different files (e.g. a habLogTech()/habLogUser() pair sharing one
+ * tag) throttles independently per file, they don't suppress each other.
+ * Calls arriving inside that window only increment an in-memory
+ * suppressed-count for that (file, tag); when the window closes and a
+ * line is finally written, a trailing " (x<N> suppressed)" is appended to
+ * the message if any calls were suppressed while waiting. `errorId` is
+ * part of the throttle key, so callers must pass a stable, unique-per-
+ * call-site tag (e.g. "DMRX001") rather than a dynamically formatted
+ * string -- a dynamic tag creates a new throttle-table entry every call
+ * and defeats throttling entirely.
+ *
+ * The throttle table holds DAO_LOG_MAX_TAGS entries; if a process
+ * somehow exceeds that many distinct tags, further unknown tags are
+ * logged unthrottled (fail open) rather than dropped or crashing.
+ *
+ * Rotation: before writing, if the target file is already larger than
+ * DAO_LOG_MAX_FILE_BYTES (20MB), it is renamed to "<path>.old"
+ * (replacing any previous .old) so a fresh file is started. One old
+ * generation is kept; there is no unbounded growth. This applies per
+ * file path, so every path passed through this function gets it.
  *
  * A single write() on an O_APPEND fd is atomic on a local filesystem, so
  * any number of processes can share the same log file without interleaving lines.
  *
+ * Note for callers: errorId/fmt content should match the audience of the
+ * file being written to -- a path meant as an operator-facing error log
+ * should get short, plain-language messages (no errno/hex/byte-counts),
+ * while a path meant as a technical/diagnostic log should carry that
+ * detail. This function has no way to know which log a given path is, so
+ * this is a convention for callers to follow, not something enforced here.
+ *
  * @param fileName Path to the log file, or NULL/empty to use "$HOME/dao.log"
  *                 (falls back to "./dao.log" if $HOME is not set).
- * @param errorId Short identifier for the logged event.
+ * @param errorId Short identifier for the logged event; also the throttle key.
  * @param fmt printf-style format string for the message.
  *
- * @return DAO_SUCCESS on success, DAO_ERROR if the file could not be opened.
+ * @return DAO_SUCCESS on success (including throttled/suppressed calls),
+ *         DAO_ERROR if the file could not be opened or written.
  */
 int_fast8_t daoLogToFile(const char *fileName, const char *errorId, const char *fmt, ...) {
-    char msg[400];
+    /* Resolve the real target path up front (before the throttle check),
+       so the default-path fallback participates in the per-file throttle
+       key consistently. */
+    char defaultPath[256];
+    if (fileName == NULL || fileName[0] == '\0') {
+        const char *home = getenv("HOME");
+        snprintf(defaultPath, sizeof(defaultPath), "%s/dao.log", home ? home : ".");
+        fileName = defaultPath;
+    }
+
+    const char *tagSrc = errorId ? errorId : "";
+    char tagKey[DAO_LOG_TAG_LEN];
+    size_t tagLen = strlen(tagSrc);
+    if (tagLen >= sizeof(tagKey)) tagLen = sizeof(tagKey) - 1;
+    memcpy(tagKey, tagSrc, tagLen);
+    tagKey[tagLen] = '\0';
+
+    unsigned long pathHash = daoLogHashPath(fileName);
+
+    time_t nowSec = time(NULL);
+    int shouldWrite = 0;
+    unsigned long suppressedCount = 0;
+
+    pthread_mutex_lock(&gDaoLogThrottleMutex);
+    DaoLogThrottleEntry *entry = NULL;
+    for (int i = 0; i < gDaoLogThrottleCount; i++) {
+        if (gDaoLogThrottleTable[i].pathHash == pathHash &&
+            strcmp(gDaoLogThrottleTable[i].tag, tagKey) == 0) {
+            entry = &gDaoLogThrottleTable[i];
+            break;
+        }
+    }
+    if (entry == NULL && gDaoLogThrottleCount < DAO_LOG_MAX_TAGS) {
+        entry = &gDaoLogThrottleTable[gDaoLogThrottleCount++];
+        entry->pathHash = pathHash;
+        memcpy(entry->tag, tagKey, tagLen + 1);
+        entry->lastWrite = 0;
+        entry->suppressed = 0;
+    }
+
+    if (entry == NULL) {
+        // Table full and tag never seen before: fail open rather than drop.
+        shouldWrite = 1;
+    } else if (nowSec - entry->lastWrite >= DAO_LOG_THROTTLE_SECONDS) {
+        shouldWrite = 1;
+        suppressedCount = entry->suppressed;
+        entry->suppressed = 0;
+        entry->lastWrite = nowSec;
+    } else {
+        entry->suppressed++;
+    }
+    pthread_mutex_unlock(&gDaoLogThrottleMutex);
+
     va_list args;
     va_start(args, fmt);
+    if (!shouldWrite) {
+        va_end(args);
+        return DAO_SUCCESS;
+    }
+
+    char msg[400];
     vsnprintf(msg, sizeof(msg), fmt, args);
     va_end(args);
 
     for (char *p = msg; *p != '\0'; p++) {
         if (*p == '\n' || *p == '\r') *p = ' ';
+    }
+
+    if (suppressedCount > 0) {
+        size_t msgLen = strnlen(msg, sizeof(msg));
+        snprintf(msg + msgLen, sizeof(msg) - msgLen, " (x%lu suppressed)", suppressedCount);
     }
 
     struct timespec now;
@@ -173,11 +296,11 @@ int_fast8_t daoLogToFile(const char *fileName, const char *errorId, const char *
     if (n <= 0) return DAO_ERROR;
     if ((size_t)n >= sizeof(line)) n = sizeof(line) - 1;
 
-    char defaultPath[256];
-    if (fileName == NULL || fileName[0] == '\0') {
-        const char *home = getenv("HOME");
-        snprintf(defaultPath, sizeof(defaultPath), "%s/dao.log", home ? home : ".");
-        fileName = defaultPath;
+    struct stat st;
+    if (stat(fileName, &st) == 0 && st.st_size > DAO_LOG_MAX_FILE_BYTES) {
+        char oldPath[280];
+        snprintf(oldPath, sizeof(oldPath), "%s.old", fileName);
+        rename(fileName, oldPath);
     }
 
     int fd = open(fileName, O_WRONLY | O_CREAT | O_APPEND, 0644);

@@ -39,6 +39,46 @@ void daoToolsInsertShmNamePrefix(const char* base_string,
                                  const char* prefix,
                                  char* final_string);
 
+/**
+ * @brief Append one line to a log file, in
+ * "<UTC ISO8601 with milliseconds>Z <errorId> <message>" format, with
+ * per-tag throttling and size-capped rotation.
+ *
+ * Throttling: at most one line is actually written per `errorId` per
+ * second. Calls arriving inside that 1-second window only increment an
+ * in-memory suppressed-count for that tag; when the window closes and a
+ * line is finally written, a trailing " (x<N> suppressed)" is appended to
+ * the message if any calls were suppressed while waiting. `errorId` is
+ * the throttle key, so callers must pass a stable, unique-per-call-site
+ * tag (e.g. "DMRX001", "WFSRXHRT016" -- the established hab convention)
+ * rather than a dynamically formatted string -- a dynamic tag creates a
+ * new throttle-table entry every call and defeats throttling entirely.
+ *
+ * The throttle table holds 256 entries; if a process somehow exceeds
+ * that many distinct tags, further unknown tags are logged unthrottled
+ * (fail open) rather than dropped or crashing.
+ *
+ * Rotation: before writing, if the target file is already larger than
+ * 20MB, it is renamed to "<path>.old" (replacing any previous .old) so a
+ * fresh file is started. One old generation is kept; there is no
+ * unbounded growth. This applies per file path, so every path passed
+ * through this function gets it.
+ *
+ * Note for callers: errorId/fmt content should match the audience of the
+ * file being written to -- a path meant as an operator-facing error log
+ * should get short, plain-language messages (no errno/hex/byte-counts),
+ * while a path meant as a technical/diagnostic log should carry that
+ * detail. This function has no way to know which log a given path is, so
+ * this is a convention for callers to follow, not something enforced here.
+ *
+ * @param fileName Path to the log file, or NULL/empty to use "$HOME/dao.log"
+ *                 (falls back to "./dao.log" if $HOME is not set).
+ * @param errorId Short identifier for the logged event; also the throttle key.
+ * @param fmt printf-style format string for the message.
+ *
+ * @return DAO_SUCCESS on success (including throttled/suppressed calls),
+ *         DAO_ERROR if the file could not be opened or written.
+ */
 int_fast8_t daoLogToFile(const char *fileName, const char *errorId, const char *fmt, ...);
 
 int_fast8_t daoToolsShmCalibrate(IMAGE *inShm,
