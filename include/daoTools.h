@@ -190,6 +190,36 @@ int_fast8_t daoToolsShmSubstractExtractNorm(IMAGE* inAShm,
                                             IMAGE* maskShm,
                                             IMAGE* outShm);
 
+int_fast8_t daoToolsShmSubstractExtractDualNorm(IMAGE *inAShm,
+                                IMAGE *inBShm,
+                                IMAGE *maskShm,
+                                IMAGE *outShm,
+                                IMAGE *normAShm,
+                                IMAGE *normBShm,
+                                int normalize);
+
+int_fast8_t daoToolsShmSubstractExtractDualNormFinalize(IMAGE *inAShm,
+                                IMAGE *inBShm,
+                                IMAGE *maskShm,
+                                IMAGE *outShm,
+                                IMAGE *normAShm,
+                                IMAGE *normBShm,
+                                int normalize);
+
+int_fast8_t daoToolsShmSubstractExtractNormA(IMAGE *inAShm,
+                                IMAGE *inBShm,
+                                IMAGE *maskShm,
+                                IMAGE *outShm,
+                                IMAGE *normAShm,
+                                int normalize);
+
+int_fast8_t daoToolsShmSubstractExtractNormAFinalize(IMAGE *inAShm,
+                                IMAGE *inBShm,
+                                IMAGE *maskShm,
+                                IMAGE *outShm,
+                                IMAGE *normAShm,
+                                int normalize);
+
 int_fast8_t daoToolsImgNormalize(IMAGE *img);
 
 int_fast8_t daoToolsHighPassFilter(float *H,           

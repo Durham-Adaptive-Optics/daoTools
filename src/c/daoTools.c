@@ -1588,6 +1588,449 @@ int_fast8_t daoToolsShmSubstractExtract(IMAGE *inAShm,
 }
 
 /**
+ * @brief Subtract and extract an image by applying mask, assume same type for A and B
+ *
+ * If normalize != 0, inA is divided by normAShm and inB is divided by normBShm
+ * before subtracting, i.e. result = inA/normA - inB/normB.
+ *
+ * @param inAShm image
+ * @param inBShm image to subtract
+ * @param maskShm extraction mask, assumes uint32
+ * @param outShm output extracted image as vector
+ * @param normAShm norm applied to inA
+ * @param normBShm norm applied to inB
+ * @param normalize normalize output image if non-zero
+ * @return DAO_SUCCESS on success, DAO_ERROR on error
+ */
+int_fast8_t daoToolsShmSubstractExtractDualNorm(IMAGE *inAShm,
+                                        IMAGE *inBShm,
+                                        IMAGE *maskShm,
+                                        IMAGE *outShm,
+                                        IMAGE *normAShm,
+                                        IMAGE *normBShm,
+                                        int normalize)
+{
+    daoTrace("\n");
+
+    int k;
+    int cnt = 0;
+    int inSize;
+
+    if ((inAShm == NULL) || (inBShm == NULL) || (maskShm == NULL) || (outShm == NULL))
+    {
+        daoError("NULL input pointer\n");
+        return DAO_ERROR;
+    }
+
+    if ((inAShm[0].md[0].size[0] != inBShm[0].md[0].size[0]) ||
+        (inAShm[0].md[0].size[1] != inBShm[0].md[0].size[1]) ||
+        (inAShm[0].md[0].size[0] != maskShm[0].md[0].size[0]) ||
+        (inAShm[0].md[0].size[1] != maskShm[0].md[0].size[1]))
+    {
+        daoError("input image sizes do not match\n");
+        return DAO_ERROR;
+    }
+
+    if (inAShm[0].md[0].atype != inBShm[0].md[0].atype)
+    {
+        daoError("input A/B datatype mismatch : %d != %d\n",
+        inAShm[0].md[0].atype,
+        inBShm[0].md[0].atype);
+        return DAO_ERROR;
+    }
+
+    if (inAShm[0].md[0].atype != outShm[0].md[0].atype)
+    {
+        daoError("input/output datatype mismatch : %d != %d\n",
+        inAShm[0].md[0].atype,
+        outShm[0].md[0].atype);
+        return DAO_ERROR;
+    }
+
+    if (maskShm[0].md[0].atype != _DATATYPE_UINT32)
+    {
+        daoError("mask datatype must be UINT32, got %d\n", maskShm[0].md[0].atype);
+        return DAO_ERROR;
+    }
+
+    inSize = inAShm[0].md[0].size[0] * inAShm[0].md[0].size[1];
+
+    outShm[0].md[0].cnt2 = inAShm[0].md[0].cnt2;
+
+    switch (inAShm[0].md[0].atype)
+    {
+        case _DATATYPE_UINT8:
+            for (k = 0; k < inSize; k++)
+            {
+                if (maskShm[0].array.UI32[k] == 1)
+                {
+                    outShm[0].array.UI8[cnt] = inAShm[0].array.UI8[k] - inBShm[0].array.UI8[k];
+                    cnt++;
+                }
+            }
+            break;
+
+        case _DATATYPE_INT8:
+            for (k = 0; k < inSize; k++)
+            {
+                if (maskShm[0].array.UI32[k] == 1)
+                {
+                    outShm[0].array.SI8[cnt] = inAShm[0].array.SI8[k] - inBShm[0].array.SI8[k];
+                    cnt++;
+                }
+            }
+            break;
+
+        case _DATATYPE_UINT16:
+            for (k = 0; k < inSize; k++)
+            {
+                if (maskShm[0].array.UI32[k] == 1)
+                {
+                    outShm[0].array.UI16[cnt] = inAShm[0].array.UI16[k] - inBShm[0].array.UI16[k];
+                    cnt++;
+                }
+            }
+            break;
+
+        case _DATATYPE_INT16:
+            for (k = 0; k < inSize; k++)
+            {
+                if (maskShm[0].array.UI32[k] == 1)
+                {
+                    outShm[0].array.SI16[cnt] = inAShm[0].array.SI16[k] - inBShm[0].array.SI16[k];
+                    cnt++;
+                }
+            }
+        break;
+
+        case _DATATYPE_UINT32:
+            for (k = 0; k < inSize; k++)
+            {
+                if (maskShm[0].array.UI32[k] == 1)
+                {
+                    outShm[0].array.UI32[cnt] = inAShm[0].array.UI32[k] - inBShm[0].array.UI32[k];
+                    cnt++;
+                }
+            }
+            break;
+
+        case _DATATYPE_INT32:
+            for (k = 0; k < inSize; k++)
+            {
+                if (maskShm[0].array.UI32[k] == 1)
+                {
+                    outShm[0].array.SI32[cnt] = inAShm[0].array.SI32[k] - inBShm[0].array.SI32[k];
+                    cnt++;
+                }
+            }
+            break;
+
+        case _DATATYPE_UINT64:
+            for (k = 0; k < inSize; k++)
+                {
+                    if (maskShm[0].array.UI32[k] == 1)
+                    {
+                        outShm[0].array.UI64[cnt] = inAShm[0].array.UI64[k] - inBShm[0].array.UI64[k];
+                        cnt++;
+                    }
+            }
+            break;
+
+        case _DATATYPE_INT64:
+            for (k = 0; k < inSize; k++)
+            {
+                if (maskShm[0].array.UI32[k] == 1)
+                {
+                    outShm[0].array.SI64[cnt] = inAShm[0].array.SI64[k] - inBShm[0].array.SI64[k];
+                    cnt++;
+                }
+            }
+            break;
+
+        case _DATATYPE_FLOAT:
+            for (k = 0; k < inSize; k++)
+            {
+                if (maskShm[0].array.UI32[k] == 1)
+                    {
+                        if (normalize !=0)
+                        {
+                            outShm[0].array.F[cnt] = (inAShm[0].array.F[k] / normAShm[0].array.F[0]) - (inBShm[0].array.F[k] / normBShm[0].array.F[0]);
+                        }
+                        else
+                        {
+                            outShm[0].array.F[cnt] = inAShm[0].array.F[k] - inBShm[0].array.F[k];
+                        }
+                        cnt++;
+                    }
+                }
+            break;
+
+        case _DATATYPE_DOUBLE:
+            for (k = 0; k < inSize; k++)
+            {
+                if (maskShm[0].array.UI32[k] == 1)
+                {
+                    if (normalize !=0)
+                    {
+                        outShm[0].array.D[cnt] = (inAShm[0].array.D[k] / normAShm[0].array.D[0]) - (inBShm[0].array.D[k] / normBShm[0].array.D[0]);
+                    }
+                    else
+                    {
+                        outShm[0].array.D[cnt] = inAShm[0].array.D[k] - inBShm[0].array.D[k];
+                    }
+                    cnt++;
+                }
+            }
+            break;
+
+        default:
+            daoError("unsupported datatype %d\n", inAShm[0].md[0].atype);
+            return DAO_ERROR;
+    }
+
+    return DAO_SUCCESS;
+}
+
+int_fast8_t daoToolsShmSubstractExtractDualNormFinalize(IMAGE *inAShm,
+                                        IMAGE *inBShm,
+                                        IMAGE *maskShm,
+                                        IMAGE *outShm,
+                                        IMAGE *normAShm,
+                                        IMAGE *normBShm,
+                                        int normalize)
+{
+    daoTrace("\n");
+
+    if (daoToolsShmSubstractExtractDualNorm(inAShm, inBShm, maskShm, outShm, normAShm, normBShm, normalize) == DAO_ERROR)
+    {
+        return DAO_ERROR;
+    }
+    daoShmImagePart2ShmFinalize(&outShm[0]);
+
+    return DAO_SUCCESS;
+}
+
+/**
+ * @brief Subtract and extract an image by applying mask, assume same type for A and B
+ *
+ * inB is assumed to already be normalized. If normalize != 0, only inA is divided
+ * by normAShm before subtracting, i.e. result = inA/normA - inB.
+ *
+ * @param inAShm image
+ * @param inBShm image to subtract, assumed already normalized
+ * @param maskShm extraction mask, assumes uint32
+ * @param outShm output extracted image as vector
+ * @param normAShm norm applied to inA
+ * @param normalize normalize output image if non-zero
+ * @return DAO_SUCCESS on success, DAO_ERROR on error
+ */
+int_fast8_t daoToolsShmSubstractExtractNormA(IMAGE *inAShm,
+                                        IMAGE *inBShm,
+                                        IMAGE *maskShm,
+                                        IMAGE *outShm,
+                                        IMAGE *normAShm,
+                                        int normalize)
+{
+    daoTrace("\n");
+
+    int k;
+    int cnt = 0;
+    int inSize;
+
+    if ((inAShm == NULL) || (inBShm == NULL) || (maskShm == NULL) || (outShm == NULL))
+    {
+        daoError("NULL input pointer\n");
+        return DAO_ERROR;
+    }
+
+    if ((inAShm[0].md[0].size[0] != inBShm[0].md[0].size[0]) ||
+        (inAShm[0].md[0].size[1] != inBShm[0].md[0].size[1]) ||
+        (inAShm[0].md[0].size[0] != maskShm[0].md[0].size[0]) ||
+        (inAShm[0].md[0].size[1] != maskShm[0].md[0].size[1]))
+    {
+        daoError("input image sizes do not match\n");
+        return DAO_ERROR;
+    }
+
+    if (inAShm[0].md[0].atype != inBShm[0].md[0].atype)
+    {
+        daoError("input A/B datatype mismatch : %d != %d\n",
+        inAShm[0].md[0].atype,
+        inBShm[0].md[0].atype);
+        return DAO_ERROR;
+    }
+
+    if (inAShm[0].md[0].atype != outShm[0].md[0].atype)
+    {
+        daoError("input/output datatype mismatch : %d != %d\n",
+        inAShm[0].md[0].atype,
+        outShm[0].md[0].atype);
+        return DAO_ERROR;
+    }
+
+    if (maskShm[0].md[0].atype != _DATATYPE_UINT32)
+    {
+        daoError("mask datatype must be UINT32, got %d\n", maskShm[0].md[0].atype);
+        return DAO_ERROR;
+    }
+
+    inSize = inAShm[0].md[0].size[0] * inAShm[0].md[0].size[1];
+
+    outShm[0].md[0].cnt2 = inAShm[0].md[0].cnt2;
+
+    switch (inAShm[0].md[0].atype)
+    {
+        case _DATATYPE_UINT8:
+            for (k = 0; k < inSize; k++)
+            {
+                if (maskShm[0].array.UI32[k] == 1)
+                {
+                    outShm[0].array.UI8[cnt] = inAShm[0].array.UI8[k] - inBShm[0].array.UI8[k];
+                    cnt++;
+                }
+            }
+            break;
+
+        case _DATATYPE_INT8:
+            for (k = 0; k < inSize; k++)
+            {
+                if (maskShm[0].array.UI32[k] == 1)
+                {
+                    outShm[0].array.SI8[cnt] = inAShm[0].array.SI8[k] - inBShm[0].array.SI8[k];
+                    cnt++;
+                }
+            }
+            break;
+
+        case _DATATYPE_UINT16:
+            for (k = 0; k < inSize; k++)
+            {
+                if (maskShm[0].array.UI32[k] == 1)
+                {
+                    outShm[0].array.UI16[cnt] = inAShm[0].array.UI16[k] - inBShm[0].array.UI16[k];
+                    cnt++;
+                }
+            }
+            break;
+
+        case _DATATYPE_INT16:
+            for (k = 0; k < inSize; k++)
+            {
+                if (maskShm[0].array.UI32[k] == 1)
+                {
+                    outShm[0].array.SI16[cnt] = inAShm[0].array.SI16[k] - inBShm[0].array.SI16[k];
+                    cnt++;
+                }
+            }
+        break;
+
+        case _DATATYPE_UINT32:
+            for (k = 0; k < inSize; k++)
+            {
+                if (maskShm[0].array.UI32[k] == 1)
+                {
+                    outShm[0].array.UI32[cnt] = inAShm[0].array.UI32[k] - inBShm[0].array.UI32[k];
+                    cnt++;
+                }
+            }
+            break;
+
+        case _DATATYPE_INT32:
+            for (k = 0; k < inSize; k++)
+            {
+                if (maskShm[0].array.UI32[k] == 1)
+                {
+                    outShm[0].array.SI32[cnt] = inAShm[0].array.SI32[k] - inBShm[0].array.SI32[k];
+                    cnt++;
+                }
+            }
+            break;
+
+        case _DATATYPE_UINT64:
+            for (k = 0; k < inSize; k++)
+                {
+                    if (maskShm[0].array.UI32[k] == 1)
+                    {
+                        outShm[0].array.UI64[cnt] = inAShm[0].array.UI64[k] - inBShm[0].array.UI64[k];
+                        cnt++;
+                    }
+            }
+            break;
+
+        case _DATATYPE_INT64:
+            for (k = 0; k < inSize; k++)
+            {
+                if (maskShm[0].array.UI32[k] == 1)
+                {
+                    outShm[0].array.SI64[cnt] = inAShm[0].array.SI64[k] - inBShm[0].array.SI64[k];
+                    cnt++;
+                }
+            }
+            break;
+
+        case _DATATYPE_FLOAT:
+            for (k = 0; k < inSize; k++)
+            {
+                if (maskShm[0].array.UI32[k] == 1)
+                    {
+                        if (normalize !=0)
+                        {
+                            outShm[0].array.F[cnt] = (inAShm[0].array.F[k] / normAShm[0].array.F[0]) - inBShm[0].array.F[k];
+                        }
+                        else
+                        {
+                            outShm[0].array.F[cnt] = inAShm[0].array.F[k] - inBShm[0].array.F[k];
+                        }
+                        cnt++;
+                    }
+                }
+            break;
+
+        case _DATATYPE_DOUBLE:
+            for (k = 0; k < inSize; k++)
+            {
+                if (maskShm[0].array.UI32[k] == 1)
+                {
+                    if (normalize !=0)
+                    {
+                        outShm[0].array.D[cnt] = (inAShm[0].array.D[k] / normAShm[0].array.D[0]) - inBShm[0].array.D[k];
+                    }
+                    else
+                    {
+                        outShm[0].array.D[cnt] = inAShm[0].array.D[k] - inBShm[0].array.D[k];
+                    }
+                    cnt++;
+                }
+            }
+            break;
+
+        default:
+            daoError("unsupported datatype %d\n", inAShm[0].md[0].atype);
+            return DAO_ERROR;
+    }
+
+    return DAO_SUCCESS;
+}
+
+int_fast8_t daoToolsShmSubstractExtractNormAFinalize(IMAGE *inAShm,
+                                        IMAGE *inBShm,
+                                        IMAGE *maskShm,
+                                        IMAGE *outShm,
+                                        IMAGE *normAShm,
+                                        int normalize)
+{
+    daoTrace("\n");
+
+    if (daoToolsShmSubstractExtractNormA(inAShm, inBShm, maskShm, outShm, normAShm, normalize) == DAO_ERROR)
+    {
+        return DAO_ERROR;
+    }
+    daoShmImagePart2ShmFinalize(&outShm[0]);
+
+    return DAO_SUCCESS;
+}
+
+/**
  * @brief Subastract and Extract an image by applying mask with normalization, assume same type for A and B
  *
  * This function subtracts inBShm from inAShm, normalizes the result by the sum of 
