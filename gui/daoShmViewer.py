@@ -1570,7 +1570,7 @@ class daoShmViewer(QMainWindow):
                 if session:  # Skip empty lines
                     self.tmuxSessionList.addItem(session)
                     
-            self.tabWidget.setTabText(5, f"Tmux Sessions ({len(sessions)})")
+            self.tabWidget.setTabText(4, f"Tmux Sessions ({len(sessions)})")
             self.statusBar.showMessage(f"Found {len(sessions)} tmux sessions")
             
         except Exception as e:
@@ -1611,7 +1611,7 @@ class daoShmViewer(QMainWindow):
 
     def on_tab_changed(self, index):
         """Handle tab change events."""
-        if index == 5:  # Tmux Sessions tab
+        if index == 4:  # Tmux Sessions tab
             self.update_tmux_sessions()
 
     def show_error(self, message):
