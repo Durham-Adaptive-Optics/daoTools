@@ -284,7 +284,7 @@ if __name__ == '__main__':
             shmDmName = str(arg)
         elif opt in ("-m", "--mapShm"):
             shmMapName = str(arg)
-    app = QtGui.QApplication([])
+    app = QApplication([])
     main = Main(shmDmName, shmMapName)
     main.setWindowTitle(shmDmName)
     main.show()
