@@ -14,6 +14,7 @@ import dao
 import yaml
 import magicplot
 import numpy as np
+import pyqtgraph as pg
 from daoDAQClient import DAQState, DAQClient
 from astropy.io import fits
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -379,6 +380,8 @@ class daoShmViewer(QMainWindow):
         self.current_slice = 0
         self.is_3d = False
         self.rotation_angle = 270  # Rotation angle: 0, 90, 180, or 270
+        self.BAR = False  # Show 1D data as a bar plot instead of a line plot
+        self.barItem = None
         
         # Directory to monitor
         self.dir = QDir("/tmp")
@@ -452,6 +455,14 @@ class daoShmViewer(QMainWindow):
         self.rotate_action = QAction(f"Rotate ({self.rotation_angle}°)", self)
         self.rotate_action.triggered.connect(self.rotate_image)
         toolbar.addAction(self.rotate_action)
+
+        # Bar plot toggle (for 1D data)
+        self.bar_plot_action = QAction("Bar Plot", self)
+        self.bar_plot_action.setCheckable(True)
+        self.bar_plot_action.setChecked(self.BAR)
+        self.bar_plot_action.setEnabled(False)
+        self.bar_plot_action.triggered.connect(self.toggle_bar_plot)
+        toolbar.addAction(self.bar_plot_action)
 
     def setup_file_table(self):
         """Setup the file table widget."""
@@ -862,11 +873,23 @@ class daoShmViewer(QMainWindow):
             self.slice_widget.setLayout(slice_layout)
             self.statusBar.addPermanentWidget(self.slice_widget)
 
+        # Bar plot only makes sense for 1D data
+        self.bar_plot_action.setEnabled(self.FLAT and not (self.TABLE or self.ShowTable))
+
         # Update visualization data
         if not (self.TABLE or self.ShowTable):
             if self.FLAT:
-                self.im = self.graphWidget.getDataItem()
-                self.im.setData(self.shm.get_data().flatten())
+                self.barItem = None
+                data = self.shm.get_data().flatten()
+                if self.BAR:
+                    self.im = None
+                    self.graphWidget.plotMode = 1
+                    self.barItem = pg.BarGraphItem(x=np.arange(len(data)), height=data, width=0.8, brush='c')
+                    self.graphWidget.plotView.addItem(self.barItem)
+                    self.graphWidget.plotItems.append(self.barItem)
+                else:
+                    self.im = self.graphWidget.getDataItem()
+                    self.im.setData(data)
             else:
                 self.im = self.graphWidget.getImageItem()
                 data = self.shm.get_data()
@@ -878,6 +901,19 @@ class daoShmViewer(QMainWindow):
                 
             self.graphWidget.updatePanBounds()
             self.graphWidget.viewBox.autoRange()
+
+    def _update_1d_display(self, data):
+        """Push new 1D data to whichever visual (line or bar) is currently active."""
+        if self.BAR and self.barItem is not None:
+            self.barItem.setOpts(x=np.arange(len(data)), height=data)
+        else:
+            self.im.setData(data)
+
+    def toggle_bar_plot(self):
+        """Toggle between line and bar plot display for 1D data."""
+        self.BAR = self.bar_plot_action.isChecked()
+        if self.shm and self.FLAT and not (self.TABLE or self.ShowTable):
+            self.update_visualization()
 
     def update_slice(self, value):
         """Update the displayed slice for 3D data."""
@@ -906,7 +942,7 @@ class daoShmViewer(QMainWindow):
                     self.graphWidget.setModel(NumpyTableModel(self.shm.get_data(), self.shm))
                 else:
                     if self.FLAT:
-                        self.im.setData(self.shm.get_data().flatten())
+                        self._update_1d_display(self.shm.get_data().flatten())
                     else:
                         data = self.shm.get_data()
                         if self.is_3d:
@@ -1422,7 +1458,7 @@ class daoShmViewer(QMainWindow):
         if self.shm and not (self.TABLE or self.ShowTable):
             if self.FLAT:
                 # For 1D data, just update without rotation
-                self.im.setData(self.shm.get_data().flatten())
+                self._update_1d_display(self.shm.get_data().flatten())
             else:
                 # For 2D/3D data, apply rotation and update
                 data = self.shm.get_data()
