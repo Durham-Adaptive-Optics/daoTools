@@ -4,6 +4,7 @@
  *****************************************************************************/
 
 /*==========================================================================*/
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -68,6 +69,30 @@ static void endme(int _a)
 }
 
 /*--------------------------------------------------------------------------*/
+/* Real-time tuning knobs                                                    */
+#define MVM_PRINT_EVERY 2000     /* throttle telemetry: print once every N iterations */
+static int rtCpu       = -1;     /* CPU core to pin the RT thread to (-1 = do not pin) */
+static int blasThreads = 0;      /* BLAS thread count (0 = leave library default)     */
+
+/* OpenBLAS runtime thread control (no public header is pulled in here). */
+extern void openblas_set_num_threads(int num_threads);
+
+static void mvmSetRtAffinity(int cpu)
+{
+#ifdef __linux__
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(cpu, &cpuset);
+    if (pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset) != 0)
+        daoError("pthread_setaffinity_np(cpu=%d) failed\n", cpu);
+    else
+        daoInfo("RT thread pinned to CPU %d\n", cpu);
+#else
+    daoInfo("CPU affinity not supported on this platform (cpu=%d ignored)\n", cpu);
+#endif
+}
+
+/*--------------------------------------------------------------------------*/
 static char	*sArgv0=NULL;					/* name of executable */
 
 static void ShowHelp(void)
@@ -78,63 +103,112 @@ static void ShowHelp(void)
     daoInfo("   -d               display program debug output\n");
     daoInfo("   -S               list of SHM (full path separated by space)\n");
     daoInfo("   -s               semaphore number\n");
+    daoInfo("   -C <cpu>         pin the real-time thread to CPU core <cpu>\n");
+    daoInfo("   -N <n>           BLAS thread count (0 = library default)\n");
     daoInfo("   -L               start real-time loop\n");
-    daoInfo("   usage:\n");
-    daoInfo("    daoMvM -S <input SHM> <input SHM semNb> <matrix SHM> <output SHM> -s <semNb> -L\n");
+    daoInfo("   usage (options must precede -L):\n");
+    daoInfo("    daoMvM -S <input SHM> <matrix SHM> <output SHM> -s <semNb> [-C <cpu>] [-N <n>] -L\n");
     daoInfo("\n");
 }
 /*--------------------------------------------------------------------------*/
 void * realTimeLoop(void *thread_data)
 {
     daoInfo("ThreadId=%p\n", thread_data);
+
+    if (rtCpu >= 0)
+        mvmSetRtAffinity(rtCpu);
+
+    if (blasThreads > 0)
+    {
+        openblas_set_num_threads(blasThreads);
+        daoInfo("BLAS threads set to %d\n", blasThreads);
+    }
+
     // MAIN LOOP
     daoInfo("ENTERING LOOP\n");
     fflush(stdout);
+
     struct timespec t[3];
     double elapsedTime, compTime;
     struct timespec timeout;
-    timeout.tv_sec = 1; // 1 second timeout
-    int nInputs = matrixShm[0].md[0].size[1];
+
+    int nInputs  = matrixShm[0].md[0].size[1];
     int nOutputs = matrixShm[0].md[0].size[0];
     daoInfo("nInputs = %d, nOutputs = %d\n", nInputs, nOutputs);
-    clock_gettime(CLOCK_REALTIME, &t[1]);
-    float alpha=1.0;
-    float beta=0.0;
-    while (end==0) 
+
+    const int    isFloat = (inputShm[0].md[0].atype == _DATATYPE_FLOAT);
+    const float  alpha_f = 1.0f, beta_f = 0.0f;
+    const double alpha_d = 1.0,  beta_d = 0.0;
+
+    // Fault in the matrix pages and warm up the BLAS call so the first real
+    // iterations don't pay page-fault / lazy-init jitter.
+    if (isFloat)
     {
-        clock_gettime(CLOCK_REALTIME, &timeout);
-        timeout.tv_sec +=1;
-        if (daoShmWaitForSemaphoreTimeout(inputShm, semNb, &timeout) != -1)
+        volatile float acc = 0.0f;
+        for (size_t i = 0; i < (size_t)nInputs * nOutputs; i += 1024)
+            acc += matrixShm[0].array.F[i];
+        (void)acc;
+        cblas_sgemv(CblasRowMajor, CblasNoTrans, nOutputs, nInputs, alpha_f,
+                    matrixShm[0].array.F, nInputs, inputShm[0].array.F, 1,
+                    beta_f, outputShm[0].array.F, 1);
+    }
+    else
+    {
+        volatile double acc = 0.0;
+        for (size_t i = 0; i < (size_t)nInputs * nOutputs; i += 1024)
+            acc += matrixShm[0].array.D[i];
+        (void)acc;
+        cblas_dgemv(CblasRowMajor, CblasNoTrans, nOutputs, nInputs, alpha_d,
+                    matrixShm[0].array.D, nInputs, inputShm[0].array.D, 1,
+                    beta_d, outputShm[0].array.D, 1);
+    }
+
+    unsigned long iter = 0;
+    double compAccum = 0.0, fpsAccum = 0.0;
+
+    clock_gettime(CLOCK_MONOTONIC, &t[1]);
+    while (end == 0)
+    {
+        clock_gettime(CLOCK_REALTIME, &timeout);   // sem_timedwait deadline is CLOCK_REALTIME
+        timeout.tv_sec += 1;
+        if (daoShmWaitForSemaphoreTimeout(inputShm, semNb, &timeout) == DAO_TIMEOUT)
+            continue;
+
+        clock_gettime(CLOCK_MONOTONIC, &t[2]);
+
+        // y = M x   with M row-major [nOutputs x nInputs], lda = nInputs
+        if (isFloat)
+            cblas_sgemv(CblasRowMajor, CblasNoTrans, nOutputs, nInputs, alpha_f,
+                        matrixShm[0].array.F, nInputs,
+                        inputShm[0].array.F, 1,
+                        beta_f, outputShm[0].array.F, 1);
+        else
+            cblas_dgemv(CblasRowMajor, CblasNoTrans, nOutputs, nInputs, alpha_d,
+                        matrixShm[0].array.D, nInputs,
+                        inputShm[0].array.D, 1,
+                        beta_d, outputShm[0].array.D, 1);
+
+        // Publish the output.
+        daoShmImagePart2ShmFinalize(&outputShm[0]);
+
+        t[0] = t[1];
+        clock_gettime(CLOCK_MONOTONIC, &t[1]);
+        elapsedTime  = (t[1].tv_sec - t[0].tv_sec) * 1e3;
+        elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
+        compTime  = (t[1].tv_sec - t[2].tv_sec) * 1e6;
+        compTime += (t[1].tv_nsec - t[2].tv_nsec) / 1e3;
+
+        // Accumulate telemetry and print only once every MVM_PRINT_EVERY frames:
+        // a per-iteration fflush(stdout) is a syscall on the critical path.
+        compAccum += compTime;
+        fpsAccum  += (elapsedTime > 0.0) ? 1e3 / elapsedTime : 0.0;
+        if (++iter % MVM_PRINT_EVERY == 0)
         {
-            printf("\rcomputing output, ");        
-            clock_gettime(CLOCK_REALTIME, &t[2]);
-            // MATRIX 
-            if (inputShm[0].md[0].atype == _DATATYPE_FLOAT)
-            {
-                //cblas_sgemv(CblasRowMajor, CblasNoTrans, nInputs, nOutputs, alpha,
-                //    matrixShm[0].array.F, nInputs, inputShm[0].array.F, 1, beta, outputShm[0].array.F, 1);
-                cblas_sgemv(CblasRowMajor, CblasNoTrans, nOutputs, nInputs, alpha,
-                    matrixShm[0].array.F, nInputs,   // lda = nInputs (leading dimension = ncols for row-major)
-                    inputShm[0].array.F, 1,
-                    beta, outputShm[0].array.F, 1);
-            }
-            else
-            {
-                cblas_dgemv(CblasRowMajor, CblasNoTrans, nInputs, nOutputs, (double)alpha,
-                    matrixShm[0].array.D, nInputs, inputShm[0].array.D, 1, (double)beta, outputShm[0].array.D, 1);
-
-            }
-            // Writes output output
-            daoShmImagePart2ShmFinalize(&outputShm[0]);
-
-            t[0]=t[1];        
-            clock_gettime(CLOCK_REALTIME, &t[1]);
-            elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;   
-            elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
-            compTime = (t[1].tv_sec - t[2].tv_sec) * 1e6;
-            compTime += (t[1].tv_nsec - t[2].tv_nsec) / 1e3;
-            printf("comp time = %9.3f us, fps = %8.3f Hz,", compTime, 1e6/(1000*elapsedTime));
+            printf("\rcomp time = %9.3f us, fps = %8.3f Hz (avg/%d)   ",
+                   compAccum / MVM_PRINT_EVERY, fpsAccum / MVM_PRINT_EVERY, MVM_PRINT_EVERY);
             fflush(stdout);
+            compAccum = 0.0;
+            fpsAccum  = 0.0;
         }
     }
 
@@ -228,6 +302,14 @@ static void DecodeArgs(int argc, char **argv)
                         (void)sscanf(*argv++,"%d", &semNb); argc -= 1;
                         daoInfo("inputShm sem   = %d \n", semNb);
                         break;
+            case 'C':
+                        (void)sscanf(*argv++,"%d", &rtCpu); argc -= 1;
+                        daoInfo("RT thread CPU  = %d \n", rtCpu);
+                        break;
+            case 'N':
+                        (void)sscanf(*argv++,"%d", &blasThreads); argc -= 1;
+                        daoInfo("BLAS threads   = %d \n", blasThreads);
+                        break;
             case 'L':
                         daoInfo("MVM real time control\n");
                         realTimeLoopPrep();
@@ -254,6 +336,10 @@ int main(int argc, char **argv)
     // r = seteuid(euid_called); //This goes up to maximum privileges
     sched_setscheduler(0, SCHED_FIFO, &schedpar); //other option is SCHED_RR, might be faster
     // r = seteuid(euid_real);//Go back to normal privileges
+
+    // Lock the address space in RAM: a page fault inside the loop is unbounded jitter.
+    if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0)
+        daoError("mlockall failed (RT jitter may increase)\n");
 
     sArgv0 = *argv;
 

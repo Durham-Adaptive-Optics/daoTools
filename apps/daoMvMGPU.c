@@ -4,6 +4,7 @@
  *****************************************************************************/
 
 /*==========================================================================*/
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -71,6 +72,56 @@ static void endme(int _a)
 }
 
 /*--------------------------------------------------------------------------*/
+/* Real-time tuning knobs                                                    */
+#define MVM_PRINT_EVERY 2000     /* throttle telemetry: print once every N iterations */
+static int rtCpu = -1;           /* CPU core to pin the RT thread to (-1 = do not pin) */
+
+static void mvmSetRtAffinity(int cpu)
+{
+#ifdef __linux__
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(cpu, &cpuset);
+    if (pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset) != 0)
+        daoError("pthread_setaffinity_np(cpu=%d) failed\n", cpu);
+    else
+        daoInfo("RT thread pinned to CPU %d\n", cpu);
+#else
+    daoInfo("CPU affinity not supported on this platform (cpu=%d ignored)\n", cpu);
+#endif
+}
+
+/*--------------------------------------------------------------------------*/
+/* MVM pipeline state, set up once in realTimeLoop() and reused every frame.  */
+static cublasHandle_t gHandle;
+static cudaStream_t   gStream;
+static void  *gdMatrix = NULL, *gdInput = NULL, *gdOutput = NULL;
+static void  *ghInput  = NULL, *ghOutput = NULL;
+static int    gIsFloat = 1;
+static size_t gElemSize = sizeof(float);
+static int    gNInputs = 0, gNOutputs = 0;
+static const float  gAlphaF = 1.0f, gBetaF = 0.0f;
+static const double gAlphaD = 1.0,  gBetaD = 0.0;
+
+// Issue one matrix-vector multiply (H2D copy, gemv, D2H copy) on gStream.
+// All calls are asynchronous; the caller synchronises once afterwards.
+static void mvmIssue(void)
+{
+    cudaMemcpyAsync(gdInput, ghInput, (size_t)gNInputs * gElemSize,
+                    cudaMemcpyHostToDevice, gStream);
+    if (gIsFloat)
+        cublasSgemv(gHandle, CUBLAS_OP_T, gNInputs, gNOutputs, &gAlphaF,
+                    (const float *)gdMatrix, gNInputs, (const float *)gdInput, 1,
+                    &gBetaF, (float *)gdOutput, 1);
+    else
+        cublasDgemv(gHandle, CUBLAS_OP_T, gNInputs, gNOutputs, &gAlphaD,
+                    (const double *)gdMatrix, gNInputs, (const double *)gdInput, 1,
+                    &gBetaD, (double *)gdOutput, 1);
+    cudaMemcpyAsync(ghOutput, gdOutput, (size_t)gNOutputs * gElemSize,
+                    cudaMemcpyDeviceToHost, gStream);
+}
+
+/*--------------------------------------------------------------------------*/
 static char	*sArgv0=NULL;					/* name of executable */
 
 static void ShowHelp(void)
@@ -81,130 +132,159 @@ static void ShowHelp(void)
     daoInfo("   -d               display program debug output\n");
     daoInfo("   -S               list of SHM (full path separated by space)\n");
     daoInfo("   -s               semaphore number\n");
+    daoInfo("   -C <cpu>         pin the real-time thread to CPU core <cpu>\n");
     daoInfo("   -L               start real-time loop\n");
-    daoInfo("   usage:\n");
-    daoInfo("    daoMvMGPU -S <input SHM> <input SHM semNb> <matrix SHM> <output SHM> -s <semNb> -L\n");
+    daoInfo("   usage (options must precede -L):\n");
+    daoInfo("    daoMvMGPU -S <input SHM> <matrix SHM> <output SHM> -s <semNb> [-C <cpu>] -L\n");
     daoInfo("\n");
 }
 /*--------------------------------------------------------------------------*/
 void * realTimeLoop(void *thread_data)
 {
     daoInfo("ThreadId=%p\n", thread_data);
-    // MAIN LOOP
+
+    if (rtCpu >= 0)
+        mvmSetRtAffinity(rtCpu);
+
     daoInfo("ENTERING LOOP\n");
     fflush(stdout);
+
     struct timespec t[3];
     double elapsedTime, compTime;
     struct timespec timeout;
-    timeout.tv_sec = 1; // 1 second timeout
-    int nInputs = matrixShm[0].md[0].size[1];
-    int nOutputs = matrixShm[0].md[0].size[0];
-    daoInfo("nInputs = %d, nOutputs = %d\n", nInputs, nOutputs);
-    clock_gettime(CLOCK_REALTIME, &t[1]);
 
-    float alpha_f=1.0;
-    float beta_f=0.0;
-    double alpha_d=1.0;
-    double beta_d=0.0;
+    gNInputs  = matrixShm[0].md[0].size[1];
+    gNOutputs = matrixShm[0].md[0].size[0];
+    daoInfo("nInputs = %d, nOutputs = %d\n", gNInputs, gNOutputs);
 
-    // CUDA memory allocation both float and double matrix
-    float *df_matrix, *df_input, *df_output;
-    cudaMalloc((void**)&df_matrix, nInputs * nOutputs * sizeof(float));
-    cudaMalloc((void**)&df_input, nInputs * sizeof(float));
-    cudaMalloc((void**)&df_output, nOutputs * sizeof(float));
-    double *dd_matrix, *dd_input, *dd_output;
-    cudaMalloc((void**)&dd_matrix, nInputs * nOutputs * sizeof(double));
-    cudaMalloc((void**)&dd_input, nInputs * sizeof(double));
-    cudaMalloc((void**)&dd_output, nOutputs * sizeof(double));
+    gIsFloat  = (matrixShm[0].md[0].atype == _DATATYPE_FLOAT);
+    gElemSize = gIsFloat ? sizeof(float) : sizeof(double);
 
-    // Create cuBLAS handle
-    cublasHandle_t handle;
-    cublasCreate(&handle);
+    // Busy-wait on GPU synchronisation instead of blocking in the driver:
+    // trades one core for markedly lower per-frame wake latency.
+    cudaSetDeviceFlags(cudaDeviceScheduleSpin);
 
-    // Copy matrix to GPU memory
-    if (inputShm[0].md[0].atype == _DATATYPE_FLOAT)
-    {
-        cudaMemcpy(df_matrix, matrixShm[0].array.F, nInputs * nOutputs * sizeof(float), cudaMemcpyHostToDevice);
-    }
-    else
-    {
-        cudaMemcpy(dd_matrix, matrixShm[0].array.D, nInputs * nOutputs * sizeof(double), cudaMemcpyHostToDevice);
-    }
+    // Device buffers: only the precision actually in use.
+    cudaMalloc(&gdMatrix, (size_t)gNInputs * gNOutputs * gElemSize);
+    cudaMalloc(&gdInput,  (size_t)gNInputs  * gElemSize);
+    cudaMalloc(&gdOutput, (size_t)gNOutputs * gElemSize);
 
+    // Pin the SHM host buffers so H2D/D2H copies are DMA-direct and async
+    // (pageable copies go through a driver staging buffer and force a sync).
+    ghInput  = gIsFloat ? (void *)inputShm[0].array.F  : (void *)inputShm[0].array.D;
+    ghOutput = gIsFloat ? (void *)outputShm[0].array.F : (void *)outputShm[0].array.D;
+    void *hMatrix = gIsFloat ? (void *)matrixShm[0].array.F : (void *)matrixShm[0].array.D;
+
+    int inPinned  = (cudaHostRegister(ghInput,  (size_t)gNInputs  * gElemSize, cudaHostRegisterPortable) == cudaSuccess);
+    int outPinned = (cudaHostRegister(ghOutput, (size_t)gNOutputs * gElemSize, cudaHostRegisterPortable) == cudaSuccess);
+    if (!inPinned || !outPinned)
+        daoInfo("Warning: SHM buffers not pinned (in=%d out=%d); copies will be slower.\n", inPinned, outPinned);
+    cudaGetLastError(); // clear a benign "already registered" error, if any
+
+    cudaStreamCreateWithFlags(&gStream, cudaStreamNonBlocking);
+
+    cublasCreate(&gHandle);
+    cublasSetStream(gHandle, gStream);
+    cublasSetPointerMode(gHandle, CUBLAS_POINTER_MODE_HOST);
+
+    // Initial matrix upload.
+    cudaMemcpy(gdMatrix, hMatrix, (size_t)gNInputs * gNOutputs * gElemSize, cudaMemcpyHostToDevice);
     unsigned long cnt0Matrix = matrixShm[0].md[0].cnt0;
 
-    while (end==0) 
+    // Warm up: the first cuBLAS call loads kernels / allocates workspace.
+    mvmIssue();
+    cudaStreamSynchronize(gStream);
+
+    // Capture the fixed-shape H2D -> gemv -> D2H sequence into a CUDA graph so
+    // each frame costs a single launch instead of three separate ones.
+    int useGraph = 0;
+    cudaGraph_t graph = NULL;
+    cudaGraphExec_t graphExec = NULL;
+    if (cudaStreamBeginCapture(gStream, cudaStreamCaptureModeThreadLocal) == cudaSuccess)
     {
-        clock_gettime(CLOCK_REALTIME, &timeout);
-        timeout.tv_sec +=1;
-        if (daoShmWaitForSemaphoreTimeout(inputShm, semNb, &timeout) != -1)
+        mvmIssue();
+        cudaError_t capErr = cudaStreamEndCapture(gStream, &graph);
+        if (capErr == cudaSuccess &&
+            cudaGraphInstantiateWithFlags(&graphExec, graph, 0) == cudaSuccess)
         {
-            printf("\rcomputing output, ");  
-            
-            clock_gettime(CLOCK_REALTIME, &t[2]);
-            if (inputShm[0].md[0].atype == _DATATYPE_FLOAT)
-            {
-                // Copy input vector to GPU (Updated in every iteration)
-                cudaMemcpy(df_input, inputShm[0].array.F, nInputs * sizeof(float), cudaMemcpyHostToDevice);
-
-                // Perform matrix-vector multiplication (GPU)
-                cublasSgemv(handle, CUBLAS_OP_T, nInputs, nOutputs, &alpha_f,
-                            df_matrix, nInputs, df_input, 1, &beta_f, df_output, 1);
-                
-                // 🔹 Copy result back to CPU
-                cudaMemcpy(outputShm[0].array.F, df_output, nOutputs * sizeof(float), cudaMemcpyDeviceToHost);
-            }
-            else // Not FLOAT, assume DOUBLE
-            {
-                // Copy input vector to GPU (Updated in every iteration)
-                cudaMemcpy(dd_input, inputShm[0].array.D, nInputs * sizeof(double), cudaMemcpyHostToDevice);
-
-                // Perform matrix-vector multiplication (GPU)
-                cublasDgemv(handle, CUBLAS_OP_T, nInputs, nOutputs, &alpha_d,
-                            dd_matrix, nInputs, dd_input, 1, &beta_d, dd_output, 1);
-                
-                // 🔹 Copy result back to CPU
-                cudaMemcpy(outputShm[0].array.D, dd_output, nOutputs * sizeof(double), cudaMemcpyDeviceToHost);
-            }
-            
-            // Writes output output
-            daoShmImagePart2ShmFinalize(&outputShm[0]);
-
-            // Check if the matrix has changed and used the time after the finalize to update the matrix.
-            if (cnt0Matrix != matrixShm[0].md[0].cnt0)
-            {
-                daoInfo("New Matrix detected (cnt %ld vs %ld), copying to GPU.\n", cnt0Matrix, matrixShm[0].md[0].cnt0);
-                // Copy matrix to GPU memory
-                if (inputShm[0].md[0].atype == _DATATYPE_FLOAT)
-                {
-                    cudaMemcpy(df_matrix, matrixShm[0].array.F, nInputs * nOutputs * sizeof(float), cudaMemcpyHostToDevice);
-                }
-                else
-                {
-                    cudaMemcpy(dd_matrix, matrixShm[0].array.D, nInputs * nOutputs * sizeof(double), cudaMemcpyHostToDevice);
-                } 
-                cnt0Matrix = matrixShm[0].md[0].cnt0; 
-            }
-
-            t[0]=t[1];        
-            clock_gettime(CLOCK_REALTIME, &t[1]);
-            elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
-            elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6; 
-            compTime = (t[1].tv_sec - t[2].tv_sec) * 1e6; 
-            compTime += (t[1].tv_nsec - t[2].tv_nsec) / 1e3; 
-            printf("comp time = %9.3f us, fps = %8.3f Hz", compTime, 1e6/(1000*elapsedTime));
-            fflush(stdout);
+            useGraph = 1;
+            daoInfo("CUDA graph enabled.\n");
+        }
+        else
+        {
+            daoInfo("CUDA graph unavailable (%s); using direct async launches.\n",
+                    cudaGetErrorString(capErr));
+            if (graph) { cudaGraphDestroy(graph); graph = NULL; }
+            cudaGetLastError();
         }
     }
 
-        // Free CUDA memory (Done only at the end)
-    cudaFree(df_matrix);
-    cudaFree(df_input);
-    cudaFree(df_output);
-    cudaFree(dd_matrix);
-    cudaFree(dd_input);
-    cudaFree(dd_output);
-    cublasDestroy(handle);
+    unsigned long iter = 0;
+    double compAccum = 0.0, fpsAccum = 0.0;
+
+    clock_gettime(CLOCK_MONOTONIC, &t[1]);
+    while (end == 0)
+    {
+        clock_gettime(CLOCK_REALTIME, &timeout);   // sem_timedwait deadline is CLOCK_REALTIME
+        timeout.tv_sec += 1;
+        if (daoShmWaitForSemaphoreTimeout(inputShm, semNb, &timeout) == DAO_TIMEOUT)
+            continue;
+
+        clock_gettime(CLOCK_MONOTONIC, &t[2]);
+
+        if (useGraph)
+            cudaGraphLaunch(graphExec, gStream);
+        else
+            mvmIssue();
+        cudaStreamSynchronize(gStream);
+
+        // Publish the output.
+        daoShmImagePart2ShmFinalize(&outputShm[0]);
+
+        // Off the critical path: refresh the matrix on the GPU if it changed.
+        if (cnt0Matrix != matrixShm[0].md[0].cnt0)
+        {
+            hMatrix = gIsFloat ? (void *)matrixShm[0].array.F : (void *)matrixShm[0].array.D;
+            cudaMemcpy(gdMatrix, hMatrix, (size_t)gNInputs * gNOutputs * gElemSize, cudaMemcpyHostToDevice);
+            daoInfo("New matrix detected (cnt %ld -> %ld), copied to GPU.\n",
+                    cnt0Matrix, matrixShm[0].md[0].cnt0);
+            cnt0Matrix = matrixShm[0].md[0].cnt0;
+        }
+
+        t[0] = t[1];
+        clock_gettime(CLOCK_MONOTONIC, &t[1]);
+        elapsedTime  = (t[1].tv_sec - t[0].tv_sec) * 1e3;
+        elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
+        compTime  = (t[1].tv_sec - t[2].tv_sec) * 1e6;
+        compTime += (t[1].tv_nsec - t[2].tv_nsec) / 1e3;
+
+        // Accumulate telemetry; print only once every MVM_PRINT_EVERY frames so
+        // the per-iteration fflush(stdout) syscall stays off the critical path.
+        compAccum += compTime;
+        fpsAccum  += (elapsedTime > 0.0) ? 1e3 / elapsedTime : 0.0;
+        if (++iter % MVM_PRINT_EVERY == 0)
+        {
+            printf("\rcomp time = %9.3f us, fps = %8.3f Hz (avg/%d)   ",
+                   compAccum / MVM_PRINT_EVERY, fpsAccum / MVM_PRINT_EVERY, MVM_PRINT_EVERY);
+            fflush(stdout);
+            compAccum = 0.0;
+            fpsAccum  = 0.0;
+        }
+    }
+
+    // Free CUDA resources (only at exit).
+    if (useGraph)
+    {
+        cudaGraphExecDestroy(graphExec);
+        cudaGraphDestroy(graph);
+    }
+    if (inPinned)  cudaHostUnregister(ghInput);
+    if (outPinned) cudaHostUnregister(ghOutput);
+    cudaFree(gdMatrix);
+    cudaFree(gdInput);
+    cudaFree(gdOutput);
+    cublasDestroy(gHandle);
+    cudaStreamDestroy(gStream);
 
     daoInfo("EXITING MAIN LOOP\n");
     fflush(stdout);
@@ -296,6 +376,10 @@ static void DecodeArgs(int argc, char **argv)
                         (void)sscanf(*argv++,"%d", &semNb); argc -= 1;
                         daoInfo("inputShm sem   = %d \n", semNb);
                         break;
+            case 'C':
+                        (void)sscanf(*argv++,"%d", &rtCpu); argc -= 1;
+                        daoInfo("RT thread CPU  = %d \n", rtCpu);
+                        break;
             case 'L':
                         daoInfo("MVM real time control\n");
                         realTimeLoopPrep();
@@ -322,6 +406,10 @@ int main(int argc, char **argv)
     // r = seteuid(euid_called); //This goes up to maximum privileges
     sched_setscheduler(0, SCHED_FIFO, &schedpar); //other option is SCHED_RR, might be faster
     // r = seteuid(euid_real);//Go back to normal privileges
+
+    // Lock the address space in RAM: a page fault inside the loop is unbounded jitter.
+    if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0)
+        daoError("mlockall failed (RT jitter may increase)\n");
 
     sArgv0 = *argv;
 
