@@ -1,0 +1,32 @@
+#!/bin/bash
+# daoToolSetCap
+# Grants the real-time capabilities (CAP_IPC_LOCK, CAP_SYS_NICE) needed by the
+# RT loop binaries so they can mlockall() and run SCHED_FIFO without being root.
+# Must be re-run (as root) after every rebuild/reinstall of these binaries,
+# since file capabilities live on the binary's inode and are lost when it is
+# replaced.
+#
+# Usage: sudo ./daoToolSetCap
+
+set -e
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "daoToolSetCap must be run as root, e.g.:"
+    echo "  sudo $0"
+    exit 1
+fi
+
+: "${DAOROOT:?DAOROOT is not set}"
+
+BINARIES="daoMvM daoMvMGPU daoDescrambleOcam2"
+
+for bin in $BINARIES; do
+    path="$DAOROOT/bin/$bin"
+    if [ -f "$path" ]; then
+        setcap cap_ipc_lock,cap_sys_nice+ep "$path"
+        echo "Capabilities set on $path:"
+        getcap "$path"
+    else
+        echo "Skipping $bin: not found at $path"
+    fi
+done

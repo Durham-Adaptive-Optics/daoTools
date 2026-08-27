@@ -409,7 +409,7 @@ int main(int argc, char **argv)
 
     // Lock the address space in RAM: a page fault inside the loop is unbounded jitter.
     if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0)
-        daoError("mlockall failed (RT jitter may increase)\n");
+        daoWarning("mlockall failed: run scripts/daoToolSetCap to grant RT capabilities. Continuing, but not optimized for real-time.\n");
 
     sArgv0 = *argv;
 

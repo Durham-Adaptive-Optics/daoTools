@@ -97,8 +97,27 @@ static int realTimeLoop()
     int unscrambledSize = ocamShm[0].md[0].size[0] * ocamShm[0].md[0].size[1];
     struct timespec timeout;
     struct timespec t[3];
+    struct timespec lastPrint;
     double elapsedTime;
     clock_gettime(CLOCK_REALTIME, &t[1]);
+    clock_gettime(CLOCK_REALTIME, &lastPrint);
+
+    // lutShm is only ever loaded once above and never re-read inside the loop, so the
+    // scrambled_index -> raw byte offset mapping is constant for the life of this loop.
+    // Precompute it once instead of doing a division and a modulo per pixel per frame.
+    int *srcOffset = NULL;
+    if (binning != 2)
+    {
+        srcOffset = (int*) malloc(sizeof(int) * unscrambledSize);
+        for (int i = 0; i < unscrambledSize; i++)
+        {
+            int scrambled_index = lutShm[0].array.SI32[i];
+            int y = scrambled_index / (imgWidth / 2);
+            int x = (scrambled_index % (imgWidth / 2)) * 2;
+            srcOffset[i] = y * imgWidth + x;
+        }
+    }
+
     while (end ==0)
     {
         clock_gettime(CLOCK_REALTIME, &timeout);
@@ -113,62 +132,48 @@ static int realTimeLoop()
                 uint16_t *dst = ocamShm[0].array.UI16;
                 int32_t *lut = lutShm[0].array.SI32;
 
-                // Step 1: Convert interleaved 8-bit input into 16-bit buffer
-                uint16_t img16[IMG_HEIGHT_BINNED][HALF_WIDTH];
-                for (int y = 0; y < IMG_HEIGHT_BINNED; y++)
-                {
-                    for (int x = 0; x < HALF_WIDTH; x++)
-                    {
-                        int index = y * IMG_WIDTH + 2 * x;
-                        img16[y][x] = (src[index + 1] << 8) | src[index];
-                    }
-                }
-
-                // Step 2: Flatten the 2D image into 1D buffer
-                uint16_t img16_vector[IMG_HEIGHT_BINNED * HALF_WIDTH];
-                for (int y = 0; y < IMG_HEIGHT_BINNED; y++)
-                {
-                    for (int x = 0; x < HALF_WIDTH; x++)
-                    {
-                        img16_vector[y * HALF_WIDTH + x] = img16[y][x];
-                    }
-                }
-
-                // Step 3: Descramble with binning logic using LUT
+                // Gather straight from the raw bytes using the LUT-selected 16-bit sample
+                // index (2x it to get the byte pair). Only reconstructs the BATCH_SIZE*2
+                // samples actually used, instead of the whole-frame intermediate buffer.
                 for (int i = 0; i < BATCH_SIZE; i++)
                 {
-                    dst[i] = img16_vector[lut[i * 2]];
-                    dst[BATCH_SIZE + i] = img16_vector[lut[i * 2 + BINNING_OFFSET]];
+                    int idxA = lut[i * 2] * 2;
+                    int idxB = lut[i * 2 + BINNING_OFFSET] * 2;
+                    dst[i] = (src[idxA + 1] << 8) | src[idxA];
+                    dst[BATCH_SIZE + i] = (src[idxB + 1] << 8) | src[idxB];
                 }
 
-                // Step 4: Zero the rest of the 240x240 image
-                for (int i = 14400; i < 240 * 240; i++)
-                {
-                    dst[i] = 0;
-                }
+                // Zero the rest of the 240x240 image
+                memset(&dst[14400], 0, (240 * 240 - 14400) * sizeof(uint16_t));
 
                 daoShmImagePart2ShmFinalize(&ocamShm[0]);
-                clock_gettime(CLOCK_REALTIME, &t[1]);
             }
             else
             {
                 // Process the scrambled image directly to unscrambled image
+                uint8_t *src = ocamRawShm[0].array.UI8;
+                uint16_t *dst = ocamShm[0].array.UI16;
                 for (int i = 0; i < unscrambledSize; i++)
                 {
-                    int scrambled_index = lutShm[0].array.SI32[i];
-                    int y = scrambled_index / (imgWidth / 2);
-                    int x = (scrambled_index % (imgWidth / 2)) * 2;
-                    ocamShm[0].array.UI16[i] = (ocamRawShm[0].array.UI8[y * imgWidth + x + 1] << 8) + ocamRawShm[0].array.UI8[y * imgWidth + x];
+                    int off = srcOffset[i];
+                    dst[i] = (src[off + 1] << 8) + src[off];
                 }
                 daoShmImagePart2ShmFinalize(&ocamShm[0]);
-                clock_gettime(CLOCK_REALTIME, &t[1]);
+            }
+            clock_gettime(CLOCK_REALTIME, &t[1]);
+
+            elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
+            elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
+
+            // Throttle stdout to ~1 Hz: a blocking terminal write every frame is itself
+            // a source of unbounded latency inside the real-time loop.
+            if (t[1].tv_sec != lastPrint.tv_sec)
+            {
+                printf("\r time to descramble = %8.6f ms", elapsedTime);
+                fflush(stdout);
+                lastPrint = t[1];
             }
         }
-        elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
-        elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
-        printf("\r time to descramble = %8.6f ms", elapsedTime); 
-        fflush(stdout);
-        //usleep(1000);
     }
 
 
@@ -260,6 +265,10 @@ int main(int argc, char **argv)
     // r = seteuid(euid_called); //This goes up to maximum privileges
     sched_setscheduler(0, SCHED_FIFO, &schedpar); //other option is SCHED_RR, might be faster
     // r = seteuid(euid_real);//Go back to normal privileges
+
+    // Lock the address space in RAM: a page fault inside the loop is unbounded jitter.
+    if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0)
+        daoWarning("mlockall failed: run scripts/daoToolSetCap to grant RT capabilities. Continuing, but not optimized for real-time.\n");
 
     sArgv0 = *argv;
 
