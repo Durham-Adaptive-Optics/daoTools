@@ -188,7 +188,7 @@ daoCalIntensityNorm = bld.program(
 	linkflags = my_link_flags,
 	ldflags = ['-ldao' , '-lpthread', '-lm'] + my_ld_flags,
 	use= 'daoTools',
-	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
+	cflags = my_cflags + ['-march=native', '-funroll-loops', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
 daoShmCombiner = bld.program(

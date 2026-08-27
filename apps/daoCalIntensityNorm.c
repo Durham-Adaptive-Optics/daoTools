@@ -89,6 +89,44 @@
  }
 
  /*--------------------------------------------------------------------------*/
+ /* Gather the raw pixels listed in lut[] into a contiguous float buffer.
+  * The data-type switch is hoisted out of the per-pixel loop so each
+  * branch is a tight, vectorizable gather. */
+ #define DAO_GATHER_RAW(MEMBER)                                  \
+     do {                                                       \
+         for (int k = 0; k < n; k++)                             \
+         {                                                      \
+             dst[k] = (float)raw->array.MEMBER[lut[k]];          \
+         }                                                      \
+     } while (0)
+
+ static void gatherRawToFloat(float *dst, const IMAGE *raw,
+                              const int *lut, int n, int rawType)
+ {
+     switch (rawType)
+     {
+         case _DATATYPE_UINT16: DAO_GATHER_RAW(UI16); break;
+         case _DATATYPE_FLOAT:  DAO_GATHER_RAW(F);    break;
+         case _DATATYPE_INT16:  DAO_GATHER_RAW(SI16); break;
+         case _DATATYPE_UINT8:  DAO_GATHER_RAW(UI8);  break;
+         case _DATATYPE_INT8:   DAO_GATHER_RAW(SI8);  break;
+         case _DATATYPE_UINT32: DAO_GATHER_RAW(UI32); break;
+         case _DATATYPE_INT32:  DAO_GATHER_RAW(SI32); break;
+         case _DATATYPE_UINT64: DAO_GATHER_RAW(UI64); break;
+         case _DATATYPE_INT64:  DAO_GATHER_RAW(SI64); break;
+         case _DATATYPE_DOUBLE: DAO_GATHER_RAW(D);    break;
+         default:
+             for (int k = 0; k < n; k++)
+             {
+                 dst[k] = 0.0f;
+             }
+             break;
+     }
+ }
+
+ #undef DAO_GATHER_RAW
+
+ /*--------------------------------------------------------------------------*/
  static int realTimeLoop()
  {
      signal(SIGINT, endme);
@@ -135,32 +173,36 @@
          }
      }
 
-     // Temporary calibrated pixel buffer (avoids recomputing for normalization)
-     float *cal = (float*) malloc(nValid * sizeof(float));
-     float *ref = (float*) malloc(nValid * sizeof(float));
+     // ----------------------------------------------------------------
+     // Per-frame scratch (contiguous, indexed by valid-pixel rank k)
+     //   rawf    : raw pixel gathered to float
+     //   cal     : calibrated pixel  (raw - bg) * ffEff, 0 outside subaperture
+     //   w       : effective flat field, folded with the (ff>0) and illum masks
+     //   bgp     : packed background
+     //   refTerm : ref[k] * invSumRef * illum  (the whole reference term)
+     // w / bgp / refTerm only change when ff, bg, ref or illumPix change.
+     // ----------------------------------------------------------------
+     float *rawf    = (float*) malloc(nValid * sizeof(float));
+     float *cal     = (float*) malloc(nValid * sizeof(float));
+     float *w       = (float*) malloc(nValid * sizeof(float));
+     float *bgp     = (float*) malloc(nValid * sizeof(float));
+     float *refTerm = (float*) malloc(nValid * sizeof(float));
 
      // Detect raw image type
      int rawType = rawShm[0].md[0].atype;
      daoInfo("Raw image type: %d\n", rawType);
 
-     // Macro to extract one raw pixel as float, for any data type
-     #define RAW_TO_FLOAT(shm, idx)                                          \
-         ( (rawType == _DATATYPE_UINT8)   ? (float)(shm).array.UI8[idx]  :  \
-           (rawType == _DATATYPE_INT8)    ? (float)(shm).array.SI8[idx]  :  \
-           (rawType == _DATATYPE_UINT16)  ? (float)(shm).array.UI16[idx] :  \
-           (rawType == _DATATYPE_INT16)   ? (float)(shm).array.SI16[idx] :  \
-           (rawType == _DATATYPE_UINT32)  ? (float)(shm).array.UI32[idx] :  \
-           (rawType == _DATATYPE_INT32)   ? (float)(shm).array.SI32[idx] :  \
-           (rawType == _DATATYPE_UINT64)  ? (float)(shm).array.UI64[idx] :  \
-           (rawType == _DATATYPE_INT64)   ? (float)(shm).array.SI64[idx] :  \
-           (rawType == _DATATYPE_FLOAT)   ? (shm).array.F[idx]           :  \
-           (rawType == _DATATYPE_DOUBLE)  ? (float)(shm).array.D[idx]    :  \
-           0.0f )
-
      struct timespec t[3];
      struct timespec timeout;
+     struct timespec tPrint;
      double elapsedTime, compTime;
      int waitCounter = 0;
+
+     // Status is averaged over ~1 s to avoid per-frame jitter and I/O
+     double accComp    = 0.0;   // sum of compTime  [ms]
+     double accElapsed = 0.0;   // sum of frame periods [ms]
+     double maxComp    = 0.0;   // worst-case compTime in the window [ms]
+     long   accN       = 0;
 
      // ----------------------------------------------------------------
      // Reference normalization: invSumRef = 1 / sum(ref * illum) over
@@ -170,8 +212,12 @@
      float sumRef    = 0.0f;
      unsigned long cnt0Ref   = refShm[0].md[0].cnt0 - 1;
      unsigned long cnt0Illum = illumPixShm[0].md[0].cnt0 - 1;
+     unsigned long cnt0Ff    = ffShm[0].md[0].cnt0 - 1;
+     unsigned long cnt0Bg    = bgShm[0].md[0].cnt0 - 1;
+     unsigned long frameCnt  = 0;
 
      clock_gettime(CLOCK_REALTIME, &t[1]);
+     tPrint = t[1];
 
      daoInfo("Entering real-time loop\n");
      while (end == 0)
@@ -185,58 +231,69 @@
              clock_gettime(CLOCK_REALTIME, &t[2]);
 
              // ----------------------------------------------------------------
-             // Reference or illumination mask changed: recompute invSumRef
+             // ff / bg / ref / illumPix changed: repack the invariant buffers
+             // and recompute invSumRef. These SHMs update far less often than
+             // the raw image, so this whole block is off the hot path.
              // ----------------------------------------------------------------
-             if (cnt0Ref != refShm[0].md[0].cnt0 || cnt0Illum != illumPixShm[0].md[0].cnt0)
+             if (cnt0Ref   != refShm[0].md[0].cnt0      ||
+                 cnt0Illum != illumPixShm[0].md[0].cnt0 ||
+                 cnt0Ff    != ffShm[0].md[0].cnt0       ||
+                 cnt0Bg    != bgShm[0].md[0].cnt0)
              {
-                 daoInfo("New reference/illumPix detected, recomputing invSumRef.\n");
+                 daoInfo("New ff/bg/ref/illumPix detected, repacking buffers.\n");
                  sumRef = 0.0f;
                  for (k = 0; k < nValid; k++)
                  {
-                     int idx = lut[k];
-                     if (illumPixShm[0].array.UI32[idx] == 1)
+                     int   idx = lut[k];
+                     int   il  = (illumPixShm[0].array.UI32[idx] == 1);
+                     float ff  = ffShm[0].array.F[idx];
+                     float ffe = (ff > 0.0f) ? ff : 0.0f;
+                     bgp[k] = bgShm[0].array.F[idx];
+                     w[k]   = il ? ffe : 0.0f;
+                     if (il)
                      {
                          sumRef += refShm[0].array.F[idx];
                      }
                  }
                  invSumRef = (sumRef > 0.0f) ? 1.0f / sumRef : 0.0f;
+                 for (k = 0; k < nValid; k++)
+                 {
+                     int   idx = lut[k];
+                     float il  = (float)(illumPixShm[0].array.UI32[idx] == 1);
+                     refTerm[k] = refShm[0].array.F[idx] * invSumRef * il;
+                 }
                  cnt0Ref   = refShm[0].md[0].cnt0;
                  cnt0Illum = illumPixShm[0].md[0].cnt0;
+                 cnt0Ff    = ffShm[0].md[0].cnt0;
+                 cnt0Bg    = bgShm[0].md[0].cnt0;
              }
 
              // ----------------------------------------------------------------
-             // Pass 1: calibrate valid pixels only, accumulate sum over
-             //         sub-aperture pixels
+             // Gather raw pixels into a contiguous float buffer (type hoisted)
+             // ----------------------------------------------------------------
+             gatherRawToFloat(rawf, &rawShm[0], lut, nValid, rawType);
+
+             // ----------------------------------------------------------------
+             // Pass 1: calibrate. w[k] is 0 outside the sub-aperture, so cal[k]
+             //         is 0 there and the sum needs no per-pixel branch.
              // ----------------------------------------------------------------
              float sum = 0.0f;
-
              for (k = 0; k < nValid; k++)
              {
-                 int idx  = lut[k];
-                 float ff = ffShm[0].array.F[idx];
-                 float bg = bgShm[0].array.F[idx];
-                 float r = refShm[0].array.F[idx];
-                 float raw = RAW_TO_FLOAT(rawShm[0], idx);
-                 float v  = (ff > 0.0f) ? (raw - bg) * ff : 0.0f;
-                 cal[k] = v;
-                 ref[k] = r;
-                 if (illumPixShm[0].array.UI32[idx] == 1)
-                 {
-                     sum += v;
-                 }
+                 float v = (rawf[k] - bgp[k]) * w[k];
+                 cal[k]  = v;
+                 sum    += v;
              }
 
              // ----------------------------------------------------------------
-             // Pass 2: normalize, subtract the (self-normalized) reference,
-             //         and write to output SHM
+             // Pass 2: normalize, subtract the (self-normalized) reference.
+             //         Both terms are already 0 outside the sub-aperture.
              // ----------------------------------------------------------------
              float invSum = (sum > 0.0f) ? 1.0f / sum : 0.0f;
+             float *out   = intensityShm[0].array.F;
              for (k = 0; k < nValid; k++)
              {
-                 int idx = lut[k];
-                 float illum = (float)illumPixShm[0].array.UI32[idx];
-                 intensityShm[0].array.F[k] =
-                     cal[k] * invSum * illum - ref[k] * invSumRef * illum;
+                 out[k] = cal[k] * invSum - refTerm[k];
              }
 
              // Propagate frame counter from raw image
@@ -251,9 +308,29 @@
              compTime    = (t[1].tv_sec - t[2].tv_sec) * 1e3
                          + (t[1].tv_nsec - t[2].tv_nsec) / 1e6;
 
-             printf("\rcomp=%.1f us  fps=%.1f Hz  sum=%.3f  sumRef=%.3f  nValid=%d     ",
-                    compTime * 1000.0, 1e3 / elapsedTime, sum, sumRef, nValid);
-             fflush(stdout);
+             // Accumulate stats; print an average once per second so the
+             // status line and its write syscall stay off the RT path.
+             frameCnt++;
+             accComp    += compTime;
+             accElapsed += elapsedTime;
+             if (compTime > maxComp) maxComp = compTime;
+             accN++;
+
+             double sincePrint = (t[1].tv_sec - tPrint.tv_sec) * 1e3
+                               + (t[1].tv_nsec - tPrint.tv_nsec) / 1e6;
+             if (sincePrint >= 1000.0)
+             {
+                 double avgComp = accComp / accN;
+                 double avgFps  = 1e3 / (accElapsed / accN);
+                 printf("\rcomp avg=%.1f us  max=%.1f us  fps=%.1f Hz  "
+                        "sum=%.3f  sumRef=%.3f  nValid=%d      ",
+                        avgComp * 1000.0, maxComp * 1000.0, avgFps,
+                        sum, sumRef, nValid);
+                 fflush(stdout);
+                 accComp = accElapsed = maxComp = 0.0;
+                 accN = 0;
+                 tPrint = t[1];
+             }
          }
          else
          {
@@ -264,8 +341,11 @@
      }
 
      free(lut);
+     free(rawf);
      free(cal);
-     free(ref);
+     free(w);
+     free(bgp);
+     free(refTerm);
 
      daoInfo("\nEXITING MAIN LOOP\n");
      fflush(stdout);
