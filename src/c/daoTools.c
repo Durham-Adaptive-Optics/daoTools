@@ -2235,6 +2235,190 @@ int_fast8_t daoToolsShmSubstractExtractNormAFinalize(IMAGE *inAShm,
 }
 
 /**
+ * @brief Subtract and extract an image by applying mask, normalizing A by its own flux
+ *
+ * This function normalizes inAShm by its own flux (the sum of its pixels
+ * within the mask), then subtracts inBShm, and extracts only the masked
+ * pixels to a vector: result = inA/flux(inA) - inB.
+ * inBShm is assumed to already be normalized.
+ *
+ * @param inAShm image
+ * @param inBShm image, assumed already normalized - to substract
+ * @param maskShm flat field assumes uint32
+ * @param outShm output extracted normalized image as vector
+ * @return int_fast8_t
+ */
+int_fast8_t daoToolsShmSubstractExtractNormImage(IMAGE* inAShm, IMAGE* inBShm, IMAGE* maskShm, IMAGE* outShm) {
+    daoTrace("\n");
+    int k;
+    int inSize = inAShm[0].md[0].size[0] * inAShm[0].md[0].size[1];
+    outShm[0].md[0].cnt2 = inAShm[0].md[0].cnt2;
+    int cnt = 0;
+    double flux = 0.0;
+
+    if (inAShm[0].md[0].atype == _DATATYPE_UINT8) {
+        // First pass: compute flux of A
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                flux += (double)inAShm[0].array.UI8[k];
+            }
+        }
+        // Second pass: extract A/flux - B
+        if (flux != 0.0) {
+            for (k = 0; k < inSize; k++) {
+                if (maskShm[0].array.UI32[k] == 1) {
+                    outShm[0].array.UI8[cnt] = (uint8_t)(((double)inAShm[0].array.UI8[k] / flux) - (double)inBShm[0].array.UI8[k]);
+                    cnt++;
+                }
+            }
+        }
+    }
+    else if (inAShm[0].md[0].atype == _DATATYPE_INT8) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                flux += (double)inAShm[0].array.SI8[k];
+            }
+        }
+        if (flux != 0.0) {
+            for (k = 0; k < inSize; k++) {
+                if (maskShm[0].array.UI32[k] == 1) {
+                    outShm[0].array.SI8[cnt] = (int8_t)(((double)inAShm[0].array.SI8[k] / flux) - (double)inBShm[0].array.SI8[k]);
+                    cnt++;
+                }
+            }
+        }
+    }
+    else if (inAShm[0].md[0].atype == _DATATYPE_UINT16) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                flux += (double)inAShm[0].array.UI16[k];
+            }
+        }
+        if (flux != 0.0) {
+            for (k = 0; k < inSize; k++) {
+                if (maskShm[0].array.UI32[k] == 1) {
+                    outShm[0].array.UI16[cnt] = (uint16_t)(((double)inAShm[0].array.UI16[k] / flux) - (double)inBShm[0].array.UI16[k]);
+                    cnt++;
+                }
+            }
+        }
+    }
+    else if (inAShm[0].md[0].atype == _DATATYPE_INT16) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                flux += (double)inAShm[0].array.SI16[k];
+            }
+        }
+        if (flux != 0.0) {
+            for (k = 0; k < inSize; k++) {
+                if (maskShm[0].array.UI32[k] == 1) {
+                    outShm[0].array.SI16[cnt] = (int16_t)(((double)inAShm[0].array.SI16[k] / flux) - (double)inBShm[0].array.SI16[k]);
+                    cnt++;
+                }
+            }
+        }
+    }
+    else if (inAShm[0].md[0].atype == _DATATYPE_INT32) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                flux += (double)inAShm[0].array.SI32[k];
+            }
+        }
+        if (flux != 0.0) {
+            for (k = 0; k < inSize; k++) {
+                if (maskShm[0].array.UI32[k] == 1) {
+                    outShm[0].array.SI32[cnt] = (int32_t)(((double)inAShm[0].array.SI32[k] / flux) - (double)inBShm[0].array.SI32[k]);
+                    cnt++;
+                }
+            }
+        }
+    }
+    else if (inAShm[0].md[0].atype == _DATATYPE_UINT32) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                flux += (double)inAShm[0].array.UI32[k];
+            }
+        }
+        if (flux != 0.0) {
+            for (k = 0; k < inSize; k++) {
+                if (maskShm[0].array.UI32[k] == 1) {
+                    outShm[0].array.UI32[cnt] = (uint32_t)(((double)inAShm[0].array.UI32[k] / flux) - (double)inBShm[0].array.UI32[k]);
+                    cnt++;
+                }
+            }
+        }
+    }
+    else if (inAShm[0].md[0].atype == _DATATYPE_UINT64) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                flux += (double)inAShm[0].array.UI64[k];
+            }
+        }
+        if (flux != 0.0) {
+            for (k = 0; k < inSize; k++) {
+                if (maskShm[0].array.UI32[k] == 1) {
+                    outShm[0].array.UI64[cnt] = (uint64_t)(((double)inAShm[0].array.UI64[k] / flux) - (double)inBShm[0].array.UI64[k]);
+                    cnt++;
+                }
+            }
+        }
+    }
+    else if (inAShm[0].md[0].atype == _DATATYPE_INT64) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                flux += (double)inAShm[0].array.SI64[k];
+            }
+        }
+        if (flux != 0.0) {
+            for (k = 0; k < inSize; k++) {
+                if (maskShm[0].array.UI32[k] == 1) {
+                    outShm[0].array.SI64[cnt] = (int64_t)(((double)inAShm[0].array.SI64[k] / flux) - (double)inBShm[0].array.SI64[k]);
+                    cnt++;
+                }
+            }
+        }
+    }
+    else if (inAShm[0].md[0].atype == _DATATYPE_FLOAT) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                flux += (double)inAShm[0].array.F[k];
+            }
+        }
+        if (flux != 0.0) {
+            for (k = 0; k < inSize; k++) {
+                if (maskShm[0].array.UI32[k] == 1) {
+                    outShm[0].array.F[cnt] = (float)(((double)inAShm[0].array.F[k] / flux) - (double)inBShm[0].array.F[k]);
+                    cnt++;
+                }
+            }
+        }
+    }
+    else if (inAShm[0].md[0].atype == _DATATYPE_DOUBLE) {
+        for (k = 0; k < inSize; k++) {
+            if (maskShm[0].array.UI32[k] == 1) {
+                flux += inAShm[0].array.D[k];
+            }
+        }
+        if (flux != 0.0) {
+            for (k = 0; k < inSize; k++) {
+                if (maskShm[0].array.UI32[k] == 1) {
+                    outShm[0].array.D[cnt] = (inAShm[0].array.D[k] / flux) - inBShm[0].array.D[k];
+                    cnt++;
+                }
+            }
+        }
+    }
+    else {
+        daoError("unsupported datatype %d\n", inAShm[0].md[0].atype);
+        return DAO_ERROR;
+    }
+
+    daoShmImagePart2ShmFinalize(&outShm[0]);
+
+    return DAO_SUCCESS;
+}
+
+/**
  * @brief Normalize image in place
  *
  * For floating point images:

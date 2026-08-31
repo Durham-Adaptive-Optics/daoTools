@@ -190,6 +190,11 @@ int_fast8_t daoToolsShmSubstractExtractNorm(IMAGE* inAShm,
                                             IMAGE* maskShm,
                                             IMAGE* outShm);
 
+int_fast8_t daoToolsShmSubstractExtractNormImage(IMAGE* inAShm,
+                                            IMAGE* inBShm,
+                                            IMAGE* maskShm,
+                                            IMAGE* outShm);
+
 int_fast8_t daoToolsShmSubstractExtractDualNorm(IMAGE *inAShm,
                                 IMAGE *inBShm,
                                 IMAGE *maskShm,
