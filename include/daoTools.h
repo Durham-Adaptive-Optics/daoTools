@@ -195,6 +195,10 @@ int_fast8_t daoToolsShmSubstractExtractNormImage(IMAGE* inAShm,
                                             IMAGE* maskShm,
                                             IMAGE* outShm);
 
+/* Enable flush-to-zero / denormals-are-zero on the calling thread. Call once at
+ * RT app start-up to avoid subnormal-FP microcode stalls in the hot loop. */
+void daoToolsEnableFTZ(void);
+
 int_fast8_t daoToolsShmSubstractExtractDualNorm(IMAGE *inAShm,
                                 IMAGE *inBShm,
                                 IMAGE *maskShm,

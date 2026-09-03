@@ -10,7 +10,10 @@ else:
     my_ld_flags = ['-lrt']
     my_link_flags = ['-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/']
     my_cxx_flags = ['']
-    my_cflags = ['-Ofast']
+    # -march=native: this lib is built and run on the same host (AVX2 + FMA on
+    # the EPYC). -Ofast keeps -ffast-math; FTZ/DAZ is set at runtime by
+    # daoToolsEnableFTZ() so we do not rely on crtfastmath being linked.
+    my_cflags = ['-Ofast', '-march=native', '-funroll-loops']
     my_defines = []
 
 bld.shlib(

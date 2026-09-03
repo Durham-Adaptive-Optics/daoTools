@@ -6,6 +6,7 @@
 
  /*==========================================================================*/
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include <errno.h>
@@ -18,6 +19,10 @@
 #include <time.h>
 #include <sys/stat.h>
 #include <pthread.h>
+#if defined(__x86_64__) || defined(__i386__)
+#include <xmmintrin.h>
+#include <pmmintrin.h>
+#endif
 #include "daoTools.h"
 
 /* @brief Extracts the local name from a shared memory absolute path
@@ -2031,9 +2036,73 @@ int_fast8_t daoToolsShmSubstractExtractNormAFinalize(IMAGE *inAShm,
 }
 
 /**
+ * @brief Enable flush-to-zero / denormals-are-zero on the calling thread.
+ *
+ * Subnormal FP operands/results trigger a microcode assist on some x86 parts
+ * (and hurt divide even on parts that handle add/mul fast). Building with
+ * -ffast-math only sets this if it also reaches the link line (crtfastmath.o),
+ * so RT apps should call this once at start-up. No-op off x86.
+ */
+void daoToolsEnableFTZ(void)
+{
+#if defined(__x86_64__) || defined(__i386__)
+    _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
+    _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
+#endif
+}
+
+/**
+ * @brief Return the offsets of the valid (mask==1) pixels.
+ *
+ * The list is cached and only rebuilt when a different mask buffer is passed or
+ * the mask SHM is rewritten (md->cnt0 changes), turning the per-frame cost of
+ * the masked-extract kernels from a branchy scan of the whole frame into a
+ * tight loop over ~nValid indices. Not thread-safe: the RT apps drive the
+ * kernels from a single loop thread.
+ *
+ * @param maskShm mask image, assumed _DATATYPE_UINT32, values 0/1
+ * @param inSize  number of pixels in the frame (size[0]*size[1])
+ * @param idxOut  receives a pointer to the internal index array
+ * @return number of valid pixels (0 on allocation failure)
+ */
+static int daoToolsValidIdx(IMAGE *maskShm, int inSize, const int **idxOut)
+{
+    static int         *sIdx     = NULL;
+    static int          sCap     = 0;
+    static int          sN       = 0;
+    static const void  *sMaskPtr = NULL;
+    static uint64_t     sMaskCnt = (uint64_t)-1;
+
+    const uint32_t *restrict m = maskShm[0].array.UI32;
+    const uint64_t cnt = maskShm[0].md[0].cnt0;
+
+    if (sIdx == NULL || (const void *)m != sMaskPtr || cnt != sMaskCnt) {
+        if (inSize > sCap) {
+            int *tmp = (int *)realloc(sIdx, (size_t)inSize * sizeof(int));
+            if (!tmp) {
+                daoError("daoToolsValidIdx: realloc(%d) failed\n", inSize);
+                *idxOut = sIdx;
+                return 0;
+            }
+            sIdx = tmp;
+            sCap = inSize;
+        }
+        int n = 0;
+        for (int k = 0; k < inSize; k++) {
+            if (m[k] == 1) sIdx[n++] = k;
+        }
+        sN       = n;
+        sMaskPtr = (const void *)m;
+        sMaskCnt = cnt;
+    }
+    *idxOut = sIdx;
+    return sN;
+}
+
+/**
  * @brief Subastract and Extract an image by applying mask with normalization, assume same type for A and B
  *
- * This function subtracts inBShm from inAShm, normalizes the result by the sum of 
+ * This function subtracts inBShm from inAShm, normalizes the result by the sum of
  * pixels within the mask, and extracts only the masked pixels to a vector.
  *
  * @param inAShm image
@@ -2044,6 +2113,36 @@ int_fast8_t daoToolsShmSubstractExtractNormAFinalize(IMAGE *inAShm,
  */
  int_fast8_t daoToolsShmSubstractExtractNorm(IMAGE* inAShm, IMAGE* inBShm, IMAGE* maskShm, IMAGE* outShm) {
     daoTrace("\n");
+
+    /* Fast path: FLOAT frames (the RTC case). Compact valid-pixel list + a
+     * single hoisted reciprocal; same semantics as the generic path below
+     * (per-pixel diff clamped to >= 1 in the flux sum). */
+    if (inAShm[0].md[0].atype == _DATATYPE_FLOAT) {
+        const int inSizeF = inAShm[0].md[0].size[0] * inAShm[0].md[0].size[1];
+        outShm[0].md[0].cnt2 = inAShm[0].md[0].cnt2;
+
+        const int *idx;
+        const int n = daoToolsValidIdx(maskShm, inSizeF, &idx);
+        const float *restrict A = inAShm[0].array.F;
+        const float *restrict B = inBShm[0].array.F;
+        float       *restrict O = outShm[0].array.F;
+
+        double sumF = 0.0;
+        for (int i = 0; i < n; i++) {
+            const double pv = (double)(A[idx[i]] - B[idx[i]]);
+            sumF += (pv < 1.0) ? 1.0 : pv;
+        }
+        if (sumF != 0.0) {
+            const float inv = (float)(1.0 / sumF);
+            for (int i = 0; i < n; i++) {
+                const int k = idx[i];
+                O[i] = (A[k] - B[k]) * inv;
+            }
+        }
+        daoShmImagePart2ShmFinalize(&outShm[0]);
+        return DAO_SUCCESS;
+    }
+
     int k;
     int inSize = inAShm[0].md[0].size[0] * inAShm[0].md[0].size[1];
     outShm[0].md[0].cnt2 = inAShm[0].md[0].cnt2;
@@ -2255,6 +2354,28 @@ int_fast8_t daoToolsShmSubstractExtractNormImage(IMAGE* inAShm, IMAGE* inBShm, I
     outShm[0].md[0].cnt2 = inAShm[0].md[0].cnt2;
     int cnt = 0;
     double flux = 0.0;
+
+    /* Fast path: FLOAT frames (the RTC case). result = A/flux(A) - B, extracted
+     * over the cached valid-pixel list, reciprocal hoisted out of the loop. */
+    if (inAShm[0].md[0].atype == _DATATYPE_FLOAT) {
+        const int *idx;
+        const int n = daoToolsValidIdx(maskShm, inSize, &idx);
+        const float *restrict A = inAShm[0].array.F;
+        const float *restrict B = inBShm[0].array.F;
+        float       *restrict O = outShm[0].array.F;
+
+        for (int i = 0; i < n; i++) flux += (double)A[idx[i]];
+
+        if (flux != 0.0) {
+            const float inv = (float)(1.0 / flux);
+            for (int i = 0; i < n; i++) {
+                const int j = idx[i];
+                O[i] = A[j] * inv - B[j];
+            }
+        }
+        daoShmImagePart2ShmFinalize(&outShm[0]);
+        return DAO_SUCCESS;
+    }
 
     if (inAShm[0].md[0].atype == _DATATYPE_UINT8) {
         // First pass: compute flux of A
@@ -3079,6 +3200,9 @@ void daoRtSetup(int rt_priority)
     if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0) {
         daoTrace("mlockall failed: %s\n", strerror(errno));
     }
+
+    /* Flush subnormals to zero: no denormal FP stalls in the RT loop */
+    daoToolsEnableFTZ();
 
     /* Try to switch to RT FIFO */
     memset(&sp, 0, sizeof(sp));

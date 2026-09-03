@@ -94,7 +94,7 @@ static int realTimeLoop()
     daoShmShm2Img(maskShmName, &maskShm[0]);
     daoShmShm2Img(extractShmName, &extractShm[0]);
 
-    daoInfo("Starting loop, (%s - %s) (%s) -> %s \n",inAShmName, inBShmName, maskShmName, extractShmName);
+    daoInfo("Starting loop, (%s / flux - %s) (%s) -> %s \n",inAShmName, inBShmName, maskShmName, extractShmName);
     fflush(stdout);
     struct timespec t[3];
     struct timespec timeout;
@@ -114,18 +114,18 @@ static int realTimeLoop()
         if (daoShmWaitForSemaphoreTimeout(inAShm, semNb, &timeout) != -1)
         {
             clock_gettime(CLOCK_REALTIME, &t[2]);
-            daoToolsShmSubstractExtractNorm(inAShm, inBShm, maskShm, extractShm);
-            
+            daoToolsShmSubstractExtractNormImage(inAShm, inBShm, maskShm, extractShm);
+
             for (k=0; k<nbValue; k++)
             {
-                sum += extractShm[0].array.F[k];   
+                sum += extractShm[0].array.F[k];
             }
             clock_gettime(CLOCK_REALTIME, &t[1]);
             elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
             elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
             calTime = (t[1].tv_sec - t[2].tv_sec) * 1e3;
             calTime += (t[1].tv_nsec - t[2].tv_nsec) / 1e6;
-            printf("\rcal time = %8.3f us, fps = %8.3f Hz, totalFlux = %f", 
+            printf("\rcal time = %8.3f us, fps = %8.3f Hz, totalFlux = %f",
                    1000*calTime,
                    1e6 / (1000 * elapsedTime), sum);
             sum = 0.0;
@@ -157,7 +157,7 @@ static void DecodeArgs(int argc, char **argv)
 
     argv += 1;	argc -= 1;					/* skip program name */
 
-    while (argc-- > 0) 
+    while (argc-- > 0)
     {
         daoDebug("DecodeArgs: working on '%s'/%d\n",*argv,argc);
         str = *argv++;
@@ -169,10 +169,10 @@ static void DecodeArgs(int argc, char **argv)
         }
 
         switch (str[1]) {
-            case 'h':	
+            case 'h':
                         ShowHelp();
                         exit(0);
-            case 'd':	
+            case 'd':
                         (void)sscanf(*argv++,"%d",&daoLogLevel); argc -= 1;
                         break;
             case 'l':
@@ -190,16 +190,16 @@ static void DecodeArgs(int argc, char **argv)
                     	(void)sscanf(*argv++,"%s",maskShmName); argc -= 1;
                     	(void)sscanf(*argv++,"%s",extractShmName); argc -= 1;
                         daoInfo("image in A       : %s\n", inAShmName);
-                        daoInfo("image in B       : %s\n", inBShmName);
+                        daoInfo("image in B (norm): %s\n", inBShmName);
                         daoInfo("mask             : %s\n", maskShmName);
                         daoInfo("extracted image  : %s\n", extractShmName);
                         break;
-            case 's':	
+            case 's':
                         (void)sscanf(*argv++,"%d", &semNb);
                         daoInfo("inputShm sem     : %d \n", semNb);
                         break;
             case 'L':
-                        daoInfo("Substract and Extract from SHM real time control\n");
+                        daoInfo("Substract and Extract (A/flux - B) from SHM real time control\n");
                         realTimeLoop();
                         break;
             default:
@@ -235,4 +235,3 @@ int main(int argc, char **argv)
     return(sExit);
 }
 /*==========================================================================*/
-

@@ -13,7 +13,8 @@ if platform.system() == "Darwin":
 else:
 	my_ld_flags = ['-lrt']
 	my_cxx_flags = ['']
-	my_cflags = ['-Ofast']
+	# built and run on the same host -> -march=native (AVX2 + FMA on the EPYC).
+	my_cflags = ['-Ofast', '-march=native', '-funroll-loops']
 	my_link_flags = ['-Lsrc', '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/']
 
 telemetry_extra_ldflags = []
@@ -344,6 +345,16 @@ daoPixelSubstractExtract = bld.program(
 daoPixelSubstractExtractNorm = bld.program(
 	source = 'daoPixelSubstractExtractNorm.c',
 	target = 'daoPixelSubstractExtractNorm',
+	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+	linkflags = my_link_flags,
+	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	use= 'daoTools',
+	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
+	)
+
+daoPixelSubstractExtractNormImage = bld.program(
+	source = 'daoPixelSubstractExtractNormImage.c',
+	target = 'daoPixelSubstractExtractNormImage',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
 	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
