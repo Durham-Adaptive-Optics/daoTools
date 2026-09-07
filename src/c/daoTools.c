@@ -1185,6 +1185,173 @@ int_fast8_t daoCentroidSpotsRelativeRef(float* image,
 }
 
 /**
+ * @brief Compute centroids relative to reference positions using image correlation.
+ *
+ * For each subaperture, this cross-correlates the observed spot image against
+ * a pre-measured reference spot image, instead of computing a center of
+ * gravity, and returns the sub-pixel shift that best aligns the two -- the
+ * classic "correlation tracker" alternative to a COG. It is more robust to
+ * spot asymmetry and partial vignetting than a COG, provided a representative
+ * reference spot image is supplied (e.g. a synthetic Gaussian, or a spot
+ * measured during calibration).
+ *
+ * For each subaperture:
+ * 1) the `boxSize x boxSize` reference template is cross-correlated against
+ *    the observed image at every integer shift `(dx, dy)` in
+ *    `[-searchRange..searchRange]^2` (pixels below @p threshold are treated
+ *    as zero in the observed image only, to suppress background/dark
+ *    current -- the reference template is used as supplied, unmodified),
+ * 2) the integer shift with the highest correlation is refined to sub-pixel
+ *    precision with an independent 3-point parabolic fit along x and y
+ *    around the peak,
+ * 3) the resulting `(dx, dy)` is returned relative to the reference
+ *    position -- this is the WFS slope signal.
+ *
+ * The correlation is a plain (non-normalized) cross-correlation, not NCC, so
+ * its peak value scales with flux -- useful as a quality/flux diagnostic,
+ * not an absolute similarity measure.
+ *
+ * If the best integer shift lands on the edge of the search range (+-
+ * searchRange), the sub-pixel refinement is skipped for that axis and the
+ * integer shift is returned as-is, since the parabolic fit would otherwise
+ * extrapolate past the computed samples.
+ *
+ * Reference positions, the reference image stack, and outputs use a
+ * Structure-of-Arrays (SoA) layout.
+ *
+ * ### Reference position layout (SoA)
+ * The reference array @p ref must contain `2 * nSuba` elements arranged as:
+ * - `ref[0 .. nSuba-1]`         : Reference X positions
+ * - `ref[nSuba .. 2*nSuba-1]`   : Reference Y positions
+ *
+ * ### Reference image layout
+ * @p refImage holds one `boxSize x boxSize` template per subaperture, stacked
+ * row-wise: subaperture `s` occupies rows `[s*boxSize .. (s+1)*boxSize - 1]`,
+ * all `boxSize` columns (row-major). Its size must be
+ * `nSuba * boxSize * boxSize` elements.
+ *
+ * ### Output layout (SoA)
+ * The output array @p cent must contain at least `3 * nSuba` elements:
+ * - `cent[0 .. nSuba-1]`           : X centroids (cx), relative to ref X
+ * - `cent[nSuba .. 2*nSuba-1]`     : Y centroids (cy), relative to ref Y
+ * - `cent[2*nSuba .. 3*nSuba-1]`   : Correlation peak value (quality/flux diagnostic)
+ *
+ * ### Notes
+ * - Subaperture bounds are closed intervals; no bounds checking is performed
+ *   against the image edges, so `boxSize/2 + searchRange` pixels of margin
+ *   are required around every reference position.
+ * - @p searchRange must not exceed `DAO_CENTROID_CORR_MAX_SEARCH_RANGE`: the
+ *   correlation surface is a fixed-size stack buffer sized off that bound,
+ *   so this function never allocates in the real-time loop. It should also
+ *   stay well below `boxSize/2`, since the parabolic refinement needs
+ *   correlation samples on both sides of the peak.
+ *
+ * @param[in]  image       Pointer to the input image (row-major, float)
+ * @param[in]  imageSizeX  Image width (pixels)
+ * @param[in]  imageSizeY  Image height (pixels), unused (kept for API symmetry)
+ * @param[in]  ref         Reference positions in SoA layout (size `2*nSuba`)
+ * @param[in]  refImage    Per-subaperture reference templates (size `nSuba*boxSize*boxSize`)
+ * @param[in]  boxSize     Size of the square subaperture / reference template (pixels)
+ * @param[in]  nSuba       Number of subapertures
+ * @param[in]  searchRange Integer pixel search half-range for the correlation peak
+ * @param[in]  threshold   Absolute pixel intensity threshold applied to the observed image
+ * @param[out] cent        Output array (size >= `3*nSuba`, layout described above)
+ *
+ * @return DAO_SUCCESS on success, DAO_ERROR if searchRange is out of range
+ */
+int_fast8_t daoCentroidSpotsCorrelation(float* image,
+    int imageSizeX,
+    int imageSizeY,
+    float* ref,
+    float* refImage,
+    int boxSize,
+    int nSuba,
+    int searchRange,
+    float threshold,
+    float* cent) {
+    daoTrace("\n");
+
+    if (searchRange < 0 || searchRange > DAO_CENTROID_CORR_MAX_SEARCH_RANGE) {
+        daoError("daoCentroidSpotsCorrelation: searchRange=%d out of range [0..%d]\n",
+                 searchRange, DAO_CENTROID_CORR_MAX_SEARCH_RANGE);
+        return DAO_ERROR;
+    }
+
+    const int stride = 2 * searchRange + 1;
+    /* Fixed-size stack buffer (sized off the compile-time max search range)
+     * so this function never allocates in the real-time loop. */
+    float corr[(2 * DAO_CENTROID_CORR_MAX_SEARCH_RANGE + 1) * (2 * DAO_CENTROID_CORR_MAX_SEARCH_RANGE + 1)];
+
+    /* Reference position arrays (SoA layout) */
+    float* refX = ref;
+    float* refY = ref + nSuba;
+
+    /* Output arrays (SoA layout) */
+    float* cxOut   = cent;
+    float* cyOut   = cent + nSuba;
+    float* peakOut = cent + 2 * nSuba;
+
+    for (int s = 0; s < nSuba; ++s) {
+        const int x0 = (int)roundf(refX[s]) - boxSize / 2;
+        const int y0 = (int)roundf(refY[s]) - boxSize / 2;
+        const float* subRef = refImage + (size_t)s * boxSize * boxSize;
+
+        /* Cross-correlate the reference template against every integer shift */
+        float peak = -INFINITY;
+        int bestDx = 0, bestDy = 0;
+        for (int dy = -searchRange; dy <= searchRange; ++dy) {
+            for (int dx = -searchRange; dx <= searchRange; ++dx) {
+                float sum = 0.0f;
+                for (int i = 0; i < boxSize; ++i) {
+                    const float* imRow  = image + (size_t)(y0 + dy + i) * imageSizeX + (x0 + dx);
+                    const float* refRow = subRef + (size_t)i * boxSize;
+                    for (int j = 0; j < boxSize; ++j) {
+                        float pixel = imRow[j];
+                        if (pixel < threshold) {
+                            pixel = 0.0f;
+                        }
+                        sum += pixel * refRow[j];
+                    }
+                }
+                corr[(dy + searchRange) * stride + (dx + searchRange)] = sum;
+                if (sum > peak) {
+                    peak = sum;
+                    bestDx = dx;
+                    bestDy = dy;
+                }
+            }
+        }
+
+        /* Sub-pixel refinement: independent 3-point parabolic fit along x and y */
+        float subDx = 0.0f, subDy = 0.0f;
+        if (bestDx > -searchRange && bestDx < searchRange) {
+            float cL = corr[(bestDy + searchRange) * stride + (bestDx - 1 + searchRange)];
+            float cC = corr[(bestDy + searchRange) * stride + (bestDx     + searchRange)];
+            float cR = corr[(bestDy + searchRange) * stride + (bestDx + 1 + searchRange)];
+            float denom = cL - 2.0f * cC + cR;
+            if (fabsf(denom) > 1e-12f) {
+                subDx = 0.5f * (cL - cR) / denom;
+            }
+        }
+        if (bestDy > -searchRange && bestDy < searchRange) {
+            float cL = corr[(bestDy - 1 + searchRange) * stride + (bestDx + searchRange)];
+            float cC = corr[(bestDy     + searchRange) * stride + (bestDx + searchRange)];
+            float cR = corr[(bestDy + 1 + searchRange) * stride + (bestDx + searchRange)];
+            float denom = cL - 2.0f * cC + cR;
+            if (fabsf(denom) > 1e-12f) {
+                subDy = 0.5f * (cL - cR) / denom;
+            }
+        }
+
+        cxOut[s]   = (float)bestDx + subDx;
+        cyOut[s]   = (float)bestDy + subDy;
+        peakOut[s] = peak;
+    }
+
+    return DAO_SUCCESS;
+}
+
+/**
  * @brief Compute pyramid WFS slopes on the CPU from quadrant samples.
  *
  * @param im Input image buffer.

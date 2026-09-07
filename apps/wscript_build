@@ -252,6 +252,16 @@ daoComputeCentroidPws = bld.program(
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
+daoComputeCentroidCorrelation = bld.program(
+	source = 'daoComputeCentroidCorrelation.c',
+	target = 'daoComputeCentroidCorrelation',
+	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+	linkflags = my_link_flags,
+	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	use= 'daoTools',
+	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto', '-g'],
+	)
+
 daoSetLatency = bld.program(
 	source = 'daoSetLatency.c',
 	target = 'daoSetLatency',

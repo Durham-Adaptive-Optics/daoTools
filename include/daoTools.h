@@ -159,6 +159,22 @@ int_fast8_t daoCentroidSpotsRelativeRef(float *image,
                                      float threshold,
                                      float *cent);
 
+/* Largest searchRange daoCentroidSpotsCorrelation accepts: the per-subaperture
+ * correlation surface is a fixed-size stack buffer, sized off this bound, so
+ * the function stays allocation-free in the real-time loop. */
+#define DAO_CENTROID_CORR_MAX_SEARCH_RANGE 8
+
+int_fast8_t daoCentroidSpotsCorrelation(float *image,
+                                        int imageSizeX,
+                                        int imageSizeY,
+                                        float *ref,
+                                        float *refImage,
+                                        int boxSize,
+                                        int nSuba,
+                                        int searchRange,
+                                        float threshold,
+                                        float *cent);
+
 int_fast8_t daoCentroidPws(float *im, float *slopes,
                            float *slopesRef, int *wfsPixId, int *wfsPixIdMap,
                            float *flux, int nbPix,
