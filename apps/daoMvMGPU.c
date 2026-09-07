@@ -75,6 +75,7 @@ static void endme(int _a)
 /* Real-time tuning knobs                                                    */
 #define MVM_PRINT_EVERY 2000     /* throttle telemetry: print once every N iterations */
 static int rtCpu = -1;           /* CPU core to pin the RT thread to (-1 = do not pin) */
+static int gpuId = 0;            /* CUDA device to run the MVM on (see -G) */
 
 static void mvmSetRtAffinity(int cpu)
 {
@@ -133,9 +134,10 @@ static void ShowHelp(void)
     daoInfo("   -S               list of SHM (full path separated by space)\n");
     daoInfo("   -s               semaphore number\n");
     daoInfo("   -C <cpu>         pin the real-time thread to CPU core <cpu>\n");
+    daoInfo("   -G <gpu>         CUDA device index to run on (default 0; see nvidia-smi -L)\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage (options must precede -L):\n");
-    daoInfo("    daoMvMGPU -S <input SHM> <matrix SHM> <output SHM> -s <semNb> [-C <cpu>] -L\n");
+    daoInfo("    daoMvMGPU -S <input SHM> <matrix SHM> <output SHM> -s <semNb> [-C <cpu>] [-G <gpu>] -L\n");
     daoInfo("\n");
 }
 /*--------------------------------------------------------------------------*/
@@ -159,6 +161,34 @@ void * realTimeLoop(void *thread_data)
 
     gIsFloat  = (matrixShm[0].md[0].atype == _DATATYPE_FLOAT);
     gElemSize = gIsFloat ? sizeof(float) : sizeof(double);
+
+    // Select the CUDA device before any other runtime call in this thread.
+    int gpuCount = 0;
+    if (cudaGetDeviceCount(&gpuCount) != cudaSuccess || gpuCount <= 0)
+    {
+        daoError("no CUDA device available\n");
+        end = 1;
+        return (void *)DAO_ERROR;
+    }
+    if (gpuId < 0 || gpuId >= gpuCount)
+    {
+        daoError("requested GPU %d out of range (%d device(s) present); falling back to GPU 0\n",
+                 gpuId, gpuCount);
+        gpuId = 0;
+    }
+    if (cudaSetDevice(gpuId) != cudaSuccess)
+    {
+        daoError("cudaSetDevice(%d) failed\n", gpuId);
+        end = 1;
+        return (void *)DAO_ERROR;
+    }
+    {
+        struct cudaDeviceProp prop;
+        if (cudaGetDeviceProperties(&prop, gpuId) == cudaSuccess)
+            daoInfo("Using GPU %d of %d: %s\n", gpuId, gpuCount, prop.name);
+        else
+            daoInfo("Using GPU %d of %d\n", gpuId, gpuCount);
+    }
 
     // Busy-wait on GPU synchronisation instead of blocking in the driver:
     // trades one core for markedly lower per-frame wake latency.
@@ -379,6 +409,10 @@ static void DecodeArgs(int argc, char **argv)
             case 'C':
                         (void)sscanf(*argv++,"%d", &rtCpu); argc -= 1;
                         daoInfo("RT thread CPU  = %d \n", rtCpu);
+                        break;
+            case 'G':
+                        (void)sscanf(*argv++,"%d", &gpuId); argc -= 1;
+                        daoInfo("GPU device     = %d \n", gpuId);
                         break;
             case 'L':
                         daoInfo("MVM real time control\n");
