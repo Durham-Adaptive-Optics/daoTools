@@ -6,127 +6,253 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>303</width>
-    <height>445</height>
+    <width>310</width>
+    <height>500</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>MainWindow</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <widget class="QLabel" name="coordLabel3_2">
+   <widget class="QLabel" name="titleLabel">
     <property name="geometry">
      <rect>
-      <x>210</x>
-      <y>330</y>
-      <width>41</width>
-      <height>20</height>
+      <x>10</x>
+      <y>6</y>
+      <width>290</width>
+      <height>22</height>
      </rect>
     </property>
+    <property name="font">
+     <font>
+      <pointsize>11</pointsize>
+      <weight>75</weight>
+      <bold>true</bold>
+     </font>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignCenter</set>
+    </property>
     <property name="text">
-     <string>Max</string>
+     <string>DM Display</string>
     </property>
    </widget>
-   <widget class="QLabel" name="coordLabel3_3">
+   <widget class="QLabel" name="chanLabel1">
     <property name="geometry">
      <rect>
-      <x>210</x>
-      <y>380</y>
-      <width>41</width>
-      <height>20</height>
+      <x>10</x>
+      <y>34</y>
+      <width>131</width>
+      <height>16</height>
      </rect>
     </property>
-    <property name="text">
-     <string>Min</string>
-    </property>
-   </widget>
-   <widget class="QLabel" name="minLabel">
-    <property name="geometry">
-     <rect>
-      <x>190</x>
-      <y>400</y>
-      <width>101</width>
-      <height>20</height>
-     </rect>
+    <property name="alignment">
+     <set>Qt::AlignCenter</set>
     </property>
     <property name="text">
-     <string>0.0</string>
-    </property>
-   </widget>
-   <widget class="QLabel" name="maxLabel">
-    <property name="geometry">
-     <rect>
-      <x>190</x>
-      <y>350</y>
-      <width>101</width>
-      <height>20</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>0.0</string>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="pushButton">
-    <property name="geometry">
-     <rect>
-      <x>190</x>
-      <y>300</y>
-      <width>101</width>
-      <height>21</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>Reset All</string>
+     <string>Loop (00)</string>
     </property>
    </widget>
    <widget class="GraphicsView" name="graphicsView_1">
     <property name="geometry">
      <rect>
       <x>10</x>
-      <y>10</y>
+      <y>52</y>
       <width>131</width>
       <height>121</height>
      </rect>
+    </property>
+   </widget>
+   <widget class="QLabel" name="chanLabel2">
+    <property name="geometry">
+     <rect>
+      <x>160</x>
+      <y>34</y>
+      <width>131</width>
+      <height>16</height>
+     </rect>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignCenter</set>
+    </property>
+    <property name="text">
+     <string>Pokes (01)</string>
     </property>
    </widget>
    <widget class="GraphicsView" name="graphicsView_2">
     <property name="geometry">
      <rect>
       <x>160</x>
-      <y>10</y>
+      <y>52</y>
       <width>131</width>
       <height>121</height>
      </rect>
+    </property>
+   </widget>
+   <widget class="QLabel" name="chanLabel3">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>181</y>
+      <width>131</width>
+      <height>16</height>
+     </rect>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignCenter</set>
+    </property>
+    <property name="text">
+     <string>Flat (02)</string>
     </property>
    </widget>
    <widget class="GraphicsView" name="graphicsView_3">
     <property name="geometry">
      <rect>
       <x>10</x>
-      <y>140</y>
+      <y>199</y>
       <width>131</width>
       <height>121</height>
      </rect>
+    </property>
+   </widget>
+   <widget class="QLabel" name="chanLabel4">
+    <property name="geometry">
+     <rect>
+      <x>160</x>
+      <y>181</y>
+      <width>131</width>
+      <height>16</height>
+     </rect>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignCenter</set>
+    </property>
+    <property name="text">
+     <string>Disturbance (03)</string>
     </property>
    </widget>
    <widget class="GraphicsView" name="graphicsView_4">
     <property name="geometry">
      <rect>
       <x>160</x>
-      <y>140</y>
+      <y>199</y>
       <width>131</width>
       <height>121</height>
      </rect>
     </property>
    </widget>
+   <widget class="QLabel" name="chanLabelMain">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>336</y>
+      <width>131</width>
+      <height>16</height>
+     </rect>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignCenter</set>
+    </property>
+    <property name="text">
+     <string>Combined</string>
+    </property>
+   </widget>
    <widget class="GraphicsView" name="graphicsView">
     <property name="geometry">
      <rect>
-      <x>40</x>
-      <y>300</y>
+      <x>10</x>
+      <y>354</y>
       <width>131</width>
       <height>121</height>
      </rect>
+    </property>
+   </widget>
+   <widget class="QLabel" name="cmapLabel">
+    <property name="geometry">
+     <rect>
+      <x>160</x>
+      <y>336</y>
+      <width>131</width>
+      <height>16</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Colormap:</string>
+    </property>
+   </widget>
+   <widget class="QComboBox" name="cmapCombo">
+    <property name="geometry">
+     <rect>
+      <x>160</x>
+      <y>354</y>
+      <width>131</width>
+      <height>24</height>
+     </rect>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="pushButton">
+    <property name="geometry">
+     <rect>
+      <x>160</x>
+      <y>386</y>
+      <width>131</width>
+      <height>24</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Reset All</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="coordLabel3_2">
+    <property name="geometry">
+     <rect>
+      <x>160</x>
+      <y>418</y>
+      <width>41</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Max:</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="maxLabel">
+    <property name="geometry">
+     <rect>
+      <x>205</x>
+      <y>418</y>
+      <width>86</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>0.0</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="coordLabel3_3">
+    <property name="geometry">
+     <rect>
+      <x>160</x>
+      <y>442</y>
+      <width>41</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Min:</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="minLabel">
+    <property name="geometry">
+     <rect>
+      <x>205</x>
+      <y>442</y>
+      <width>86</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>0.0</string>
     </property>
    </widget>
   </widget>

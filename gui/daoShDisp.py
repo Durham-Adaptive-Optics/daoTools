@@ -6,10 +6,10 @@ and optional intensity map
 Usage: daoShDisp.py [options]
 
 Options:
-  -i  WFS image shm        (default: /tmp/image.im.shm)
-  -c  Centroids shm        (default: /tmp/centroids.im.shm)
-  -r  References shm       (default: /tmp/references.im.shm)
-  -p  Pupil mask shm       (default: /tmp/pupMask1.im.shm)
+  -i  WFS image shm        (default: /tmp/shIm.im.shm)
+  -c  Centroids shm        (default: /tmp/shCentroids.im.shm)
+  -r  References shm       (default: /tmp/shReferences.im.shm)
+  -p  Pupil mask shm       (default: /tmp/shPupMask.im.shm)
   --fps    Update rate in Hz (default: 10)
   --cmap   Colormap (default: grey)
   --size   Display size in pixels (default: 600)
@@ -77,10 +77,10 @@ def make_stylesheet(light):
 
 def parse_args():
     p = argparse.ArgumentParser(description='Shack-Hartmann WFS display')
-    p.add_argument('-i', '--shm',  default='/tmp/image.im.shm',      help='WFS image shm')
-    p.add_argument('-c', '--cent', default='/tmp/centroids.im.shm',  help='Centroids shm')
-    p.add_argument('-r', '--ref',  default='/tmp/references.im.shm', help='References shm')
-    p.add_argument('-p', '--pup',  default='/tmp/pupMask1.im.shm',   help='Pupil mask shm')
+    p.add_argument('-i', '--shm',  default='/tmp/shIm.im.shm',          help='WFS image shm')
+    p.add_argument('-c', '--cent', default='/tmp/shCentroids.im.shm',   help='Centroids shm')
+    p.add_argument('-r', '--ref',  default='/tmp/shReferences.im.shm',  help='References shm')
+    p.add_argument('-p', '--pup',  default='/tmp/shPupMask.im.shm',     help='Pupil mask shm')
     p.add_argument('--fps',   type=float, default=10.0, help='Update rate in Hz (default: 10)')
     p.add_argument('--cmap',  default='grey', choices=COLORMAPS.keys())
     p.add_argument('--size',  type=int, default=600,    help='Display size in pixels (default: 600)')

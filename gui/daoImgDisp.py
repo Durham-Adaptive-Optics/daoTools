@@ -7,12 +7,14 @@ Usage: daoImgDisp.py <shmName> [options]
 Options:
   --fps   Update rate in Hz (default: 10)
   --cmap  Colormap: viridis|inferno|plasma|grey (default: grey)
+  --scale Intensity scale: linear|sqrt|log (default: linear)
   --size  Display size in pixels (default: 600)
   --light Use light mode (default: dark)
 
 Examples:
   daoImgDisp.py /tmp/img.im.shm
   daoImgDisp.py /tmp/img.im.shm --fps 20 --cmap inferno
+  daoImgDisp.py /tmp/img.im.shm --scale log
   daoImgDisp.py /tmp/img.im.shm --light
 """
 
@@ -42,6 +44,15 @@ def strip_border(data):
     d[:,  0] = 0
     d[:, -1] = 0
     return d
+
+def apply_scale(data, mode):
+    if mode == 'sqrt':
+        return np.sqrt(np.clip(data, 0, None))
+    if mode == 'log':
+        d = data.copy()
+        d[d <= 0] = 1e-12
+        return np.log(d)
+    return data
 
 def make_stylesheet(light):
     if light:
@@ -81,6 +92,8 @@ def parse_args():
     p.add_argument('shmName',            help='Shared memory path')
     p.add_argument('--fps',  type=float, default=10.0, help='Update rate in Hz')
     p.add_argument('--cmap', default='grey', choices=COLORMAPS.keys())
+    p.add_argument('--scale', default='linear', choices=('linear', 'sqrt', 'log'),
+                    help='Intensity scale')
     p.add_argument('--size', type=int,   default=600,  help='Display size in pixels')
     p.add_argument('--light', action='store_true',     help='Light mode (default: dark)')
     return p.parse_args()
@@ -102,6 +115,7 @@ def main():
         print(f"ERROR: expected 2D image, got shape {data0.shape}")
         sys.exit(1)
     nx, ny = data0.shape
+    data0 = apply_scale(data0, args.scale)
     print(f"Image: {nx}x{ny}  shm: {args.shmName}")
 
     app = QtWidgets.QApplication(sys.argv)
@@ -148,6 +162,13 @@ def main():
         cmap_combo.addItem(name)
     cmap_combo.setCurrentText(args.cmap)
     line3.addWidget(cmap_combo)
+
+    line3.addWidget(QtWidgets.QLabel("Scale:"))
+    scale_combo = QtWidgets.QComboBox()
+    for name in ('linear', 'sqrt', 'log'):
+        scale_combo.addItem(name)
+    scale_combo.setCurrentText(args.scale)
+    line3.addWidget(scale_combo)
 
     border_cb = QtWidgets.QCheckBox("Strip border")
     border_cb.setChecked(False)
@@ -222,9 +243,14 @@ def main():
         img_item.setColorMap(cm)
         colorbar.setColorMap(cm)
 
+    def change_scale(_name):
+        # min/max spins were calibrated for the previous scale; re-autoscale.
+        autoscale_cb.setChecked(True)
+
     autoscale_cb.stateChanged.connect(toggle_autoscale)
     freeze_btn.toggled.connect(toggle_freeze)
     cmap_combo.currentTextChanged.connect(change_cmap)
+    scale_combo.currentTextChanged.connect(change_scale)
 
     def update():
         if state['frozen']:
@@ -238,6 +264,8 @@ def main():
 
         if border_cb.isChecked():
             data = strip_border(data)
+
+        data = apply_scale(data, scale_combo.currentText())
 
         vmin = data.min() if autoscale_cb.isChecked() else min_spin.value()
         vmax = data.max() if autoscale_cb.isChecked() else max_spin.value()
