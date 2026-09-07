@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>283</width>
-    <height>694</height>
+    <height>716</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -21,6 +21,16 @@
       <y>530</y>
       <width>151</width>
       <height>151</height>
+     </rect>
+    </property>
+   </widget>
+   <widget class="GraphicsView" name="graphicsView_1">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>10</y>
+      <width>41</width>
+      <height>41</height>
      </rect>
     </property>
    </widget>
@@ -112,6 +122,31 @@
       <width>41</width>
       <height>41</height>
      </rect>
+    </property>
+   </widget>
+   <widget class="QSlider" name="horizontalSlider_1">
+    <property name="geometry">
+     <rect>
+      <x>60</x>
+      <y>20</y>
+      <width>160</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="minimum">
+     <number>-100</number>
+    </property>
+    <property name="maximum">
+     <number>100</number>
+    </property>
+    <property name="singleStep">
+     <number>1</number>
+    </property>
+    <property name="pageStep">
+     <number>1</number>
+    </property>
+    <property name="orientation">
+     <enum>Qt::Horizontal</enum>
     </property>
    </widget>
    <widget class="QSlider" name="horizontalSlider_2">
@@ -224,80 +259,6 @@
      <enum>Qt::Horizontal</enum>
     </property>
    </widget>
-   <widget class="QPushButton" name="pushButton">
-    <property name="geometry">
-     <rect>
-      <x>120</x>
-      <y>510</y>
-      <width>71</width>
-      <height>20</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>Reset</string>
-    </property>
-   </widget>
-   <widget class="GraphicsView" name="graphicsView_1">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>10</y>
-      <width>41</width>
-      <height>41</height>
-     </rect>
-    </property>
-   </widget>
-   <widget class="QSlider" name="horizontalSlider_1">
-    <property name="geometry">
-     <rect>
-      <x>60</x>
-      <y>20</y>
-      <width>160</width>
-      <height>20</height>
-     </rect>
-    </property>
-    <property name="minimum">
-     <number>-100</number>
-    </property>
-    <property name="maximum">
-     <number>100</number>
-    </property>
-    <property name="singleStep">
-     <number>1</number>
-    </property>
-    <property name="pageStep">
-     <number>1</number>
-    </property>
-    <property name="orientation">
-     <enum>Qt::Horizontal</enum>
-    </property>
-   </widget>
-   <widget class="QLabel" name="label_2">
-    <property name="geometry">
-     <rect>
-      <x>230</x>
-      <y>70</y>
-      <width>51</width>
-      <height>20</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>0 volt</string>
-    </property>
-   </widget>
-   <widget class="QLabel" name="label_1">
-    <property name="geometry">
-     <rect>
-      <x>230</x>
-      <y>20</y>
-      <width>51</width>
-      <height>20</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>0 volt</string>
-    </property>
-   </widget>
    <widget class="QSlider" name="horizontalSlider_7">
     <property name="geometry">
      <rect>
@@ -384,6 +345,32 @@
     </property>
     <property name="orientation">
      <enum>Qt::Horizontal</enum>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label_1">
+    <property name="geometry">
+     <rect>
+      <x>230</x>
+      <y>20</y>
+      <width>51</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>0 volt</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label_2">
+    <property name="geometry">
+     <rect>
+      <x>230</x>
+      <y>70</y>
+      <width>51</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>0 volt</string>
     </property>
    </widget>
    <widget class="QLabel" name="label_3">
@@ -490,17 +477,30 @@
      <string>0 volt</string>
     </property>
    </widget>
-   <widget class="QCheckBox" name="checkBox1">
+   <widget class="QPushButton" name="pushButton">
+    <property name="geometry">
+     <rect>
+      <x>120</x>
+      <y>510</y>
+      <width>71</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Reset</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="titleLabel">
     <property name="geometry">
      <rect>
       <x>10</x>
-      <y>510</y>
-      <width>95</width>
+      <y>508</y>
+      <width>101</width>
       <height>21</height>
      </rect>
     </property>
     <property name="text">
-     <string>hexagonal</string>
+     <string>M2A modes</string>
     </property>
    </widget>
    <widget class="GraphicsView" name="graphicsView_11">
@@ -511,6 +511,26 @@
       <width>121</width>
       <height>151</height>
      </rect>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="autoScaleCheckBox">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>686</y>
+      <width>151</width>
+      <height>21</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>On: rescale the colour map to the displayed shape every refresh.
+Off: keep the levels set on the histogram below (drag to adjust).</string>
+    </property>
+    <property name="text">
+     <string>auto-scale</string>
+    </property>
+    <property name="checked">
+     <bool>true</bool>
     </property>
    </widget>
   </widget>

@@ -60,8 +60,11 @@ def make_stylesheet(light):
         """
 
 
+DEFAULT_LABELS = ('Flat', 'Loop', 'Turbulence', 'Pokes')  # channels 00, 01, 02, 03
+
+
 class Main(QMainWindow, Ui_MainWindow):
-    def __init__(self, name, mapName):
+    def __init__(self, name, mapName, labels=DEFAULT_LABELS):
         super(Main, self).__init__()
         self.setupUi(self)
         self.scale = 1000
@@ -111,10 +114,10 @@ class Main(QMainWindow, Ui_MainWindow):
         self.img4.setImage(self.dm4M)
 
         self.titleLabel.setText(f'DM Display — {name}  (map: {mapName})')
-        self.chanLabel1.setText(f'{name}00 — Loop')
-        self.chanLabel2.setText(f'{name}01 — Pokes')
-        self.chanLabel3.setText(f'{name}02 — Flat')
-        self.chanLabel4.setText(f'{name}03 — Disturbance')
+        self.chanLabel1.setText(f'{name}00 — {labels[0]}')
+        self.chanLabel2.setText(f'{name}01 — {labels[1]}')
+        self.chanLabel3.setText(f'{name}02 — {labels[2]}')
+        self.chanLabel4.setText(f'{name}03 — {labels[3]}')
         self.chanLabelMain.setText(f'{name} — Combined')
 
         self.cmapName = 'grey'
@@ -187,20 +190,29 @@ if __name__ == '__main__':
     import getopt
     name     = 'dmCmd'
     mapName  = 'dmMap'
+    labels   = list(DEFAULT_LABELS)
     light    = False
+    usage = ('daoDmDisp.py -s <name> -m <map> [-l <chan00,chan01,chan02,chan03>] [--light]'
+              '  (default labels: %s)' % ','.join(DEFAULT_LABELS))
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "hs:m:", ["help", "name=", "map=", "light"])
+        opts, args = getopt.getopt(sys.argv[1:], "hs:m:l:", ["help", "name=", "map=", "labels=", "light"])
     except getopt.GetoptError:
-        print('err, usage: daoDmDisp.py -s <name> -m <map> [--light]')
+        print('err, usage: ' + usage)
         sys.exit(2)
     for opt, arg in opts:
         if opt == '-h':
-            print('daoDmDisp.py -s <name> -m <map> [--light]')
+            print(usage)
             sys.exit()
         elif opt in ("-s", "--name"):
             name = arg
         elif opt in ("-m", "--map"):
             mapName = arg
+        elif opt in ("-l", "--labels"):
+            parts = [p.strip() for p in arg.split(',')]
+            if len(parts) != 4:
+                print('err, -l/--labels needs exactly 4 comma-separated names (00,01,02,03)')
+                sys.exit(2)
+            labels = parts
         elif opt == '--light':
             light = True
 
@@ -214,7 +226,7 @@ if __name__ == '__main__':
     app = QApplication([])
     app.setStyleSheet(make_stylesheet(light))
 
-    main = Main(name, mapName)
+    main = Main(name, mapName, labels)
     main.setWindowTitle(f'DM Display — {name}')
     main.show()
     main.Start()

@@ -236,7 +236,7 @@ def main():
     plot.showAxes(True)
     plot.setDefaultPadding(0)
     plot.vb.disableAutoRange()
-    plot.vb.setRange(xRange=(0, nx), yRange=(0, ny), padding=0)
+    plot.vb.setRange(xRange=(-0.5, nx - 0.5), yRange=(-0.5, ny - 0.5), padding=0)
     plot.vb.setAspectLocked(True)
 
     img_item = pg.ImageItem()
@@ -275,8 +275,8 @@ def main():
         pos = evt[0]
         if plot.sceneBoundingRect().contains(pos):
             mp = plot.vb.mapSceneToView(pos)
-            cursor_pos['x'] = int(mp.x())
-            cursor_pos['y'] = int(mp.y())
+            cursor_pos['x'] = int(round(mp.x()))
+            cursor_pos['y'] = int(round(mp.y()))
             vline.setPos(mp.x()); hline.setPos(mp.y())
 
     proxy = pg.SignalProxy(plot.scene().sigMouseMoved, rateLimit=60, slot=mouse_moved)
@@ -363,6 +363,13 @@ def main():
                 spin.blockSignals(True); spin.setValue(val); spin.blockSignals(False)
 
         img_item.setImage(disp.T, levels=(vmin, vmax), autoLevels=False)
+        # Centre pixel i on integer coordinate i (default ImageItem centres it on
+        # i+0.5). This matches daoComputeCentroidRelative / ShackHartmannWFS, whose
+        # centroids and references are in the "pixel index = coordinate" frame, so
+        # the centroid / reference overlays land on the spots instead of half a
+        # pixel to the lower-left.
+        h, w = disp.shape
+        img_item.setRect(QtCore.QRectF(-0.5, -0.5, w, h))
         colorbar.setLevels((vmin, vmax))
 
         xref = yref = xcur = ycur = None

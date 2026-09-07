@@ -50,7 +50,7 @@
      <set>Qt::AlignCenter</set>
     </property>
     <property name="text">
-     <string>Loop (00)</string>
+     <string>Flat (00)</string>
     </property>
    </widget>
    <widget class="GraphicsView" name="graphicsView_1">
@@ -76,7 +76,7 @@
      <set>Qt::AlignCenter</set>
     </property>
     <property name="text">
-     <string>Pokes (01)</string>
+     <string>Loop (01)</string>
     </property>
    </widget>
    <widget class="GraphicsView" name="graphicsView_2">
@@ -102,7 +102,7 @@
      <set>Qt::AlignCenter</set>
     </property>
     <property name="text">
-     <string>Flat (02)</string>
+     <string>Turbulence (02)</string>
     </property>
    </widget>
    <widget class="GraphicsView" name="graphicsView_3">
@@ -128,7 +128,7 @@
      <set>Qt::AlignCenter</set>
     </property>
     <property name="text">
-     <string>Disturbance (03)</string>
+     <string>Pokes (03)</string>
     </property>
    </widget>
    <widget class="GraphicsView" name="graphicsView_4">
