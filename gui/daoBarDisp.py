@@ -101,6 +101,7 @@ class Main(QMainWindow, Ui_MainWindow):
 
         self._t = time.time()
         self._c = self.shm.get_counter()
+        self._last_yrange = None   # last data-driven Y range, kept when data is flat
 
         self.idxFromSpin.valueChanged.connect(self._range_changed)
         self.idxToSpin.valueChanged.connect(self._range_changed)
@@ -167,13 +168,19 @@ class Main(QMainWindow, Ui_MainWindow):
         idx = np.arange(a, b + 1)
         seg = v[a:b + 1]
 
-        if self.autoscaleCheck.isChecked() and seg.size:
-            lo, hi = float(np.min(seg)), float(np.max(seg))
-            if lo == hi:
-                lo, hi = lo - 1.0, hi + 1.0
-            pad = 0.05 * (hi - lo)
-            ylo, yhi = lo - pad, hi + pad
-            for spin, val in ((self.yMinSpin, lo), (self.yMaxSpin, hi)):
+        dmin = float(np.min(seg)) if seg.size else 0.0
+        dmax = float(np.max(seg)) if seg.size else 0.0
+
+        if self.autoscaleCheck.isChecked():
+            if dmax > dmin:                    # fit the data's own min..max
+                pad = 0.05 * (dmax - dmin)
+                ylo, yhi = dmin - pad, dmax + pad
+                self._last_yrange = (ylo, yhi)
+            elif self._last_yrange is not None:   # flat data: keep the last scale
+                ylo, yhi = self._last_yrange
+            else:                                 # flat, nothing seen yet
+                ylo, yhi = dmin - 1.0, dmax + 1.0
+            for spin, val in ((self.yMinSpin, dmin), (self.yMaxSpin, dmax)):
                 spin.blockSignals(True)
                 spin.setValue(val)
                 spin.blockSignals(False)
@@ -182,9 +189,9 @@ class Main(QMainWindow, Ui_MainWindow):
             if yhi <= ylo:
                 yhi = ylo + 1.0
 
-        # draw bars from the bottom of the visible window, not from y=0, so the
-        # shape stays readable even when the values sit far from zero
-        self.bar.setOpts(x=idx, y0=ylo, height=seg - ylo, width=0.9)
+        # bars from y=0; the view clips them, so offset data still shows its
+        # bar-to-bar variation and a flat-zero vector shows nothing
+        self.bar.setOpts(x=idx, y0=0.0, height=seg, width=0.9)
         self.plot.setYRange(ylo, yhi, padding=0)
 
         cnt = self.shm.get_counter()
