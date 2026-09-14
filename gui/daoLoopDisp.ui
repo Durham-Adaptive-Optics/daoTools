@@ -3,7 +3,7 @@
  <class>MainWindow</class>
  <widget class="QMainWindow" name="MainWindow">
   <property name="geometry">
-   <rect><x>0</x><y>0</y><width>430</width><height>430</height></rect>
+   <rect><x>0</x><y>0</y><width>430</width><height>270</height></rect>
   </property>
   <property name="windowTitle">
    <string>Loop</string>
@@ -81,30 +81,8 @@
      <property name="text"><string>current: --</string></property>
     </widget>
    </widget>
-   <widget class="QGroupBox" name="residGroup">
-    <property name="geometry">
-     <rect><x>10</x><y>270</y><width>410</width><height>150</height></rect>
-    </property>
-    <property name="title">
-     <string>Residual</string>
-    </property>
-    <widget class="PlotWidget" name="residualPlot">
-     <property name="geometry"><rect><x>12</x><y>25</y><width>386</width><height>90</height></rect></property>
-    </widget>
-    <widget class="QLabel" name="residualLabel">
-     <property name="geometry"><rect><x>15</x><y>120</y><width>386</width><height>22</height></rect></property>
-     <property name="text"><string>residual RMS: --   output RMS: --</string></property>
-    </widget>
-   </widget>
   </widget>
  </widget>
- <customwidgets>
-  <customwidget>
-   <class>PlotWidget</class>
-   <extends>QWidget</extends>
-   <header>pyqtgraph</header>
-  </customwidget>
- </customwidgets>
  <resources/>
  <connections/>
 </ui>

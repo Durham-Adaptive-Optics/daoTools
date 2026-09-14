@@ -27,6 +27,30 @@ Variants:
 - ``daoComputeCentroidsSlow.py`` — Slow (debug) Python centroider
 - ``daoComputeIntensityPws.c`` — Pyramid WFS intensity measurement
 
+daoComputeCentroidCorrelation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Cross-correlates each sub-aperture spot against a reference template (instead of a centre-of-gravity). The reference SHM holds one ``subaSize``x``subaSize`` template per sub-aperture, stacked row-wise; the correlation peak is found by an integer-pixel windowed shift search out to ``searchRange``.
+
+.. code-block:: bash
+
+    daoComputeCentroidCorrelation -S <in> <centroid> <subApCentres> <refImage> <threshold> \
+                                   <subaSize> <nbSuba> <searchRange> -s <semNb> [-a <alpha>] -L
+
+``-a <alpha>`` enables an optional running-average (EMA) update of the reference: after each frame's centroids are published, the just-observed spot (re-aligned by that frame's own centroid) is blended into the reference at rate ``alpha`` in ``(0, 1]``, so the reference tracks slow drift instead of staying fixed at its initial calibration. Runs strictly after the centroid SHM is published, off the real-time critical path. Disabled (``alpha=0``) by default.
+
+daoComputeCentroidCorrelationFFT
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Same correlation-centroiding idea, but computes the full periodic correlation surface for each sub-aperture via FFT instead of a windowed shift search — the whole box is searched for the price of one FFT round trip, so no ``searchRange`` argument is needed. Precision (float32 vs float64) is auto-detected from the input image SHM's ``atype``; all 5 SHMs must share that atype. Requires FFTW (see the top-level README) — built only when available.
+
+.. code-block:: bash
+
+    daoComputeCentroidCorrelationFFT -S <in> <centroid> <subApCentres> <refImage> <threshold> \
+                                      <subaSize> <nbSuba> -s <semNb> [-a <alpha>] -L
+
+Same ``-a <alpha>`` running-average reference update as ``daoComputeCentroidCorrelation``.
+
 daoPrepCentroidLut.py
 ~~~~~~~~~~~~~~~~~~~~~
 
@@ -68,7 +92,9 @@ Applies flat-field and background correction to a raw camera stream:
 
 .. code-block:: bash
 
-    daoPixelCalibrate -L <raw_shm> <flat_shm> <background_shm> <output_shm>
+    daoPixelCalibrate -S <raw_shm> <flat_shm> <background_shm> <output_shm> -s <semNb> [-C <cpu>] -L
+
+``-C <cpu>`` pins the real-time thread to a CPU core. The loop also locks memory (``mlockall``), pre-warms the calibration buffers before entering the loop, and throttles its telemetry print to once every 2000 frames — all to keep page-fault and I/O jitter off the real-time path.
 
 - ``daoPixelCalibratePws.c`` — Pyramid WFS variant with additional corrections
 
@@ -216,6 +242,19 @@ Filters the DM command SHM through a user-supplied transfer function.
 Timing & Latency
 ----------------
 
+daoTimeDiff
+~~~~~~~~~~~
+
+Measures the latency between two SHM timestamps and now computes the running average and RMS automatically over a sliding window of ``popSize`` samples:
+
+.. code-block:: bash
+
+    daoTimeDiff -S <SHM1> <SHM2> <sem1> <sem2> <measurement_shm> [-n <popSize>] [-m] -L
+
+- ``-n <popSize>`` — sliding-window size for the AVG/RMS computation (default 100)
+- ``-m`` — verbose mode: also print each pair's frame IDs and raw diff (off by default; without it the print is a fixed-width, ~1 Hz-throttled line so per-iteration ``fflush`` stays off the critical path)
+- Publishes ``<measurement>Avg`` and ``<measurement>Rms`` scalar SHMs plus a ``<measurement>Array`` SHM holding the sliding window in chronological order, for GUIs (e.g. ``daoShmViewer``'s "SHM Latency" tab) to plot directly without re-measuring anything themselves.
+
 .. list-table::
    :widths: 30 70
    :header-rows: 1
@@ -223,14 +262,11 @@ Timing & Latency
    * - Tool
      - Description
 
-   * - ``daoTimeDiff``
-     - Measures the latency between two SHM timestamps.
-
    * - ``daoTimeDiffNCurse``
      - ``ncurses`` live display of SHM latency.
 
    * - ``daoTimeDiffStat``
-     - Statistical summary (min/max/mean/std) of SHM latency over N frames.
+     - Statistical summary (min/max/mean/std) of SHM latency over N frames. Kept as a separate tool for other uses now that ``daoTimeDiff`` computes AVG/RMS itself.
 
    * - ``daoSetLatency``
      - Injects a fixed artificial latency into a SHM stream for testing.

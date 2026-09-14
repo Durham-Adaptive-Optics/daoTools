@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 """
-Loop Display - generic AO loop control/monitoring panel
+Loop Display - generic AO loop control panel
 
-Close/open a loop and set its leaky-integrator gain and leak, with a live
-readout of an optional residual and output RMS. Talks only to plain scalar
-control SHMs (lpCmd/lpGain/lpLeak by default) plus two optional array SHMs
-for the RMS plot/readout - nothing here is tied to a specific pipeline; point
-it at any loop's SHMs with -c/-g/-l/-r/-o.
+Close/open a loop and set its leaky-integrator gain and leak. Talks only to
+plain scalar control SHMs (lpCmd/lpGain/lpLeak by default) - nothing here is
+tied to a specific pipeline; point it at any loop's SHMs with -c/-g/-l.
 
 Usage: daoLoopDisp.py [options]
 
@@ -14,8 +12,6 @@ Options:
   -c  Loop state shm: 0 = open, 1 = closed (default: /tmp/lpCmd.im.shm)
   -g  Loop gain shm (default: /tmp/lpGain.im.shm)
   -l  Loop leak shm (default: /tmp/lpLeak.im.shm)
-  -r  Residual/error shm, RMS plotted live (optional, e.g. slopes or a WFS residual)
-  -o  Output/command shm, RMS readout only (optional, e.g. a DM command)
   --light  Light mode (default: dark)
 
 Any SHM that doesn't exist yet is skipped (greyed out / shown as "--") and
@@ -25,14 +21,12 @@ after the processes that create those SHMs.
 Examples:
   daoLoopDisp.py
   daoLoopDisp.py -c /tmp/lpCmd.im.shm -g /tmp/lpGain.im.shm -l /tmp/lpLeak.im.shm
-  daoLoopDisp.py -r /tmp/shCentroids.im.shm -o /tmp/dmCmd.im.shm
   daoLoopDisp.py --light
 """
 
 import os
 import sys
 import getopt
-from collections import deque
 
 import numpy as np
 import pyqtgraph as pg
@@ -43,8 +37,6 @@ import dao
 
 path = os.getenv('DAOROOT') + '/data/'
 Ui_MainWindow, QMainWindow = loadUiType(os.path.join(path, 'daoLoopDisp.ui'))
-
-HIST_LEN = 300  # residual plot history, in samples
 
 
 def make_stylesheet(light):
@@ -98,19 +90,12 @@ def _open(path):
 
 
 class Main(QMainWindow, Ui_MainWindow):
-    def __init__(self, shmCmdName, shmGainName, shmLeakName, shmResidName, shmOutName):
+    def __init__(self, shmCmdName, shmGainName, shmLeakName):
         super(Main, self).__init__()
         self.setupUi(self)
 
         self.shmCmdName, self.shmGainName, self.shmLeakName = shmCmdName, shmGainName, shmLeakName
-        self.shmResidName, self.shmOutName = shmResidName, shmOutName
         self.shmCmd = self.shmGain = self.shmLeak = None
-        self.shmResid = self.shmOut = None
-
-        self.residualPlot.showGrid(x=True, y=True, alpha=0.2)
-        self.residualPlot.setLabel('left', 'residual RMS')
-        self.curve = self.residualPlot.plot(pen=pg.mkPen('#4a9eff', width=2))
-        self.hist = deque(maxlen=HIST_LEN)
 
         self.closeLoopButton.clicked.connect(lambda: self.setLoop(1))
         self.openLoopButton.clicked.connect(lambda: self.setLoop(0))
@@ -135,10 +120,6 @@ class Main(QMainWindow, Ui_MainWindow):
             self.shmGain = _open(self.shmGainName)
         if self.shmLeak is None:
             self.shmLeak = _open(self.shmLeakName)
-        if self.shmResid is None:
-            self.shmResid = _open(self.shmResidName)
-        if self.shmOut is None:
-            self.shmOut = _open(self.shmOutName)
         ok = self.shmCmd is not None
         for w in (self.closeLoopButton, self.openLoopButton, self.gainButton, self.leakButton):
             w.setEnabled(ok)
@@ -183,41 +164,17 @@ class Main(QMainWindow, Ui_MainWindow):
             except Exception:
                 self.shmLeak = None
 
-        residRms = outRms = None
-        if self.shmResid is not None:
-            try:
-                residRms = float(np.std(self.shmResid.get_data()))
-            except Exception:
-                self.shmResid = None
-        if self.shmOut is not None:
-            try:
-                outRms = float(np.std(self.shmOut.get_data()))
-            except Exception:
-                self.shmOut = None
-
-        if residRms is not None:
-            self.hist.append(residRms)
-            self.curve.setData(np.arange(len(self.hist)), np.array(self.hist))
-
-        rTxt = "residual RMS: %.4g" % residRms if residRms is not None else "residual RMS: --"
-        oTxt = "output RMS: %.4g" % outRms if outRms is not None else "output RMS: --"
-        self.residualLabel.setText("%s   %s" % (rTxt, oTxt))
-
 
 if __name__ == '__main__':
     shmCmdName   = '/tmp/lpCmd.im.shm'
     shmGainName  = '/tmp/lpGain.im.shm'
     shmLeakName  = '/tmp/lpLeak.im.shm'
-    shmResidName = ''
-    shmOutName   = ''
     light = False
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "hc:g:l:r:o:",
-                                    ["help", "shmCmdName=", "shmGainName=", "shmLeakName=",
-                                     "shmResidName=", "shmOutName=", "light"])
+        opts, args = getopt.getopt(sys.argv[1:], "hc:g:l:",
+                                    ["help", "shmCmdName=", "shmGainName=", "shmLeakName=", "light"])
     except getopt.GetoptError:
-        print('err, usage: daoLoopDisp.py -c <shmCmdName> -g <shmGainName> -l <shmLeakName> '
-              '[-r <shmResidName>] [-o <shmOutName>] [--light]')
+        print('err, usage: daoLoopDisp.py -c <shmCmdName> -g <shmGainName> -l <shmLeakName> [--light]')
         sys.exit(2)
     for opt, arg in opts:
         if opt in ('-h', '--help'):
@@ -229,10 +186,6 @@ if __name__ == '__main__':
             shmGainName = str(arg)
         elif opt in ("-l", "--shmLeakName"):
             shmLeakName = str(arg)
-        elif opt in ("-r", "--shmResidName"):
-            shmResidName = str(arg)
-        elif opt in ("-o", "--shmOutName"):
-            shmOutName = str(arg)
         elif opt == '--light':
             light = True
 
@@ -246,7 +199,7 @@ if __name__ == '__main__':
     app = QApplication([])
     app.setStyleSheet(make_stylesheet(light))
 
-    main = Main(shmCmdName, shmGainName, shmLeakName, shmResidName, shmOutName)
+    main = Main(shmCmdName, shmGainName, shmLeakName)
     main.setWindowTitle('Loop  [%s]' % os.path.basename(shmCmdName))
     main.show()
     main.Start()

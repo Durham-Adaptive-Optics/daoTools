@@ -13,7 +13,7 @@ The flagship multi-panel viewer that combines live SHM image display with the fu
 
 .. code-block:: bash
 
-    python daoShmViewer.py
+    python daoShmViewer.py [--light]
 
 Features:
 
@@ -22,6 +22,12 @@ Features:
 - Start / Stop / Finish DAQ sessions without leaving the viewer
 - Frame statistics overlay (mean, min, max, frame count)
 - Configurable colour maps and display scaling
+- Dark by default (``--light`` for light mode)
+
+SHM Latency tab
+~~~~~~~~~~~~~~~~
+
+Pick any two SHMs from the existing file list, then Start: this launches the real ``daoTimeDiff`` binary in its own named ``tmux`` session (semaphore numbers default to 5/5, matching ``daoPlotLatency.py``'s convention so as not to steal semaphore posts from real consumers). The tab does not re-measure anything itself — it purely reads ``daoTimeDiff``'s own ``Array``/``Avg``/``Rms`` SHMs and renders a small scatter plot (with AVG/RMS reference lines) plus a histogram. Stop kills the tmux session.
 
 
 daoImDisp / daoImgDisp
@@ -107,6 +113,43 @@ Tip-tilt monitor that displays the residual tip and tilt signals from a TTM or W
 .. code-block:: bash
 
     python daoTtDisp.py [slopes_shm]
+
+
+daoLoopDisp
+-----------
+
+Generic AO loop control panel: open/close a loop and set its leaky-integrator gain and leak. Talks only to plain scalar control SHMs (default ``lpCmd``/``lpGain``/``lpLeak``) — not tied to any specific pipeline.
+
+.. code-block:: bash
+
+    python daoLoopDisp.py [-c <cmd_shm>] [-g <gain_shm>] [-l <leak_shm>] [--light]
+
+Any SHM that doesn't exist yet is greyed out and picked up automatically once it appears, so this can be started before or after the processes that create those SHMs. Dark by default.
+
+
+daoLoopCtrl
+-----------
+
+Another control panel for a classical (leaky) integrator loop, driving the same three scalar SHMs as ``daoLoopDisp`` (``lpCmd``/``lpGain``/``lpLeak`` by default):
+
+.. code-block:: bash
+
+    python daoLoopCtrl.py [--cmd <path>] [--gain <path>] [--leak <path>] \
+                           [--gain-max <value>] [--light]
+
+Opening the GUI does not write anything — it shows and polls the current values, so external changes (e.g. ``setLoopGain.py``, another GUI) are reflected live. Dark by default.
+
+
+daoBarDisp
+----------
+
+Real-time bar chart of a 1-D shared-memory vector (one bar per element), e.g. DM commands or centroid vectors:
+
+.. code-block:: bash
+
+    python daoBarDisp.py <shm_file> [--from <N>] [--to <N>] [--fps <Hz>] [--light]
+
+The X extent defaults to the whole vector; ``--from``/``--to`` restrict it to a sub-range. Y-axis autoscales to the visible bars each frame, or can be pinned with fixed min/max. Dark by default.
 
 
 daoLogMonitor
