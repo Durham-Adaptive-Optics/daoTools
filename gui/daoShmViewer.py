@@ -32,6 +32,72 @@ from PyQt5.QtWidgets import (
 )
 
 ################################################
+#               Theme
+################################################
+
+def make_stylesheet(light):
+    """Same dark-by-default convention as the rest of gui/ (daoDmCtrl.py,
+    daoLoopDisp.py, ...), extended to the wider widget set this viewer uses
+    (tabs, lists, tables, combo boxes, text edit, tool/status bars)."""
+    if light:
+        return """
+            QMainWindow, QWidget { background-color: #f0f0f0; color: #000000; }
+            QLabel, QCheckBox, QRadioButton { color: #000000; }
+            QPushButton {
+                background-color: #e0e0e0; color: #000000;
+                border: 1px solid #aaa; padding: 4px 8px; border-radius: 3px;
+            }
+            QPushButton:hover   { background-color: #d0d0d0; }
+            QPushButton:pressed { background-color: #bbb; }
+            QLineEdit, QTextEdit, QSpinBox, QDoubleSpinBox, QComboBox, QListWidget,
+            QTableView, QTreeWidget {
+                background-color: #ffffff; color: #000000; border: 1px solid #aaa;
+            }
+            QGroupBox {
+                border: 1px solid #aaa; border-radius: 4px;
+                margin-top: 8px; color: #000000;
+            }
+            QGroupBox::title { subcontrol-origin: margin; left: 8px; color: #555555; }
+            QTabWidget::pane { border: 1px solid #aaa; }
+            QTabBar::tab {
+                background: #e0e0e0; color: #000000;
+                border: 1px solid #aaa; padding: 4px 10px;
+            }
+            QTabBar::tab:selected { background: #ffffff; }
+            QToolBar, QStatusBar { background-color: #e8e8e8; color: #000000; }
+            QHeaderView::section { background-color: #e0e0e0; color: #000000; border: 1px solid #aaa; }
+        """
+    else:
+        return """
+            QMainWindow, QWidget { background-color: #1e1e1e; color: #cccccc; }
+            QLabel, QCheckBox, QRadioButton { color: #cccccc; }
+            QPushButton {
+                background-color: #3a3a3a; color: #cccccc;
+                border: 1px solid #555555; padding: 4px 8px; border-radius: 3px;
+            }
+            QPushButton:hover   { background-color: #4a4a4a; }
+            QPushButton:pressed { background-color: #555555; }
+            QLineEdit, QTextEdit, QSpinBox, QDoubleSpinBox, QComboBox, QListWidget,
+            QTableView, QTreeWidget {
+                background-color: #2a2a2a; color: #cccccc; border: 1px solid #555555;
+            }
+            QGroupBox {
+                border: 1px solid #555555; border-radius: 4px;
+                margin-top: 8px; color: #cccccc;
+            }
+            QGroupBox::title { subcontrol-origin: margin; left: 8px; color: #aaaaaa; }
+            QTabWidget::pane { border: 1px solid #555555; }
+            QTabBar::tab {
+                background: #2a2a2a; color: #cccccc;
+                border: 1px solid #555555; padding: 4px 10px;
+            }
+            QTabBar::tab:selected { background: #3a3a3a; }
+            QToolBar, QStatusBar { background-color: #262626; color: #cccccc; }
+            QHeaderView::section { background-color: #3a3a3a; color: #cccccc; border: 1px solid #555555; }
+        """
+
+
+################################################
 #               Custom Widgets
 ################################################
 
@@ -539,6 +605,9 @@ class daoShmViewer(QMainWindow):
         # Tab 5: Tmux Sessions
         self.setup_tmux_tab()
 
+        # Tab 6: SHM Latency
+        self.setup_latency_tab()
+
     def setup_daq_tab(self):
         """Setup the recording tab."""
         
@@ -687,6 +756,272 @@ class daoShmViewer(QMainWindow):
         
         tmuxTab.setLayout(tmuxLayout)
         self.tabWidget.addTab(tmuxTab, "Tmux Sessions")
+
+    def setup_latency_tab(self):
+        """Setup the SHM-to-SHM latency tab: pick two SHMs from the file list
+        on the left, Start launches the real `daoTimeDiff` binary (the one
+        merged with daoTimeDiffStat - see apps/daoTimeDiff.c) inside its own,
+        identifiable tmux session, and this tab just monitors the measurement/
+        Avg/Rms SHMs it publishes. All the actual measurement math lives in
+        that one C tool, not duplicated here."""
+        latencyTab = QWidget()
+        layout = QVBoxLayout()
+
+        form = QFormLayout()
+        self.latencyShm1Edit = QLineEdit()
+        self.latencyShm1Edit.setReadOnly(True)
+        self.latencyShm1Edit.setPlaceholderText("Select a SHM in the list, then click Set")
+        self.latencyShm2Edit = QLineEdit()
+        self.latencyShm2Edit.setReadOnly(True)
+        self.latencyShm2Edit.setPlaceholderText("Select a SHM in the list, then click Set")
+
+        self.latencySetShm1Button = QPushButton("Set from selection")
+        self.latencySetShm1Button.clicked.connect(lambda: self.set_latency_shm_from_selection(1))
+        self.latencySetShm2Button = QPushButton("Set from selection")
+        self.latencySetShm2Button.clicked.connect(lambda: self.set_latency_shm_from_selection(2))
+
+        shm1Row = QHBoxLayout()
+        shm1Row.addWidget(self.latencyShm1Edit)
+        shm1Row.addWidget(self.latencySetShm1Button)
+        shm2Row = QHBoxLayout()
+        shm2Row.addWidget(self.latencyShm2Edit)
+        shm2Row.addWidget(self.latencySetShm2Button)
+        form.addRow("SHM 1 (start)", shm1Row)
+        form.addRow("SHM 2 (end)", shm2Row)
+
+        # daoTimeDiff -S <shm1> <shm2> <sem1> <sem2> <measurement> -n <popSize>
+        # Default semaphore 5 on each, not 0: same convention as
+        # daoPlotLatency.py (get_data(..., semNb=5)) so a monitoring tap
+        # doesn't consume semaphore posts the real pipeline consumer needs.
+        semRow = QHBoxLayout()
+        self.latencySem1Spin = QSpinBox()
+        self.latencySem1Spin.setRange(0, 15)
+        self.latencySem1Spin.setValue(5)
+        self.latencySem2Spin = QSpinBox()
+        self.latencySem2Spin.setRange(0, 15)
+        self.latencySem2Spin.setValue(5)
+        self.latencyPopSizeSpin = QSpinBox()
+        self.latencyPopSizeSpin.setRange(2, 100000)
+        self.latencyPopSizeSpin.setValue(100)
+        semRow.addWidget(QLabel("sem1"))
+        semRow.addWidget(self.latencySem1Spin)
+        semRow.addWidget(QLabel("sem2"))
+        semRow.addWidget(self.latencySem2Spin)
+        semRow.addWidget(QLabel("window (-n)"))
+        semRow.addWidget(self.latencyPopSizeSpin)
+        form.addRow("daoTimeDiff args", semRow)
+
+        btnLayout = QHBoxLayout()
+        self.latencyStartButton = QPushButton("Start")
+        self.latencyStartButton.clicked.connect(self.start_latency_measurement)
+        self.latencyStopButton = QPushButton("Stop")
+        self.latencyStopButton.clicked.connect(self.stop_latency_measurement)
+        self.latencyStopButton.setEnabled(False)
+        btnLayout.addWidget(self.latencyStartButton)
+        btnLayout.addWidget(self.latencyStopButton)
+
+        self.latencySessionLabel = QLabel("tmux session: --")
+        self.latencyStatsLabel = QLabel("AVG: --   RMS: --   n: 0")
+
+        # Small and light on purpose: no autoscale fighting, no toolbar
+        # buttons, capped history - these live inside a tab, not a dedicated
+        # plot window. Two views of the same rolling buffer (raw samples
+        # read straight from daoTimeDiff's measurement SHM, nothing
+        # recomputed): a scatter trend with AVG/RMS overlaid, and a
+        # histogram of its distribution.
+        self.latencyPlot = pg.PlotWidget()
+        self.latencyPlot.setMaximumHeight(130)
+        self.latencyPlot.setBackground(None)
+        self.latencyPlot.showGrid(x=False, y=True, alpha=0.15)
+        self.latencyPlot.setLabel('left', 'latency (us)')
+        self.latencyPlot.getPlotItem().hideButtons()
+        self.latencyPlot.getPlotItem().setMenuEnabled(False)
+        self.latencyCurve = self.latencyPlot.plot(
+            pen=None, symbol='o', symbolSize=4, symbolPen=None, symbolBrush='#4a9eff')
+        self.latencyAvgLine = pg.InfiniteLine(angle=0, pen=pg.mkPen('#55dd55', width=1))
+        self.latencyAvgPlusLine = pg.InfiniteLine(angle=0, pen=pg.mkPen('#55dd55', width=1, style=Qt.DashLine))
+        self.latencyAvgMinusLine = pg.InfiniteLine(angle=0, pen=pg.mkPen('#55dd55', width=1, style=Qt.DashLine))
+        for ln in (self.latencyAvgLine, self.latencyAvgPlusLine, self.latencyAvgMinusLine):
+            ln.hide()
+            self.latencyPlot.addItem(ln)
+
+        self.latencyHistPlot = pg.PlotWidget()
+        self.latencyHistPlot.setMaximumHeight(130)
+        self.latencyHistPlot.setBackground(None)
+        self.latencyHistPlot.showGrid(x=False, y=True, alpha=0.15)
+        self.latencyHistPlot.setLabel('left', 'count')
+        self.latencyHistPlot.setLabel('bottom', 'latency (us)')
+        self.latencyHistPlot.getPlotItem().hideButtons()
+        self.latencyHistPlot.getPlotItem().setMenuEnabled(False)
+        self.latencyHistCurve = self.latencyHistPlot.plot(
+            stepMode="center", fillLevel=0, brush='#4a9eff80', pen=pg.mkPen('#4a9eff', width=1))
+
+        plotsLayout = QHBoxLayout()
+        plotsLayout.addWidget(self.latencyPlot)
+        plotsLayout.addWidget(self.latencyHistPlot)
+
+        layout.addLayout(form)
+        layout.addLayout(btnLayout)
+        layout.addWidget(self.latencySessionLabel)
+        layout.addWidget(self.latencyStatsLabel)
+        layout.addLayout(plotsLayout)
+        layout.addStretch()
+        latencyTab.setLayout(layout)
+        self.tabWidget.addTab(latencyTab, "SHM Latency")
+
+        self.latencyTmuxSession = None
+        self.latencyMeasShm = self.latencyAvgShm = self.latencyRmsShm = self.latencyArrayShm = None
+        self.latencyMeasShmName = self.latencyAvgShmName = self.latencyRmsShmName = self.latencyArrayShmName = None
+        self.latencyLastCounter = None
+        self.latencyTimer = QTimer(self)
+        self.latencyTimer.setInterval(100)  # 10 Hz poll - plenty for a GUI readout
+        self.latencyTimer.timeout.connect(self.update_latency_measurement)
+
+    def set_latency_shm_from_selection(self, which):
+        """Assign SHM 1 or SHM 2 (which=1 or 2) from whatever is currently
+        selected in the main SHM list on the left - same file list/path
+        convention as onShmClicked (f"/tmp/{filename}")."""
+        item = self.file_list_widget.currentItem()
+        if item is None:
+            self.show_error("Select a SHM in the list on the left first")
+            return
+        path = f"/tmp/{item.text()}"
+        if which == 1:
+            self.latencyShm1Edit.setText(path)
+        else:
+            self.latencyShm2Edit.setText(path)
+
+    @staticmethod
+    def _latency_tmux_name(path1, path2):
+        """Deterministic, identifiable tmux session name for a given SHM
+        pair, e.g. daoLatency_wfsIm_dmCmd - stable across Start/Stop so
+        restarting on the same pair reuses (and cleanly replaces) the
+        same session instead of piling up orphans."""
+        def base(p):
+            name = os.path.basename(p)
+            for suffix in (".im.shm", ".shm"):
+                if name.endswith(suffix):
+                    name = name[: -len(suffix)]
+                    break
+            return ''.join(c if c.isalnum() else '_' for c in name)
+        return f"daoLatency_{base(path1)}_{base(path2)}"
+
+    def start_latency_measurement(self):
+        """Launch daoTimeDiff (the real, merged-with-Stat implementation) in
+        its own tmux session, then start polling the SHMs it publishes."""
+        path1 = self.latencyShm1Edit.text()
+        path2 = self.latencyShm2Edit.text()
+        if not path1 or not path2:
+            self.show_error("Select both SHM 1 and SHM 2 first")
+            return
+
+        sessionName = self._latency_tmux_name(path1, path2)
+        measName = f"/tmp/{self._latency_tmux_name(path1, path2)}.im.shm"
+
+        cmd = (f"daoTimeDiff -S {path1} {path2} "
+               f"{self.latencySem1Spin.value()} {self.latencySem2Spin.value()} {measName} "
+               f"-n {self.latencyPopSizeSpin.value()} -L")
+        try:
+            # Replace any stale session with the same (deterministic) name first.
+            subprocess.run(f"tmux kill-session -t {sessionName}", shell=True,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            result = subprocess.run(f'tmux new-session -d -s {sessionName} "{cmd}"',
+                                     shell=True, capture_output=True, text=True)
+            if result.returncode != 0:
+                self.show_error(f"Could not start tmux session: {result.stderr}")
+                return
+        except Exception as e:
+            self.show_error(f"Could not start daoTimeDiff: {e}")
+            return
+
+        self.latencyTmuxSession = sessionName
+        self.latencyMeasShmName = measName
+        # same Avg/Rms/Array naming convention as daoToolsInsertShmNamePrefix
+        base, ext = measName[: -len(".im.shm")], ".im.shm"
+        self.latencyAvgShmName = base + "Avg" + ext
+        self.latencyRmsShmName = base + "Rms" + ext
+        self.latencyArrayShmName = base + "Array" + ext
+        self.latencyMeasShm = self.latencyAvgShm = self.latencyRmsShm = self.latencyArrayShm = None
+        self.latencyLastCounter = None
+
+        self.latencyCurve.setData([], [])
+        self.latencyHistCurve.setData([], [])
+        self.latencyStatsLabel.setText("AVG: --   RMS: --   n: 0")
+        self.latencySessionLabel.setText(f"tmux session: {sessionName}  (cmd: {cmd})")
+        self.latencyStartButton.setEnabled(False)
+        self.latencyStopButton.setEnabled(True)
+        self.latencyTimer.start()
+
+    def stop_latency_measurement(self):
+        """Kill the tmux session (and with it, daoTimeDiff running inside),
+        stop polling."""
+        self.latencyTimer.stop()
+        if self.latencyTmuxSession:
+            subprocess.run(f"tmux kill-session -t {self.latencyTmuxSession}", shell=True,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.latencySessionLabel.setText(
+            f"tmux session: {self.latencyTmuxSession} (stopped)" if self.latencyTmuxSession else "tmux session: --")
+        self.latencyTmuxSession = None
+        self.latencyStartButton.setEnabled(True)
+        self.latencyStopButton.setEnabled(False)
+
+    def update_latency_measurement(self):
+        """Timer tick: attach to daoTimeDiff's measurement/Avg/Rms/Array SHMs
+        (it needs a moment to create them after tmux launches it, so this
+        retries silently until they appear), then, once a new sample is
+        published, read and display it. daoTimeDiff itself owns the rolling
+        window (Array, chronologically ordered, exactly -n elements once
+        full) and the AVG/RMS - this is a pure reader, no buffering or
+        recomputation on the Python side."""
+        if self.latencyMeasShm is None:
+            try:
+                self.latencyMeasShm = dao.shm(self.latencyMeasShmName)
+                self.latencyAvgShm = dao.shm(self.latencyAvgShmName)
+                self.latencyRmsShm = dao.shm(self.latencyRmsShmName)
+                self.latencyArrayShm = dao.shm(self.latencyArrayShmName)
+            except Exception:
+                return  # daoTimeDiff hasn't created the SHMs yet - try again next tick
+
+        try:
+            counter = self.latencyMeasShm.get_counter()
+        except Exception as e:
+            self.stop_latency_measurement()
+            self.show_error(f"SHM Latency: lost the measurement SHM ({e})")
+            return
+        if self.latencyLastCounter is not None and counter == self.latencyLastCounter:
+            return
+        self.latencyLastCounter = counter
+
+        try:
+            avg = float(np.ravel(self.latencyAvgShm.get_data())[0])
+            rms = float(np.ravel(self.latencyRmsShm.get_data())[0])
+            # Array SHM's own write counter tracks exactly how many of its
+            # popSize slots are valid so far (same growth as daoTimeDiff's
+            # circCount) - avoid plotting the zero-filled tail before the
+            # window first fills.
+            popSize = self.latencyArrayShm.get_data().size
+            n = min(self.latencyArrayShm.get_counter(), popSize)
+            arr = np.ravel(self.latencyArrayShm.get_data())[:n]
+        except Exception:
+            return  # transient read race - just wait for the next tick
+
+        self.latencyStatsLabel.setText(
+            f"AVG: {avg:9.3f} us   RMS: {rms:9.3f} us   n: {n}/{popSize}")
+
+        # Scatter of the raw rolling buffer, AVG/RMS (from daoTimeDiff's own
+        # SHMs, not recomputed here) drawn as reference lines on top of it.
+        self.latencyCurve.setData(np.arange(n), arr)
+        self.latencyAvgLine.setPos(avg)
+        self.latencyAvgPlusLine.setPos(avg + rms)
+        self.latencyAvgMinusLine.setPos(avg - rms)
+        for ln in (self.latencyAvgLine, self.latencyAvgPlusLine, self.latencyAvgMinusLine):
+            ln.show()
+
+        # Histogram of the same buffer. Bin count capped and tied to n so it
+        # stays meaningful (and cheap) from the very first few samples.
+        nbins = int(np.clip(n // 2, 5, 40))
+        counts, edges = np.histogram(arr, bins=nbins)
+        self.latencyHistCurve.setData(edges, counts)
 
     def setup_timers(self):
         """Setup application timers."""
@@ -1637,10 +1972,21 @@ class daoShmViewer(QMainWindow):
 
 def main():
     """Main application entry point."""
+    light = '--light' in sys.argv
+    if light:
+        sys.argv.remove('--light')
+
     app = QApplication(sys.argv)
     app.setApplicationDisplayName("DAO Shared Memory Viewer")
     app.setOrganizationName("DAO")
-    
+    app.setStyleSheet(make_stylesheet(light))
+    if light:
+        pg.setConfigOption('background', '#f0f0f0')
+        pg.setConfigOption('foreground', '#000000')
+    else:
+        pg.setConfigOption('background', '#1e1e1e')
+        pg.setConfigOption('foreground', '#cccccc')
+
     # Set application icon
     dao_root = os.getenv('DAOROOT')
     if dao_root:

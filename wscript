@@ -100,6 +100,17 @@ def configure(conf):
 	except:
 		print("BLAS not found: skipping BLAS.")
 
+	# Check for FFTW (single- and double-precision; both required to enable
+	# the FFT-based correlation centroider, daoToolsCorrFFT).
+	conf.env.FFTW_AVAILABLE = False  # Default to False
+	try:
+		conf.check_cfg(package='fftw3f', args='--cflags --libs', uselib_store='FFTW3F')
+		conf.check_cfg(package='fftw3',  args='--cflags --libs', uselib_store='FFTW3')
+		conf.env.FFTW_AVAILABLE = True
+		print("FFTW (single+double) detected: enabling FFT correlation centroider build.")
+	except:
+		print("FFTW not found (need both fftw3f and fftw3): skipping FFT correlation centroider.")
+
 def build(bld):
 	bld.env.DEFINES=['WAF=1']
 	bld.recurse('src')

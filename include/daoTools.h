@@ -159,9 +159,9 @@ int_fast8_t daoCentroidSpotsRelativeRef(float *image,
                                      float threshold,
                                      float *cent);
 
-/* Largest searchRange daoCentroidSpotsCorrelation accepts: the per-subaperture
- * correlation surface is a fixed-size stack buffer, sized off this bound, so
- * the function stays allocation-free in the real-time loop. */
+/* Largest searchRange daoCentroidSpotsCorrelation accepts: a sanity bound on
+ * worst-case real-time compute cost (the function itself never allocates,
+ * so this is not a buffer-sizing limit). */
 #define DAO_CENTROID_CORR_MAX_SEARCH_RANGE 8
 
 int_fast8_t daoCentroidSpotsCorrelation(float *image,
@@ -174,6 +174,37 @@ int_fast8_t daoCentroidSpotsCorrelation(float *image,
                                         int searchRange,
                                         float threshold,
                                         float *cent);
+
+/**
+ * Blend a centroid-aligned observed window into a persisted reference
+ * template stack (exponential moving average), in place. Intended to be
+ * called once per frame, *after* this frame's centroids have already been
+ * computed and published (by daoCentroidSpotsCorrelation or
+ * daoCentroidSpotsCorrelationFFT) -- not on the real-time critical path,
+ * since it only affects the *next* frame's reference. alpha <= 0 is a no-op.
+ * See the .c file for the full rationale and the alignment convention used.
+ */
+void daoCentroidSpotsUpdateReference(const float *image,
+                                     int imageSizeX,
+                                     int imageSizeY,
+                                     const float *ref,
+                                     const float *cent,
+                                     int boxSize,
+                                     int nSuba,
+                                     float threshold,
+                                     float alpha,
+                                     float *refImageInOut);
+
+void daoCentroidSpotsUpdateReferenceDouble(const double *image,
+                                           int imageSizeX,
+                                           int imageSizeY,
+                                           const double *ref,
+                                           const double *cent,
+                                           int boxSize,
+                                           int nSuba,
+                                           double threshold,
+                                           double alpha,
+                                           double *refImageInOut);
 
 int_fast8_t daoCentroidPws(float *im, float *slopes,
                            float *slopesRef, int *wfsPixId, int *wfsPixIdMap,

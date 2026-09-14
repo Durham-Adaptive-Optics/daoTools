@@ -262,6 +262,23 @@ daoComputeCentroidCorrelation = bld.program(
 	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto', '-g'],
 	)
 
+# FFT-based correlation centroider: only built when the daoTools library
+# itself was built with FFTW support (see wscript configure() / src/wscript_build).
+# Single binary: precision (float32 vs float64) is auto-detected at runtime
+# from the input image SHM's atype.
+if bld.env.FFTW_AVAILABLE:
+	daoComputeCentroidCorrelationFFT = bld.program(
+		source = 'daoComputeCentroidCorrelationFFT.c',
+		target = 'daoComputeCentroidCorrelationFFT',
+		includes = '../include '+os.getenv('DAOROOT')+'/include/',
+		linkflags = my_link_flags,
+		ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+		use= 'daoTools',
+		cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto', '-g'],
+		)
+else:
+	print("Skipping daoComputeCentroidCorrelationFFT build (FFTW not available).")
+
 daoSetLatency = bld.program(
 	source = 'daoSetLatency.c',
 	target = 'daoSetLatency',

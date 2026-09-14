@@ -4,6 +4,7 @@
  *****************************************************************************/
 
 /*==========================================================================*/
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -59,6 +60,26 @@ static void endme(int _a)
 }
 
 /*--------------------------------------------------------------------------*/
+/* Real-time tuning knobs - same pattern already used/validated in daoMvM.c */
+#define CAL_PRINT_EVERY 2000     /* throttle telemetry: print once every N iterations */
+static int rtCpu = -1;           /* CPU core to pin the RT thread to (-1 = do not pin) */
+
+static void calSetRtAffinity(int cpu)
+{
+#ifdef __linux__
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(cpu, &cpuset);
+    if (pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset) != 0)
+        daoError("pthread_setaffinity_np(cpu=%d) failed\n", cpu);
+    else
+        daoInfo("RT thread pinned to CPU %d\n", cpu);
+#else
+    daoInfo("CPU affinity not supported on this platform (cpu=%d ignored)\n", cpu);
+#endif
+}
+
+/*--------------------------------------------------------------------------*/
 static char	*sArgv0=NULL;					/* name of executable */
 
 static void ShowHelp(void)
@@ -69,9 +90,10 @@ static void ShowHelp(void)
     daoInfo("   -d               display program debug output\n");
     daoInfo("   -S               list of SHM (full path separated by space)\n");
     daoInfo("   -s               semaphore number\n");
+    daoInfo("   -C <cpu>         pin the real-time thread to CPU core <cpu>\n");
     daoInfo("   -L               start real-time loop\n");
-    daoInfo("   usage:\n");
-    daoInfo("   -S <input SHM> <background SHM> <flatfield SHM> <output SHM> -s <semNb> -L\n");
+    daoInfo("   usage (options must precede -L):\n");
+    daoInfo("   -S <input SHM> <flatfield SHM> <background SHM> <output SHM> -s <semNb> [-C <cpu>] -L\n");
     daoInfo("\n");
 }
 
@@ -80,6 +102,10 @@ static int realTimeLoop()
 {
     // register interrupt signal to terminate the main loop
     signal(SIGINT, endme);
+
+    if (rtCpu >= 0)
+        calSetRtAffinity(rtCpu);
+
     IMAGE *inShm;
     IMAGE *ffShm;
     IMAGE *bgShm;
@@ -101,17 +127,29 @@ static int realTimeLoop()
     struct timespec timeout;
     double elapsedTime;
     double calTime;
-    clock_gettime(CLOCK_REALTIME, &t[1]);
     int waitCounter = 0;
     usleep(2000000);
+
+    // Fault in the in/ff/bg/cal buffers and run the calibration once so the
+    // first real frame doesn't pay page-fault / lazy-init jitter (same
+    // reasoning as daoMvM's matrix fault-in before its loop).
+    if (calShm[0].md[0].atype == _DATATYPE_FLOAT)
+        daoToolsShmCalibrate(inShm, ffShm, bgShm, calShm);
+    else
+        daoToolsShmCalibrate64(inShm, ffShm, bgShm, calShm);
+
+    unsigned long iter = 0;
+    double calAccum = 0.0, fpsAccum = 0.0;
+
+    clock_gettime(CLOCK_MONOTONIC, &t[1]);
     while (end ==0)
     {
         t[0] = t[1];
-        clock_gettime(CLOCK_REALTIME, &timeout);
+        clock_gettime(CLOCK_REALTIME, &timeout);   // sem_timedwait deadline is CLOCK_REALTIME
         timeout.tv_sec += 1; // 1 second timeout
-        if (daoShmWaitForSemaphoreTimeout(inShm, semNb, &timeout) != -1)
+        if (daoShmWaitForSemaphoreTimeout(inShm, semNb, &timeout) != DAO_TIMEOUT)
         {
-            clock_gettime(CLOCK_REALTIME, &t[2]);
+            clock_gettime(CLOCK_MONOTONIC, &t[2]);
             if (calShm[0].md[0].atype == _DATATYPE_FLOAT)
             {
                 daoToolsShmCalibrate(inShm, ffShm, bgShm, calShm);
@@ -121,22 +159,35 @@ static int realTimeLoop()
                 daoToolsShmCalibrate64(inShm, ffShm, bgShm, calShm);
             }
 
-            clock_gettime(CLOCK_REALTIME, &t[1]);
+            clock_gettime(CLOCK_MONOTONIC, &t[1]);
             elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
             elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
             calTime = (t[1].tv_sec - t[2].tv_sec) * 1e3;
             calTime += (t[1].tv_nsec - t[2].tv_nsec) / 1e6;
-            printf("\rcal time = %8.3f us, fps = %8.3f Hz, %d", 
-                   1000*calTime,
-                   1e6 / (1000 * elapsedTime),
-                   inSize); 
+
+            // Accumulate telemetry and print only once every CAL_PRINT_EVERY
+            // frames: a per-iteration write() syscall was the main source of
+            // jitter/latency when the same pattern was fixed in daoMvM.
+            calAccum += calTime;
+            fpsAccum += (elapsedTime > 0.0) ? 1e3 / elapsedTime : 0.0;
+            if (++iter % CAL_PRINT_EVERY == 0)
+            {
+                printf("\rcal time = %8.3f us, fps = %8.3f Hz (avg/%d), %d   ",
+                       1000 * calAccum / CAL_PRINT_EVERY,
+                       fpsAccum / CAL_PRINT_EVERY,
+                       CAL_PRINT_EVERY,
+                       inSize);
+                fflush(stdout);
+                calAccum = 0.0;
+                fpsAccum = 0.0;
+            }
         }
         else
         {
             waitCounter += 1;
             printf("\rWAIT %d", waitCounter);
+            fflush(stdout);
         }
-        fflush(stdout);
     }
 
 
@@ -194,9 +245,13 @@ static void DecodeArgs(int argc, char **argv)
                         daoInfo("background       : %s\n", bgShmName);
                         daoInfo("calibrated image : %s\n", calShmName);
                         break;
-            case 's':	
+            case 's':
                         (void)sscanf(*argv++,"%d", &semNb); argc -= 1;
                         daoInfo("inputShm sem     : %d \n", semNb);
+                        break;
+            case 'C':
+                        (void)sscanf(*argv++,"%d", &rtCpu); argc -= 1;
+                        daoInfo("RT thread CPU    : %d \n", rtCpu);
                         break;
             case 'L':
                         daoInfo("Apply Falt and Background from SHM real time control\n");
@@ -225,6 +280,10 @@ int main(int argc, char **argv)
     // r = seteuid(euid_called); //This goes up to maximum privileges
     sched_setscheduler(0, SCHED_FIFO, &schedpar); //other option is SCHED_RR, might be faster
     // r = seteuid(euid_real);//Go back to normal privileges
+
+    // Lock the address space in RAM: a page fault inside the loop is unbounded jitter.
+    if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0)
+        daoWarning("mlockall failed: run scripts/daoToolSetCap to grant RT capabilities. Continuing, but not optimized for real-time.\n");
 
     sArgv0 = *argv;
 

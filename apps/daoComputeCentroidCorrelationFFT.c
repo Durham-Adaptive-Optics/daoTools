@@ -30,8 +30,13 @@
 
 #include "dao.h"
 #include "daoTools.h"
+#include "daoToolsCorrFFT.h"
 
 /*==========================================================================*/
+#define CORR_FFT_PRINT_INTERVAL_S 1.0   /* throttle telemetry: print once every N seconds of wall time,
+                                          * not every N frames -- a frame-count throttle would make the
+                                          * print rate depend on the loop's own speed. */
+
 static int	sExit=0;						/* program exit code */
 
 //Need to install process with setuid.  Then, so you aren't running privileged all the time do this:
@@ -43,16 +48,15 @@ struct timespec tnow;
 double tnowdouble;
 double tlastupdatedouble;
 
-char inShmName[32];
-char refImageShmName[32];
-char centroidShmName[32];
-char thresholdShmName[32];
-char subApCentreShmName[32];
+char inShmName[256];
+char refImageShmName[256];
+char centroidShmName[256];
+char thresholdShmName[256];
+char subApCentreShmName[256];
 int subaSize;
 int nbSuba;
-int searchRange;
 int semNb = 0;
-float refAlpha = 0.0f;   /* running-average reference update rate; 0 = disabled (default) */
+double refAlpha = 0.0;   /* running-average reference update rate; 0 = disabled (default) */
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -76,14 +80,16 @@ static void ShowHelp(void)
     daoInfo("   -a <alpha>       running-average reference update rate in (0,1], 0=disabled (default)\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage:\n");
-    daoInfo("   -S <in SHM> <centroid SHM> <subAp Centres SHM> <ref image SHM> <threshold SHM> <subaSize> <nbSuba> <searchRange> -s <semNb> [-a <alpha>] -L\n");
+    daoInfo("   -S <in SHM> <centroid SHM> <subAp Centres SHM> <ref image SHM> <threshold SHM> <subaSize> <nbSuba> -s <semNb> [-a <alpha>] -L\n");
     daoInfo("\n");
-    daoInfo("   Correlation centroider: cross-correlates each subaperture spot against\n");
-    daoInfo("   a reference spot image (instead of a center-of-gravity). The ref image\n");
-    daoInfo("   SHM holds one <subaSize>x<subaSize> template per subaperture, stacked\n");
-    daoInfo("   row-wise: subaperture s occupies rows [s*subaSize .. (s+1)*subaSize-1].\n");
-    daoInfo("   searchRange is the integer pixel search half-range for the correlation\n");
-    daoInfo("   peak (must be <= %d, see DAO_CENTROID_CORR_MAX_SEARCH_RANGE).\n", DAO_CENTROID_CORR_MAX_SEARCH_RANGE);
+    daoInfo("   FFT correlation centroider: same idea as daoComputeCentroidCorrelation,\n");
+    daoInfo("   but computes the full periodic correlation surface for each subaperture\n");
+    daoInfo("   via FFT instead of a windowed shift search -- the whole box is searched\n");
+    daoInfo("   for the price of one FFT round trip, no searchRange argument needed.\n");
+    daoInfo("   The ref image SHM holds one <subaSize>x<subaSize> template per\n");
+    daoInfo("   subaperture, stacked row-wise, same layout as the windowed version.\n");
+    daoInfo("   Precision (float32 vs float64) is auto-detected from the input image\n");
+    daoInfo("   SHM's atype; all 5 SHMs must share that same atype.\n");
     daoInfo("\n");
     daoInfo("   -a enables a running-average (EMA) update of the reference: after each\n");
     daoInfo("   frame's centroids are computed and PUBLISHED, the just-observed spot\n");
@@ -119,13 +125,53 @@ static int realTimeLoop()
     daoShmShm2Img(refImageShmName, &refImageShm[0]);
     daoShmShm2Img(thresholdShmName, &thresholdShm[0]);
 
+    // Precision (float32 vs float64) is decided by the input image SHM's
+    // atype, matching daoMvMGPU's gIsFloat pattern; every other SHM must
+    // agree, since they're all read through the same-typed union member.
+    int gIsFloat = (inShm[0].md[0].atype == _DATATYPE_FLOAT);
+    if (!gIsFloat && inShm[0].md[0].atype != _DATATYPE_DOUBLE) {
+        daoError("daoComputeCentroidCorrelationFFT: unsupported input atype %d (need float or double)\n",
+                 inShm[0].md[0].atype);
+        return -1;
+    }
+    uint8_t wantType = gIsFloat ? _DATATYPE_FLOAT : _DATATYPE_DOUBLE;
+    if (centroidShm[0].md[0].atype != wantType || subApCentreShm[0].md[0].atype != wantType ||
+        refImageShm[0].md[0].atype != wantType || thresholdShm[0].md[0].atype != wantType) {
+        daoError("daoComputeCentroidCorrelationFFT: all 5 SHMs must share the input image's atype (%s)\n",
+                 gIsFloat ? "float" : "double");
+        return -1;
+    }
+    daoInfo("precision: %s (from %s)\n", gIsFloat ? "float32" : "float64", inShmName);
+
+    // FFTW plan creation + reference-template FFTs are not real-time-safe and
+    // the reference doesn't change frame to frame, so this happens once here.
+    daoCentroidCorrFFTCtx       *ctx  = NULL;
+    daoCentroidCorrFFTDoubleCtx *ctxD = NULL;
+    if (gIsFloat) {
+        ctx = daoCentroidSpotsCorrelationFFTInit(subaSize, nbSuba, refImageShm[0].array.F);
+        if (ctx == NULL) {
+            daoError("daoCentroidSpotsCorrelationFFTInit failed, exiting\n");
+            return -1;
+        }
+    } else {
+        ctxD = daoCentroidSpotsCorrelationFFTDoubleInit(subaSize, nbSuba, refImageShm[0].array.D);
+        if (ctxD == NULL) {
+            daoError("daoCentroidSpotsCorrelationFFTDoubleInit failed, exiting\n");
+            return -1;
+        }
+    }
+
     int inSize = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
     struct timespec t[3];
     struct timespec timeout;
     double elapsedTime;
     double compTime;
     int cnt=0;
+    unsigned long iter = 0;
+    double compAccum = 0.0, fpsAccum = 0.0;
+    struct timespec tLastPrint;
     clock_gettime(CLOCK_REALTIME, &t[1]);
+    tLastPrint = t[1];
     usleep(2000000);
     while (end ==0)
     {
@@ -139,63 +185,108 @@ static int realTimeLoop()
             // New image, insert something here
             centroidShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
 
-            daoCentroidSpotsCorrelation(inShm[0].array.F,
-                             inShm[0].md[0].size[1],
-                             inShm[0].md[0].size[0],
-                             subApCentreShm[0].array.F,
-                             refImageShm[0].array.F,
-                             subaSize,
-                             nbSuba,
-                             searchRange,
-                             thresholdShm[0].array.F[0],
-                             centroidShm[0].array.F);
-            daoShmImagePart2ShmFinalize(&centroidShm[0]);
-
-            // Off the critical path: this frame's centroids are already
-            // published above, so there is plenty of time before the next
-            // frame's semaphore wait to blend the just-observed, now-aligned
-            // spot into the reference (see daoCentroidSpotsUpdateReference).
-            // No-op when refAlpha <= 0 (the default).
-            // threshold=0 here deliberately, NOT thresholdShm's value: that
-            // threshold is tuned to suppress background for centroiding, but
-            // applying it to the reference template zero-clips real signal in
-            // the spot's low-amplitude wings. Since the reference feeds on its
-            // own thresholded output every update, that erosion compounds.
-            if (refAlpha > 0.0f) {
-                daoCentroidSpotsUpdateReference(inShm[0].array.F,
+            if (gIsFloat) {
+                daoCentroidSpotsCorrelationFFT(ctx,
+                                 inShm[0].array.F,
                                  inShm[0].md[0].size[1],
                                  inShm[0].md[0].size[0],
                                  subApCentreShm[0].array.F,
-                                 centroidShm[0].array.F,
-                                 subaSize,
-                                 nbSuba,
-                                 0.0f,
-                                 refAlpha,
-                                 refImageShm[0].array.F);
-                daoShmImagePart2ShmFinalize(&refImageShm[0]);
+                                 thresholdShm[0].array.F[0],
+                                 centroidShm[0].array.F);
+            } else {
+                daoCentroidSpotsCorrelationFFTDouble(ctxD,
+                                 inShm[0].array.D,
+                                 inShm[0].md[0].size[1],
+                                 inShm[0].md[0].size[0],
+                                 subApCentreShm[0].array.D,
+                                 thresholdShm[0].array.D[0],
+                                 centroidShm[0].array.D);
             }
+            daoShmImagePart2ShmFinalize(&centroidShm[0]);
 
             clock_gettime(CLOCK_REALTIME, &t[1]);
             elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
             elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
             compTime = (t[1].tv_sec - t[2].tv_sec) * 1e3;
             compTime += (t[1].tv_nsec - t[2].tv_nsec) / 1e6;
-            printf("\rcompTime = %.3f ms, fps = %8.3f Hz, %d in=[%6.3f,%6.3f,...,%6.3f], out[%6.3f, %6.3f,...,%6.3f]", compTime, 1e6/(1000*elapsedTime),
-                                                                                  inSize, (float)inShm[0].array.F[0],
-                                                                                  (float)inShm[0].array.F[1],
-                                                                                  (float)inShm[0].array.F[inSize],
-                                                                                  centroidShm[0].array.F[0],
-                                                                                  centroidShm[0].array.F[1],
-                                                                                  centroidShm[0].array.F[2]);
+
+            // Off the critical path: this frame's centroids are already
+            // published above, so there is plenty of time before the next
+            // frame's semaphore wait to blend the just-observed, now-aligned
+            // spot into the reference (see daoCentroidSpotsCorrelationFFTUpdateRef).
+            // No-op when refAlpha <= 0 (the default).
+            // threshold=0 here deliberately, NOT thresholdShm's value: that
+            // threshold is tuned to suppress background for centroiding, but
+            // applying it to the reference template zero-clips real signal in
+            // the spot's low-amplitude wings. Since the reference feeds on its
+            // own thresholded output every update, that erosion compounds.
+            if (refAlpha > 0.0) {
+                if (gIsFloat) {
+                    daoCentroidSpotsCorrelationFFTUpdateRef(ctx,
+                                     inShm[0].array.F,
+                                     inShm[0].md[0].size[1],
+                                     inShm[0].md[0].size[0],
+                                     subApCentreShm[0].array.F,
+                                     centroidShm[0].array.F,
+                                     0.0f,
+                                     (float)refAlpha,
+                                     refImageShm[0].array.F);
+                } else {
+                    daoCentroidSpotsCorrelationFFTUpdateRefDouble(ctxD,
+                                     inShm[0].array.D,
+                                     inShm[0].md[0].size[1],
+                                     inShm[0].md[0].size[0],
+                                     subApCentreShm[0].array.D,
+                                     centroidShm[0].array.D,
+                                     0.0,
+                                     refAlpha,
+                                     refImageShm[0].array.D);
+                }
+                daoShmImagePart2ShmFinalize(&refImageShm[0]);
+            }
+
+            // Accumulate telemetry; print only once every CORR_FFT_PRINT_INTERVAL_S
+            // seconds of wall time (not every N frames -- a frame-count throttle
+            // would make the print rate track the loop's own speed) so the
+            // per-iteration fflush(stdout) stays off the critical path.
+            compAccum += compTime;
+            fpsAccum  += (elapsedTime > 0.0) ? 1e3 / elapsedTime : 0.0;
+            iter++;
+            double sinceLastPrint = (t[1].tv_sec - tLastPrint.tv_sec)
+                                   + (t[1].tv_nsec - tLastPrint.tv_nsec) / 1e9;
+            if (sinceLastPrint >= CORR_FFT_PRINT_INTERVAL_S && iter > 0)
+            {
+                float in0, in1, inN, out0, out1, out2;
+                if (gIsFloat) {
+                    in0 = inShm[0].array.F[0]; in1 = inShm[0].array.F[1]; inN = inShm[0].array.F[inSize];
+                    out0 = centroidShm[0].array.F[0]; out1 = centroidShm[0].array.F[1]; out2 = centroidShm[0].array.F[2];
+                } else {
+                    in0 = (float)inShm[0].array.D[0]; in1 = (float)inShm[0].array.D[1]; inN = (float)inShm[0].array.D[inSize];
+                    out0 = (float)centroidShm[0].array.D[0]; out1 = (float)centroidShm[0].array.D[1]; out2 = (float)centroidShm[0].array.D[2];
+                }
+                printf("\rcompTime = %9.3f ms, fps = %8.3f Hz (avg/%.1fs, %lu frames), %d in=[%6.3f,%6.3f,...,%6.3f], out[%6.3f, %6.3f,...,%6.3f]",
+                       compAccum / iter, fpsAccum / iter, sinceLastPrint, iter,
+                       inSize, in0, in1, inN, out0, out1, out2);
+                fflush(stdout);
+                compAccum = 0.0;
+                fpsAccum  = 0.0;
+                iter = 0;
+                tLastPrint = t[1];
+            }
         }
         else
         {
             printf("\r WAIT %d", cnt);
             cnt++;
+            fflush(stdout);
         }
-        fflush(stdout);
     }
 
+    if (gIsFloat) {
+        daoCentroidSpotsCorrelationFFTFree(ctx);
+    } else {
+        daoCentroidSpotsCorrelationFFTDoubleFree(ctxD);
+    }
 
     daoInfo("EXITING MAIN LOOP\n");
     fflush(stdout);
@@ -244,15 +335,14 @@ static void DecodeArgs(int argc, char **argv)
                         (void)usleep(a1);
                         break;
             case 'S':
-                        daoInfo("Correlation centroider from SHM real time control\n");
-                    	(void)sscanf(*argv++,"%s", inShmName); argc -= 1;
-                        (void)sscanf(*argv++,"%s", centroidShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", subApCentreShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", refImageShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", thresholdShmName); argc -= 1;
+                        daoInfo("FFT correlation centroider from SHM real time control\n");
+                    	(void)sscanf(*argv++,"%255s", inShmName); argc -= 1;
+                        (void)sscanf(*argv++,"%255s", centroidShmName); argc -= 1;
+                    	(void)sscanf(*argv++,"%255s", subApCentreShmName); argc -= 1;
+                    	(void)sscanf(*argv++,"%255s", refImageShmName); argc -= 1;
+                    	(void)sscanf(*argv++,"%255s", thresholdShmName); argc -= 1;
                     	(void)sscanf(*argv++,"%d", &subaSize); argc -= 1;
                     	(void)sscanf(*argv++,"%d", &nbSuba); argc -= 1;
-                    	(void)sscanf(*argv++,"%d", &searchRange); argc -= 1;
                         daoInfo("inShmName = %s\n", inShmName);
                         daoInfo("centroidShmName = %s\n", centroidShmName);
                         daoInfo("subApCentreShmName = %s\n", subApCentreShmName);
@@ -260,15 +350,14 @@ static void DecodeArgs(int argc, char **argv)
                         daoInfo("thresholdShmName = %s\n", thresholdShmName);
                         daoInfo("subaSize = %d\n", subaSize);
                         daoInfo("nbSuba = %d\n", nbSuba);
-                        daoInfo("searchRange = %d\n", searchRange);
                         break;
             case 's':
                         (void)sscanf(*argv++,"%d", &semNb); argc -= 1;
                         daoInfo("inputShm sem       = %d \n", semNb);
                         break;
             case 'a':
-                        (void)sscanf(*argv++,"%f", &refAlpha); argc -= 1;
-                        daoInfo("refAlpha           = %g %s\n", refAlpha, refAlpha > 0.0f ? "" : "(disabled)");
+                        (void)sscanf(*argv++,"%lf", &refAlpha); argc -= 1;
+                        daoInfo("refAlpha           = %g %s\n", refAlpha, refAlpha > 0.0 ? "" : "(disabled)");
                         break;
             case 'L':
                         realTimeLoop();

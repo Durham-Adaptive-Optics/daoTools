@@ -402,54 +402,59 @@ int_fast8_t daoToolsShmCalibrate64(IMAGE* inShm, IMAGE* ffShm, IMAGE* bgShm, IMA
     int k;
     int calSize = calShm[0].md[0].size[0] * calShm[0].md[0].size[1];
     calShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
+    // Formula matches daoToolsShmCalibrate (float path): (in - bg) * ff,
+    // i.e. dark-subtract before flat-fielding. This used to be
+    // (in * ff) - bg here, a different (incorrect) calibration order, and
+    // the _DATATYPE_FLOAT branch read inShm[0].array.D (double) on a float
+    // image and ffShm[0].array.F (float) instead of .D - both fixed below.
     if (inShm[0].md[0].atype == _DATATYPE_UINT8) {
         for (k = 0; k < calSize; k++) {
-            calShm[0].array.D[k] = ((double)inShm[0].array.UI8[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
+            calShm[0].array.D[k] = ((double)inShm[0].array.UI8[k] - bgShm[0].array.D[k]) * ffShm[0].array.D[k];
         }
     }
     else if (inShm[0].md[0].atype == _DATATYPE_INT8) {
         for (k = 0; k < calSize; k++) {
-            calShm[0].array.D[k] = ((double)inShm[0].array.SI8[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
+            calShm[0].array.D[k] = ((double)inShm[0].array.SI8[k] - bgShm[0].array.D[k]) * ffShm[0].array.D[k];
         }
     }
     else if (inShm[0].md[0].atype == _DATATYPE_UINT16) {
         for (k = 0; k < calSize; k++) {
-            calShm[0].array.D[k] = ((double)inShm[0].array.UI16[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
+            calShm[0].array.D[k] = ((double)inShm[0].array.UI16[k] - bgShm[0].array.D[k]) * ffShm[0].array.D[k];
         }
     }
     else if (inShm[0].md[0].atype == _DATATYPE_INT16) {
         for (k = 0; k < calSize; k++) {
-            calShm[0].array.D[k] = ((double)inShm[0].array.SI16[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
+            calShm[0].array.D[k] = ((double)inShm[0].array.SI16[k] - bgShm[0].array.D[k]) * ffShm[0].array.D[k];
         }
     }
     else if (inShm[0].md[0].atype == _DATATYPE_UINT32) {
         for (k = 0; k < calSize; k++) {
-            calShm[0].array.D[k] = ((double)inShm[0].array.UI32[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
+            calShm[0].array.D[k] = ((double)inShm[0].array.UI32[k] - bgShm[0].array.D[k]) * ffShm[0].array.D[k];
         }
     }
     else if (inShm[0].md[0].atype == _DATATYPE_INT32) {
         for (k = 0; k < calSize; k++) {
-            calShm[0].array.D[k] = ((double)inShm[0].array.SI32[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
+            calShm[0].array.D[k] = ((double)inShm[0].array.SI32[k] - bgShm[0].array.D[k]) * ffShm[0].array.D[k];
         }
     }
     else if (inShm[0].md[0].atype == _DATATYPE_UINT64) {
         for (k = 0; k < calSize; k++) {
-            calShm[0].array.D[k] = ((double)inShm[0].array.UI64[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
+            calShm[0].array.D[k] = ((double)inShm[0].array.UI64[k] - bgShm[0].array.D[k]) * ffShm[0].array.D[k];
         }
     }
     else if (inShm[0].md[0].atype == _DATATYPE_INT64) {
         for (k = 0; k < calSize; k++) {
-            calShm[0].array.D[k] = ((double)inShm[0].array.SI64[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
+            calShm[0].array.D[k] = ((double)inShm[0].array.SI64[k] - bgShm[0].array.D[k]) * ffShm[0].array.D[k];
         }
     }
     else if (inShm[0].md[0].atype == _DATATYPE_FLOAT) {
         for (k = 0; k < calSize; k++) {
-            calShm[0].array.D[k] = ((double)inShm[0].array.D[k] * ffShm[0].array.F[k]) - bgShm[0].array.D[k];
+            calShm[0].array.D[k] = ((double)inShm[0].array.F[k] - bgShm[0].array.D[k]) * ffShm[0].array.D[k];
         }
     }
     else if (inShm[0].md[0].atype == _DATATYPE_DOUBLE) {
         for (k = 0; k < calSize; k++) {
-            calShm[0].array.D[k] = ((double)inShm[0].array.D[k] * ffShm[0].array.D[k]) - bgShm[0].array.D[k];
+            calShm[0].array.D[k] = ((double)inShm[0].array.D[k] - bgShm[0].array.D[k]) * ffShm[0].array.D[k];
         }
     }
     daoShmImagePart2ShmFinalize(&calShm[0]);
@@ -1184,6 +1189,34 @@ int_fast8_t daoCentroidSpotsRelativeRef(float* image,
     return DAO_SUCCESS;
 }
 
+/* Coarse-search grid spacing used by daoCentroidSpotsCorrelation's
+ * coarse-to-fine peak search (see below). Only used internally -- not part
+ * of the function's calling contract, so it isn't in the header. */
+#define DAO_CENTROID_CORR_COARSE_STRIDE 2
+
+/* Cross-correlation sum of the boxSize x boxSize reference template against
+ * the observed image at one integer shift (dx, dy) from (x0, y0). Pixels
+ * below @p threshold are treated as zero in the observed image only. Shared
+ * by the coarse pass, the fine pass, and the on-demand sub-pixel refinement
+ * in daoCentroidSpotsCorrelation below. */
+static float daoCentroidCorrSum(const float* image, int imageSizeX,
+    int x0, int y0, int dx, int dy,
+    const float* subRef, int boxSize, float threshold) {
+    float sum = 0.0f;
+    for (int i = 0; i < boxSize; ++i) {
+        const float* imRow  = image + (size_t)(y0 + dy + i) * imageSizeX + (x0 + dx);
+        const float* refRow = subRef + (size_t)i * boxSize;
+        for (int j = 0; j < boxSize; ++j) {
+            float pixel = imRow[j];
+            if (pixel < threshold) {
+                pixel = 0.0f;
+            }
+            sum += pixel * refRow[j];
+        }
+    }
+    return sum;
+}
+
 /**
  * @brief Compute centroids relative to reference positions using image correlation.
  *
@@ -1195,26 +1228,39 @@ int_fast8_t daoCentroidSpotsRelativeRef(float* image,
  * reference spot image is supplied (e.g. a synthetic Gaussian, or a spot
  * measured during calibration).
  *
- * For each subaperture:
- * 1) the `boxSize x boxSize` reference template is cross-correlated against
- *    the observed image at every integer shift `(dx, dy)` in
- *    `[-searchRange..searchRange]^2` (pixels below @p threshold are treated
- *    as zero in the observed image only, to suppress background/dark
- *    current -- the reference template is used as supplied, unmodified),
- * 2) the integer shift with the highest correlation is refined to sub-pixel
- *    precision with an independent 3-point parabolic fit along x and y
- *    around the peak,
- * 3) the resulting `(dx, dy)` is returned relative to the reference
- *    position -- this is the WFS slope signal.
+ * For each subaperture, the `boxSize x boxSize` reference template is
+ * cross-correlated against the observed image (pixels below @p threshold are
+ * treated as zero in the observed image only; the reference template is used
+ * as supplied, unmodified) to find the integer shift `(dx, dy)` in
+ * `[-searchRange..searchRange]^2` with the highest correlation, using a
+ * two-stage coarse-to-fine search rather than evaluating every shift:
+ * 1) a coarse grid at `DAO_CENTROID_CORR_COARSE_STRIDE` spacing covers the
+ *    full `[-searchRange..searchRange]^2` range to localise the peak region,
+ * 2) a dense search over a window of that same stride around the coarse
+ *    peak (clipped to `[-searchRange..searchRange]`) finds the true integer
+ *    peak -- the stride-wide margin guarantees the true peak, if it lies
+ *    within the search range at all, falls inside this dense window.
+ * This covers the *full* `searchRange` at roughly `1/searchRange` of the
+ * cost of a flat dense search, so (unlike shrinking `searchRange` itself) it
+ * does not reduce the dynamic range the centroider can track.
  *
- * The correlation is a plain (non-normalized) cross-correlation, not NCC, so
- * its peak value scales with flux -- useful as a quality/flux diagnostic,
- * not an absolute similarity measure.
+ * The integer peak is then refined to sub-pixel precision with an
+ * independent 3-point parabolic fit along x and y; the up-to-4 neighbouring
+ * correlation values it needs are (re)computed on demand rather than assumed
+ * already known from the coarse/fine passes, so this refinement is correct
+ * regardless of the search geometry above.
+ *
+ * The resulting `(dx, dy)` is returned relative to the reference position --
+ * this is the WFS slope signal. The correlation itself is a plain
+ * (non-normalized) cross-correlation, not NCC, so its peak value scales with
+ * flux -- useful as a quality/flux diagnostic, not an absolute similarity
+ * measure.
  *
  * If the best integer shift lands on the edge of the search range (+-
  * searchRange), the sub-pixel refinement is skipped for that axis and the
  * integer shift is returned as-is, since the parabolic fit would otherwise
- * extrapolate past the computed samples.
+ * extrapolate past the computed samples -- i.e. spot motion beyond
+ * searchRange is still clamped, same as a flat dense search.
  *
  * Reference positions, the reference image stack, and outputs use a
  * Structure-of-Arrays (SoA) layout.
@@ -1240,11 +1286,11 @@ int_fast8_t daoCentroidSpotsRelativeRef(float* image,
  * - Subaperture bounds are closed intervals; no bounds checking is performed
  *   against the image edges, so `boxSize/2 + searchRange` pixels of margin
  *   are required around every reference position.
- * - @p searchRange must not exceed `DAO_CENTROID_CORR_MAX_SEARCH_RANGE`: the
- *   correlation surface is a fixed-size stack buffer sized off that bound,
- *   so this function never allocates in the real-time loop. It should also
- *   stay well below `boxSize/2`, since the parabolic refinement needs
- *   correlation samples on both sides of the peak.
+ * - @p searchRange must not exceed `DAO_CENTROID_CORR_MAX_SEARCH_RANGE`, a
+ *   sanity bound on worst-case real-time compute cost (this function does
+ *   not allocate, so it is not a buffer-sizing limit). It should also stay
+ *   well below `boxSize/2`, since the parabolic refinement needs correlation
+ *   samples on both sides of the peak.
  *
  * @param[in]  image       Pointer to the input image (row-major, float)
  * @param[in]  imageSizeX  Image width (pixels)
@@ -1277,10 +1323,7 @@ int_fast8_t daoCentroidSpotsCorrelation(float* image,
         return DAO_ERROR;
     }
 
-    const int stride = 2 * searchRange + 1;
-    /* Fixed-size stack buffer (sized off the compile-time max search range)
-     * so this function never allocates in the real-time loop. */
-    float corr[(2 * DAO_CENTROID_CORR_MAX_SEARCH_RANGE + 1) * (2 * DAO_CENTROID_CORR_MAX_SEARCH_RANGE + 1)];
+    const int coarseStride = DAO_CENTROID_CORR_COARSE_STRIDE;
 
     /* Reference position arrays (SoA layout) */
     float* refX = ref;
@@ -1296,48 +1339,80 @@ int_fast8_t daoCentroidSpotsCorrelation(float* image,
         const int y0 = (int)roundf(refY[s]) - boxSize / 2;
         const float* subRef = refImage + (size_t)s * boxSize * boxSize;
 
-        /* Cross-correlate the reference template against every integer shift */
         float peak = -INFINITY;
         int bestDx = 0, bestDy = 0;
-        for (int dy = -searchRange; dy <= searchRange; ++dy) {
-            for (int dx = -searchRange; dx <= searchRange; ++dx) {
-                float sum = 0.0f;
-                for (int i = 0; i < boxSize; ++i) {
-                    const float* imRow  = image + (size_t)(y0 + dy + i) * imageSizeX + (x0 + dx);
-                    const float* refRow = subRef + (size_t)i * boxSize;
-                    for (int j = 0; j < boxSize; ++j) {
-                        float pixel = imRow[j];
-                        if (pixel < threshold) {
-                            pixel = 0.0f;
-                        }
-                        sum += pixel * refRow[j];
+
+        if (searchRange > coarseStride) {
+            /* Stage 1: coarse grid over the full search range, to localise
+             * the peak region without evaluating every integer shift. */
+            for (int dy = -searchRange; dy <= searchRange; dy += coarseStride) {
+                for (int dx = -searchRange; dx <= searchRange; dx += coarseStride) {
+                    float sum = daoCentroidCorrSum(image, imageSizeX, x0, y0, dx, dy,
+                                                    subRef, boxSize, threshold);
+                    if (sum > peak) {
+                        peak = sum;
+                        bestDx = dx;
+                        bestDy = dy;
                     }
                 }
-                corr[(dy + searchRange) * stride + (dx + searchRange)] = sum;
-                if (sum > peak) {
-                    peak = sum;
-                    bestDx = dx;
-                    bestDy = dy;
+            }
+
+            /* Stage 2: dense search around the coarse peak, over a window as
+             * wide as the coarse spacing (clipped to searchRange) -- wide
+             * enough to guarantee the true peak falls inside it. */
+            int fy0 = bestDy - coarseStride; if (fy0 < -searchRange) fy0 = -searchRange;
+            int fy1 = bestDy + coarseStride; if (fy1 >  searchRange) fy1 =  searchRange;
+            int fx0 = bestDx - coarseStride; if (fx0 < -searchRange) fx0 = -searchRange;
+            int fx1 = bestDx + coarseStride; if (fx1 >  searchRange) fx1 =  searchRange;
+            for (int dy = fy0; dy <= fy1; ++dy) {
+                for (int dx = fx0; dx <= fx1; ++dx) {
+                    float sum = daoCentroidCorrSum(image, imageSizeX, x0, y0, dx, dy,
+                                                    subRef, boxSize, threshold);
+                    if (sum > peak) {
+                        peak = sum;
+                        bestDx = dx;
+                        bestDy = dy;
+                    }
+                }
+            }
+        }
+        else {
+            /* Search range too small for coarse-to-fine to pay off: just
+             * search it densely (same as before). */
+            for (int dy = -searchRange; dy <= searchRange; ++dy) {
+                for (int dx = -searchRange; dx <= searchRange; ++dx) {
+                    float sum = daoCentroidCorrSum(image, imageSizeX, x0, y0, dx, dy,
+                                                    subRef, boxSize, threshold);
+                    if (sum > peak) {
+                        peak = sum;
+                        bestDx = dx;
+                        bestDy = dy;
+                    }
                 }
             }
         }
 
-        /* Sub-pixel refinement: independent 3-point parabolic fit along x and y */
+        /* Sub-pixel refinement: independent 3-point parabolic fit along x and
+         * y. Neighbour correlation values are recomputed on demand (up to 4
+         * extra boxSize^2 evaluations) rather than assumed cached from the
+         * search above, so this stays correct regardless of its geometry. */
         float subDx = 0.0f, subDy = 0.0f;
         if (bestDx > -searchRange && bestDx < searchRange) {
-            float cL = corr[(bestDy + searchRange) * stride + (bestDx - 1 + searchRange)];
-            float cC = corr[(bestDy + searchRange) * stride + (bestDx     + searchRange)];
-            float cR = corr[(bestDy + searchRange) * stride + (bestDx + 1 + searchRange)];
-            float denom = cL - 2.0f * cC + cR;
+            float cL = daoCentroidCorrSum(image, imageSizeX, x0, y0, bestDx - 1, bestDy,
+                                           subRef, boxSize, threshold);
+            float cR = daoCentroidCorrSum(image, imageSizeX, x0, y0, bestDx + 1, bestDy,
+                                           subRef, boxSize, threshold);
+            float denom = cL - 2.0f * peak + cR;
             if (fabsf(denom) > 1e-12f) {
                 subDx = 0.5f * (cL - cR) / denom;
             }
         }
         if (bestDy > -searchRange && bestDy < searchRange) {
-            float cL = corr[(bestDy - 1 + searchRange) * stride + (bestDx + searchRange)];
-            float cC = corr[(bestDy     + searchRange) * stride + (bestDx + searchRange)];
-            float cR = corr[(bestDy + 1 + searchRange) * stride + (bestDx + searchRange)];
-            float denom = cL - 2.0f * cC + cR;
+            float cL = daoCentroidCorrSum(image, imageSizeX, x0, y0, bestDx, bestDy - 1,
+                                           subRef, boxSize, threshold);
+            float cR = daoCentroidCorrSum(image, imageSizeX, x0, y0, bestDx, bestDy + 1,
+                                           subRef, boxSize, threshold);
+            float denom = cL - 2.0f * peak + cR;
             if (fabsf(denom) > 1e-12f) {
                 subDy = 0.5f * (cL - cR) / denom;
             }
@@ -1349,6 +1424,137 @@ int_fast8_t daoCentroidSpotsCorrelation(float* image,
     }
 
     return DAO_SUCCESS;
+}
+
+/**
+ * @brief Blend a centroid-aligned observed window into a persisted reference
+ * template stack, with an exponential moving average (EMA).
+ *
+ * Intended to be called once per frame, strictly *after* this frame's
+ * centroids have already been computed (by daoCentroidSpotsCorrelation or
+ * daoCentroidSpotsCorrelationFFT) and published -- it is not on the
+ * real-time critical path. @p refImageInOut is updated in place, so only
+ * the *next* frame's centroiding sees the refreshed reference; this frame's
+ * result is unaffected.
+ *
+ * This exists because a correlation centroider's accuracy degrades as the
+ * observed spot drifts away from the reference template's shape (e.g.
+ * seeing changes elongating/splitting a spot); periodically refreshing the
+ * reference from live data tracks that drift instead of leaving it fixed at
+ * whatever it was calibrated with. See Poyneer, "Scene-based Shack-Hartmann
+ * wave-front sensing," Appl. Opt. 42(29), 5808 (2003) sec. 2D, for the
+ * analogous tradeoff in a different context (scene content drift rather
+ * than spot shape drift): a continuously-updated reference tracks change
+ * but adds noise -- she reports 2-3x the variance of a fixed reference when
+ * using a *single* new frame as the next reference outright. A slow EMA
+ * (small alpha) is a middle ground: it tracks drift while averaging
+ * measurement noise down, instead of injecting one full fresh frame's worth
+ * of it every step.
+ *
+ * The observed window is extracted at the reference position shifted by the
+ * *rounded* (whole-pixel) part of @p cent's cx/cy, so it stays registered
+ * against the reference frame even while the loop is tracking a moving
+ * spot; the residual sub-pixel remainder is not corrected (assumed to
+ * average toward zero over many updates around a closed-loop null point).
+ * That shift is clamped to +-boxSize/4 on each axis: an outlier or garbage
+ * centroid (e.g. from an unstable loop, or an already-corrupted reference)
+ * must not be allowed to walk the extraction window arbitrarily far from
+ * the subaperture -- without this clamp, a single bad measurement can send
+ * the window onto unrelated image content (background, a neighbouring
+ * spot's wing, a hot pixel), which then becomes the new reference, which
+ * then produces another bad measurement: a runaway feedback loop. Pixels
+ * below @p threshold are treated as zero, same convention as the
+ * centroiding functions -- but note that thresholding here compounds the
+ * same way if @p threshold is nonzero: the reference feeds on its own
+ * thresholded output every update, and a threshold that clips real signal
+ * in the spot's wings will erode the template over successive updates.
+ * Passing 0 (no threshold) is recommended unless there is a specific reason
+ * not to.
+ *
+ * @param[in]     image          Same observed image passed to the centroiding call
+ * @param[in]     imageSizeX     Image width (pixels)
+ * @param[in]     imageSizeY     Image height (pixels), unused (kept for API symmetry)
+ * @param[in]     ref            Subaperture reference positions (SoA, size `2*nSuba`)
+ * @param[in]     cent           This frame's centroid output; only cx/cy (the
+ *                                first `2*nSuba` elements, SoA) are read
+ * @param[in]     boxSize        Size of the square subaperture / reference template (pixels)
+ * @param[in]     nSuba          Number of subapertures
+ * @param[in]     threshold      Absolute pixel intensity threshold applied to the observed window
+ * @param[in]     alpha          EMA rate in (0, 1]; new = (1-alpha)*old + alpha*aligned_obs.
+ *                                Larger tracks faster but is noisier. alpha <= 0 is a no-op.
+ * @param[in,out] refImageInOut  Reference template stack updated in place (same
+ *                                per-subaperture stacked layout as
+ *                                daoCentroidSpotsCorrelation's refImage: size `nSuba*boxSize*boxSize`)
+ */
+void daoCentroidSpotsUpdateReference(const float* image, int imageSizeX, int imageSizeY,
+    const float* ref, const float* cent, int boxSize, int nSuba,
+    float threshold, float alpha, float* refImageInOut) {
+    daoTrace("\n");
+    if (alpha <= 0.0f) return;
+
+    const float* refX = ref;
+    const float* refY = ref + nSuba;
+    const float* cxIn = cent;
+    const float* cyIn = cent + nSuba;
+    const int maxShift = boxSize / 4;
+
+    for (int s = 0; s < nSuba; ++s) {
+        int shiftX = (int)roundf(cxIn[s]);
+        int shiftY = (int)roundf(cyIn[s]);
+        if (shiftX >  maxShift) shiftX =  maxShift;
+        if (shiftX < -maxShift) shiftX = -maxShift;
+        if (shiftY >  maxShift) shiftY =  maxShift;
+        if (shiftY < -maxShift) shiftY = -maxShift;
+        const int x0 = (int)roundf(refX[s]) - boxSize / 2 + shiftX;
+        const int y0 = (int)roundf(refY[s]) - boxSize / 2 + shiftY;
+        float* subRef = refImageInOut + (size_t)s * boxSize * boxSize;
+
+        for (int i = 0; i < boxSize; ++i) {
+            const float* imRow = image + (size_t)(y0 + i) * imageSizeX + x0;
+            float* refRow = subRef + (size_t)i * boxSize;
+            for (int j = 0; j < boxSize; ++j) {
+                float pixel = imRow[j];
+                if (pixel < threshold) pixel = 0.0f;
+                refRow[j] = (1.0f - alpha) * refRow[j] + alpha * pixel;
+            }
+        }
+    }
+}
+
+/** @brief Double-precision counterpart of daoCentroidSpotsUpdateReference. */
+void daoCentroidSpotsUpdateReferenceDouble(const double* image, int imageSizeX, int imageSizeY,
+    const double* ref, const double* cent, int boxSize, int nSuba,
+    double threshold, double alpha, double* refImageInOut) {
+    daoTrace("\n");
+    if (alpha <= 0.0) return;
+
+    const double* refX = ref;
+    const double* refY = ref + nSuba;
+    const double* cxIn = cent;
+    const double* cyIn = cent + nSuba;
+    const int maxShift = boxSize / 4;
+
+    for (int s = 0; s < nSuba; ++s) {
+        int shiftX = (int)round(cxIn[s]);
+        int shiftY = (int)round(cyIn[s]);
+        if (shiftX >  maxShift) shiftX =  maxShift;
+        if (shiftX < -maxShift) shiftX = -maxShift;
+        if (shiftY >  maxShift) shiftY =  maxShift;
+        if (shiftY < -maxShift) shiftY = -maxShift;
+        const int x0 = (int)round(refX[s]) - boxSize / 2 + shiftX;
+        const int y0 = (int)round(refY[s]) - boxSize / 2 + shiftY;
+        double* subRef = refImageInOut + (size_t)s * boxSize * boxSize;
+
+        for (int i = 0; i < boxSize; ++i) {
+            const double* imRow = image + (size_t)(y0 + i) * imageSizeX + x0;
+            double* refRow = subRef + (size_t)i * boxSize;
+            for (int j = 0; j < boxSize; ++j) {
+                double pixel = imRow[j];
+                if (pixel < threshold) pixel = 0.0;
+                refRow[j] = (1.0 - alpha) * refRow[j] + alpha * pixel;
+            }
+        }
+    }
 }
 
 /**

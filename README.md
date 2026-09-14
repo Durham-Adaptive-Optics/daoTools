@@ -1,20 +1,116 @@
 # daoTools [![daoTools](https://github.com/Durham-Adaptive-Optics/daoTools/actions/workflows/main.yml/badge.svg?branch=CI-Workflow)](https://github.com/Durham-Adaptive-Optics/daoTools/actions/workflows/main.yml)
 Useful tools using daoBase
 
+# The daoTools library
+
+`libdaoTools` (built from `src/c/daoTools.c`, declared in `include/daoTools.h`)
+is the C function library most of the `apps/` binaries below are thin
+command-line wrappers around. It covers the operations that recur across an
+AO real-time pipeline, operating directly on `dao.shm` `IMAGE`s:
+
+- **Pixel calibration** — `daoToolsShmCalibrate`/`64` (dark-subtract + flat-field,
+  float and double precision), `daoToolsShmCalibratePws` (pyramid WFS variant).
+- **Centroiding** — `daoCentroidSpots` (windowed center-of-gravity),
+  `daoCentroidSpotsRelative`/`RelativeRef` (differential centroiding),
+  `daoCentroidSpotsCorrelation` (windowed correlation search) and, when FFTW
+  is available, its FFT-based counterpart (`src/c/daoToolsCorrFFT.c`,
+  `include/daoToolsCorrFFT.h`) which searches the whole sub-aperture via one
+  FFT round trip instead of a shift search; `daoCentroidPws` for pyramid WFS.
+- **Control loop primitives** — `daoToolsLeakyIntegrator`/`Double` and the
+  per-mode `daoToolsLeakyModalIntegrator`/`Double`, `daoToolsHighPassFilter`/
+  `Double`, `daoToolsCommandFilter`.
+- **Pyramid WFS pixel pipelines** — `daoToolsShmExtract`,
+  `daoToolsShmSubstractExtract` and its normalized variants
+  (`...Norm`, `...NormA`, `...DualNorm`, plus their `...Finalize` companions).
+- **Misc.** — `daoDmCombine` (multi-channel DM command summing),
+  `daoDescrambleOcam2Image` (OCAM2K scrambled-readout reordering),
+  `daoToolsImgNormalize`, `daoComputeChecksum`, `daoRtSetup`/`daoToolsEnableFTZ`
+  (real-time process setup, denormal flush-to-zero), and `daoLogToFile`
+  (throttled, size-rotated file logging).
+
+Most `apps/*.c` binaries call straight into this library, add SHM
+attach/argument-parsing/real-time-loop boilerplate, and nothing else — the
+library is where the actual per-pixel/per-mode math lives.
+
+# daoTools.py
+
+`src/python/daoTools.py` is a general-purpose Python AO toolbox, independent
+of the C library above: a `Fifo` circular buffer, basic FITS read/write
+helpers, pupil/circular-mask generation, center-of-gravity (`cog`), a
+`Hadamard` basis, PSD/PSF computation (`computePSD`, `computePsf`,
+`computePsfRef`), a `ShackHartmannWFS` simulation class and a pyramid-WFS
+image simulator (`pwfsImage`). It predates and is separate from the
+`daoToolsLib`/pipeline-scaffolding modules also under `src/python/`.
+
+# Tools
+
+`apps/` ships 70+ command-line tools. Full usage/flags are in the Sphinx docs
+(`waf build_docs`, or `docs/source/apps.rst`); this is the index:
+
+| Category | Tools |
+|---|---|
+| **Wavefront sensing & centroiding** | `daoComputeCentroid` (core Shack-Hartmann COG) and its `Pws` / `Relative` / `RelativeRef` / `Correlation` / `CorrelationFFT` variants, `daoComputeCentroids.py` / `daoComputeCentroidsSlow.py` (Python reference), `daoComputeIntensityPws`, `daoPrepCentroidLut.py`, `daoPrepPwfs.py` |
+| **Matrix-vector multiply** | `daoMvM` (CPU, needs BLAS), `daoMvMGPU` (CUDA), `daoMvM.py` (Python reference) |
+| **Pixel calibration** | `daoPixelCalibrate` / `daoPixelCalibratePws`, `daoTakeBg.py` |
+| **SHM utilities** | `daoShmMonitoring` / `daoShmMonitoring1Value`, `daoShm2Fits`, `daoFits2Shm.py`, `daoSnapshot.py`, `daoShmRate.py` |
+| **SHM arithmetic** | `daoShmAdd`, `daoShmCombiner`, `daoShmConcatenate` / `daoShmConcatenateFine`, `daoAvgShm` / `daoAvgDoubleShm`, `daoStatShm`, `daoDownsample`, `daoPixelExtract`, `daoApplyGain` |
+| **Loop & filter** | `daoLeakyIntegrator` / `daoLeakyIntegratorMap`, `daoClock`, `daoHighPassFilter`, `daoModesCutoff` / `daoModesCutoffFull`, `daoCommandFilter` |
+| **Timing & latency** | `daoTimeDiff`, `daoTimeDiffNCurse`, `daoTimeDiffStat`, `daoSetLatency`, `daoPlotLatency.py` |
+| **Data conversion & I/O** | `daoNpy2Shm.py`, `daoTakeDataCubeFITS.py`, `daoTakeDataCubeNPY.py`, `daoDescrambleOcam2`, `daoDMSend`, `daoRandImageU16Write`, `daoRandWriter` / `daoRandWriterSync` |
+| **Simulation** | `daoReconstructor.py` (Python MVM reference), `daoTurbulenceSimulator.py`, `daoPwfsSimulator.py`, `daoNoisyPsfGenerator.py` |
+| **Logging & communication** | `daoRecvLogs.py`, `daoSendLogs.py`, `daoLogToScreen.py`, `daoProxyLog.py`, `daoSendCommand.py`, `daoStrCmd.py` / `daoReadStr.py` / `daoWriteStr.py`, `daoRemoteShmFileServer.py`, `daoRedisCheck.py`, `daoDAQCli.py` |
+| **Real-time display (RTD)** | `daoImageRTD.py` / `daoImageRTDFloat.py`, `daoBarRTD.py`, `daoShRTD.py`, `daoWavefrontRTD.py`, `daoPlotRTD.py` |
+
+# GUI
+
+`gui/` (PyQt5 + pyqtgraph, source in `docs/source/gui.rst`) ships standalone
+viewer/control applications, each reading its target straight from a `dao.shm`
+stream — pass the SHM name(s) on the command line, no config file needed:
+
+| Category | Tools |
+|---|---|
+| **Image / SHM viewing** | `daoShmViewer` (flagship multi-panel viewer, dark by default (`--light` for light mode), built-in DAQ session panel, and a "SHM Latency" tab that launches `daoTimeDiff` in its own tmux session and live-plots the AVG/RMS it publishes for any two SHMs picked from the file list), `daoImDisp` / `daoImgDisp` (lightweight single-image viewers), `daoRTDMagic` (OpenGL-textured, lowest-latency image RTD), `daoRemoteShmViewer` (mirrors a SHM stream from another host via `daoRemoteShmFileServer.py`) |
+| **DM control & display** | `daoDmCtrl` (modal control of one DM channel through its M2A matrix — any modal basis, not analytic-only), `daoDmChannelsCtrl` (overview of all DM command channels at once, opens `daoDmCtrl` per channel), `daoDmDisp` / `daoDmDispNoMap` (read-only actuator display, mapped / raw bar chart) |
+| **Loop control** | `daoLoopDisp` (generic open/close-loop and gain/leak control panel — points at any loop's state/gain/leak scalar SHMs, default `lpCmd`/`lpGain`/`lpLeak`) |
+| **Wavefront & slopes display** | `daoWfDisp` / `daoWfDispMap` (reconstructed phase, plain or over an illumination map), `daoSlopesDisp` (X/Y slope quiver plot), `daoShDisp` (colour-coded slope grid), `daoRTDMagicSH` (low-latency Shack-Hartmann RTD), `daoTtDisp` (tip/tilt scatter monitor) |
+| **Logging & telemetry** | `daoLogMonitor` (live, filterable ZMQ log viewer), `daoShmTelemetryConfigurator` (graphical daoDAQ YAML editor, embedded in `daoShmViewer`) |
+| **Reusable widget** | `daoProcessWidget` (live process-status widget — tmux session alive/dead, CPU load, last update — embedded in other GUIs) |
+
 # Prerequiries
 ## daoBase
 daoBase should be installed. See https://github.com/Durham-Adaptive-Optics/daoBase
 
-## other dependencies (CLI11+cfitsio+libyaml-cpp+blas+fmt+zmq+protobuf)
+## Required dependencies (CLI11, cfitsio, yaml-cpp, fmt, zmq, protobuf, ncurses)
+`waf configure` fails without these - every app in `apps/` links at least protobuf,
+zmq and CLI11.
+
+Ubuntu/Debian:
 ````
-sudo apt install libcli11-dev libcfitsio-dev libyaml-cpp-dev libopenblas-dev libfmt-dev libzmq-dev libprotobuf-dev protobuf-compiler
+sudo apt install libcli11-dev libcfitsio-dev libyaml-cpp-dev libfmt-dev libzmq3-dev \
+                  libprotobuf-dev protobuf-compiler libncurses-dev
 ````
 
-## ncurses
-on centos:
+RHEL/Fedora/CentOS:
 ````
-sudo yum install ncurses-devel
+sudo yum install cfitsio-devel yaml-cpp-devel fmt-devel zeromq-devel \
+                  protobuf-devel protobuf-compiler ncurses-devel
 ````
+(CLI11 has no RHEL package as of writing; `configure` falls back to looking for
+a vendored `CLI11.hpp`/`CLI/CLI.hpp` header if pkg-config can't find it.)
+
+## Optional dependencies
+`waf configure` auto-detects each of these and **silently skips** the app(s)
+that need it if missing - not having them is not an error, just a smaller build.
+
+| dependency | apt package | enables | skipped without it |
+|---|---|---|---|
+| BLAS (any implementation) | `libopenblas-dev` | `daoMvM` (CPU real-time matrix-vector multiply) | `daoMvM` |
+| CUDA toolkit (`nvcc` + `cudart`) | see NVIDIA's install docs | `daoMvMGPU` | `daoMvMGPU` |
+| FFTW, single **and** double precision | `libfftw3-dev` | the FFT-based correlation centroider (`daoToolsCorrFFT`, `daoComputeCentroidCorrelationFFT`) | that centroider only - `daoComputeCentroidCorrelation` (the windowed-search version) is unaffected |
+
+Check `waf configure`'s output for lines like `BLAS detected: enabling BLAS
+build.` / `FFTW not found ... skipping FFT correlation centroider.` to see
+what your machine actually got.
 
 We recommand to use magicPlot
 Some of our plot tool uses magicPlot (optional)

@@ -1,0 +1,253 @@
+#!/usr/bin/env python3
+"""
+Loop Display - generic AO loop control/monitoring panel
+
+Close/open a loop and set its leaky-integrator gain and leak, with a live
+readout of an optional residual and output RMS. Talks only to plain scalar
+control SHMs (lpCmd/lpGain/lpLeak by default) plus two optional array SHMs
+for the RMS plot/readout - nothing here is tied to a specific pipeline; point
+it at any loop's SHMs with -c/-g/-l/-r/-o.
+
+Usage: daoLoopDisp.py [options]
+
+Options:
+  -c  Loop state shm: 0 = open, 1 = closed (default: /tmp/lpCmd.im.shm)
+  -g  Loop gain shm (default: /tmp/lpGain.im.shm)
+  -l  Loop leak shm (default: /tmp/lpLeak.im.shm)
+  -r  Residual/error shm, RMS plotted live (optional, e.g. slopes or a WFS residual)
+  -o  Output/command shm, RMS readout only (optional, e.g. a DM command)
+  --light  Light mode (default: dark)
+
+Any SHM that doesn't exist yet is skipped (greyed out / shown as "--") and
+retried automatically once it appears, so this can be started before or
+after the processes that create those SHMs.
+
+Examples:
+  daoLoopDisp.py
+  daoLoopDisp.py -c /tmp/lpCmd.im.shm -g /tmp/lpGain.im.shm -l /tmp/lpLeak.im.shm
+  daoLoopDisp.py -r /tmp/shCentroids.im.shm -o /tmp/dmCmd.im.shm
+  daoLoopDisp.py --light
+"""
+
+import os
+import sys
+import getopt
+from collections import deque
+
+import numpy as np
+import pyqtgraph as pg
+from PyQt5.uic import loadUiType
+from PyQt5.QtWidgets import QApplication
+from pyqtgraph.Qt import QtCore
+import dao
+
+path = os.getenv('DAOROOT') + '/data/'
+Ui_MainWindow, QMainWindow = loadUiType(os.path.join(path, 'daoLoopDisp.ui'))
+
+HIST_LEN = 300  # residual plot history, in samples
+
+
+def make_stylesheet(light):
+    if light:
+        return """
+            QMainWindow, QWidget { background-color: #f0f0f0; color: #000000; }
+            QLabel { color: #000000; }
+            QPushButton {
+                background-color: #e0e0e0; color: #000000;
+                border: 1px solid #aaa; padding: 4px 8px; border-radius: 3px;
+            }
+            QPushButton:hover   { background-color: #d0d0d0; }
+            QPushButton:pressed { background-color: #bbb; }
+            QDoubleSpinBox, QSpinBox {
+                background-color: #ffffff; color: #000000; border: 1px solid #aaa;
+            }
+            QGroupBox {
+                border: 1px solid #aaa; border-radius: 4px;
+                margin-top: 8px; color: #000000;
+            }
+            QGroupBox::title { subcontrol-origin: margin; left: 8px; color: #555555; }
+        """
+    else:
+        return """
+            QMainWindow, QWidget { background-color: #1e1e1e; color: #cccccc; }
+            QLabel { color: #cccccc; }
+            QPushButton {
+                background-color: #3a3a3a; color: #cccccc;
+                border: 1px solid #555555; padding: 4px 8px; border-radius: 3px;
+            }
+            QPushButton:hover   { background-color: #4a4a4a; }
+            QPushButton:pressed { background-color: #555555; }
+            QDoubleSpinBox, QSpinBox {
+                background-color: #3a3a3a; color: #cccccc; border: 1px solid #555555;
+            }
+            QGroupBox {
+                border: 1px solid #555555; border-radius: 4px;
+                margin-top: 8px; color: #cccccc;
+            }
+            QGroupBox::title { subcontrol-origin: margin; left: 8px; color: #aaaaaa; }
+        """
+
+
+def _open(path):
+    """Best-effort attach: None (rather than an exception) if the SHM doesn't
+    exist yet - the update loop keeps retrying so start order doesn't matter."""
+    try:
+        return dao.shm(path) if path and os.path.exists(path) else None
+    except Exception:
+        return None
+
+
+class Main(QMainWindow, Ui_MainWindow):
+    def __init__(self, shmCmdName, shmGainName, shmLeakName, shmResidName, shmOutName):
+        super(Main, self).__init__()
+        self.setupUi(self)
+
+        self.shmCmdName, self.shmGainName, self.shmLeakName = shmCmdName, shmGainName, shmLeakName
+        self.shmResidName, self.shmOutName = shmResidName, shmOutName
+        self.shmCmd = self.shmGain = self.shmLeak = None
+        self.shmResid = self.shmOut = None
+
+        self.residualPlot.showGrid(x=True, y=True, alpha=0.2)
+        self.residualPlot.setLabel('left', 'residual RMS')
+        self.curve = self.residualPlot.plot(pen=pg.mkPen('#4a9eff', width=2))
+        self.hist = deque(maxlen=HIST_LEN)
+
+        self.closeLoopButton.clicked.connect(lambda: self.setLoop(1))
+        self.openLoopButton.clicked.connect(lambda: self.setLoop(0))
+        self.gainButton.clicked.connect(self.setGain)
+        self.leakButton.clicked.connect(self.setLeak)
+
+        self.timer = QtCore.QTimer(self)
+        self.timer.setInterval(200)
+        self.timer.timeout.connect(self.Update)
+
+    def Start(self):
+        self.timer.start()
+
+    def Stop(self):
+        self.timer.stop()
+
+    # ------------------------------------------------------------------
+    def _connect(self):
+        if self.shmCmd is None:
+            self.shmCmd = _open(self.shmCmdName)
+        if self.shmGain is None:
+            self.shmGain = _open(self.shmGainName)
+        if self.shmLeak is None:
+            self.shmLeak = _open(self.shmLeakName)
+        if self.shmResid is None:
+            self.shmResid = _open(self.shmResidName)
+        if self.shmOut is None:
+            self.shmOut = _open(self.shmOutName)
+        ok = self.shmCmd is not None
+        for w in (self.closeLoopButton, self.openLoopButton, self.gainButton, self.leakButton):
+            w.setEnabled(ok)
+
+    def setLoop(self, state):
+        if self.shmCmd is not None:
+            self.shmCmd.set_data(self.shmCmd.get_data() * 0 + int(state))
+
+    def setGain(self):
+        if self.shmGain is not None:
+            self.shmGain.set_data(self.shmGain.get_data() * 0 + self.gainSpin.value())
+
+    def setLeak(self):
+        if self.shmLeak is not None:
+            self.shmLeak.set_data(self.shmLeak.get_data() * 0 + self.leakSpin.value())
+
+    # ------------------------------------------------------------------
+    @QtCore.pyqtSlot()
+    def Update(self):
+        self._connect()
+
+        closed = False
+        if self.shmCmd is not None:
+            try:
+                closed = bool(np.ravel(self.shmCmd.get_data())[0])
+            except Exception:
+                self.shmCmd = None
+        self.loopStateLabel.setText("CLOSED" if closed else "OPEN")
+        self.loopStateLabel.setStyleSheet(
+            "color:#ff5555;font-weight:bold;" if closed else "color:#55dd55;font-weight:bold;")
+        self.closeLoopButton.setStyleSheet("background-color:#2e7d32;" if closed else "")
+        self.openLoopButton.setStyleSheet("" if closed else "background-color:#2e7d32;")
+
+        if self.shmGain is not None:
+            try:
+                self.gainStateLabel.setText("current: %.3f" % float(np.ravel(self.shmGain.get_data())[0]))
+            except Exception:
+                self.shmGain = None
+        if self.shmLeak is not None:
+            try:
+                self.leakStateLabel.setText("current: %.4f" % float(np.ravel(self.shmLeak.get_data())[0]))
+            except Exception:
+                self.shmLeak = None
+
+        residRms = outRms = None
+        if self.shmResid is not None:
+            try:
+                residRms = float(np.std(self.shmResid.get_data()))
+            except Exception:
+                self.shmResid = None
+        if self.shmOut is not None:
+            try:
+                outRms = float(np.std(self.shmOut.get_data()))
+            except Exception:
+                self.shmOut = None
+
+        if residRms is not None:
+            self.hist.append(residRms)
+            self.curve.setData(np.arange(len(self.hist)), np.array(self.hist))
+
+        rTxt = "residual RMS: %.4g" % residRms if residRms is not None else "residual RMS: --"
+        oTxt = "output RMS: %.4g" % outRms if outRms is not None else "output RMS: --"
+        self.residualLabel.setText("%s   %s" % (rTxt, oTxt))
+
+
+if __name__ == '__main__':
+    shmCmdName   = '/tmp/lpCmd.im.shm'
+    shmGainName  = '/tmp/lpGain.im.shm'
+    shmLeakName  = '/tmp/lpLeak.im.shm'
+    shmResidName = ''
+    shmOutName   = ''
+    light = False
+    try:
+        opts, args = getopt.getopt(sys.argv[1:], "hc:g:l:r:o:",
+                                    ["help", "shmCmdName=", "shmGainName=", "shmLeakName=",
+                                     "shmResidName=", "shmOutName=", "light"])
+    except getopt.GetoptError:
+        print('err, usage: daoLoopDisp.py -c <shmCmdName> -g <shmGainName> -l <shmLeakName> '
+              '[-r <shmResidName>] [-o <shmOutName>] [--light]')
+        sys.exit(2)
+    for opt, arg in opts:
+        if opt in ('-h', '--help'):
+            print(__doc__)
+            sys.exit()
+        elif opt in ("-c", "--shmCmdName"):
+            shmCmdName = str(arg)
+        elif opt in ("-g", "--shmGainName"):
+            shmGainName = str(arg)
+        elif opt in ("-l", "--shmLeakName"):
+            shmLeakName = str(arg)
+        elif opt in ("-r", "--shmResidName"):
+            shmResidName = str(arg)
+        elif opt in ("-o", "--shmOutName"):
+            shmOutName = str(arg)
+        elif opt == '--light':
+            light = True
+
+    if light:
+        pg.setConfigOption('background', '#f0f0f0')
+        pg.setConfigOption('foreground', '#000000')
+    else:
+        pg.setConfigOption('background', '#1e1e1e')
+        pg.setConfigOption('foreground', '#cccccc')
+
+    app = QApplication([])
+    app.setStyleSheet(make_stylesheet(light))
+
+    main = Main(shmCmdName, shmGainName, shmLeakName, shmResidName, shmOutName)
+    main.setWindowTitle('Loop  [%s]' % os.path.basename(shmCmdName))
+    main.show()
+    main.Start()
+    sys.exit(app.exec_())

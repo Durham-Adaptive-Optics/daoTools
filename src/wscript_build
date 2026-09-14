@@ -16,13 +16,22 @@ else:
     my_cflags = ['-Ofast', '-march=native', '-funroll-loops']
     my_defines = []
 
+daoTools_sources = ['c/daoTools.c']
+daoTools_ldflags = ['-ldao', '-lpthread', '-lm'] + my_ld_flags
+
+# FFT-based correlation centroider (daoToolsCorrFFT): only built when both
+# fftw3f and fftw3 were found at configure time (see wscript configure()).
+if bld.env.FFTW_AVAILABLE:
+	daoTools_sources += ['c/daoToolsCorrFFT.c']
+	daoTools_ldflags += ['-lfftw3f', '-lfftw3']
+
 bld.shlib(
-	source = 'c/daoTools.c',
+	source = daoTools_sources,
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
 	#cflags = ['-Ofast', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto', '-fstack-protector'],
-	ldflags = ['-ldao', '-lpthread', '-lm'] + my_ld_flags,
+	ldflags = daoTools_ldflags,
 	target = 'daoTools',
 	name   = 'daoTools',
 	vnum   = '0.0.1')
