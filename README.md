@@ -1,5 +1,7 @@
 # daoTools [![daoTools](https://github.com/Durham-Adaptive-Optics/daoTools/actions/workflows/main.yml/badge.svg?branch=CI-Workflow)](https://github.com/Durham-Adaptive-Optics/daoTools/actions/workflows/main.yml)
-Useful tools using daoBase
+`daoTools` is the application layer of **DAO** (Durham Adaptive Optics), a real-time control system for adaptive optics instruments. It builds on [`daoBase`](https://github.com/Durham-Adaptive-Optics/daoBase)'s shared-memory (`dao.shm`) and messaging primitives to provide everything needed to run an AO real-time control loop end to end: pixel calibration, wavefront-sensor centroiding (Shack-Hartmann, pyramid, correlation-based), matrix-vector-multiply reconstruction (CPU/BLAS and GPU/CUDA), leaky-integrator and modal loop control, plus the calibration, simulation, timing/latency, and data-conversion tools needed to operate and debug a pipeline.
+
+It ships three things: a C function library (`libdaoTools`) that the real-time per-pixel/per-mode math lives in, 70+ command-line applications in `apps/` that are thin real-time wrappers around it, and a set of PyQt5 GUIs in `gui/` for live monitoring and control. Everything communicates over `dao.shm`, so any of these pieces can be mixed, replaced, or driven from your own code independently.
 
 # The daoTools library
 
