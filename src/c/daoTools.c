@@ -954,6 +954,7 @@ int_fast8_t daoCentroidSpotsRelative(float* image,
     float threshold,
     float* cent) {
     daoTrace("\n");
+    (void)imageSizeY; /* kept for signature symmetry with the other centroiders; box rows never cross imageSizeY */
     int x, y, x1, x2, y1, y2;
     float localMax = 0.0f;
     float relativeThreshold = 0.0f;
@@ -1095,6 +1096,7 @@ int_fast8_t daoCentroidSpotsRelativeRef(float* image,
     float threshold,
     float* cent) {
     daoTrace("\n");
+    (void)imageSizeY; /* kept for signature symmetry with the other centroiders; box rows never cross imageSizeY */
     int x, y, x1, x2, y1, y2;
     float localMax = 0.0f;
     float relativeThreshold = 0.0f;
@@ -1316,6 +1318,7 @@ int_fast8_t daoCentroidSpotsCorrelation(float* image,
     float threshold,
     float* cent) {
     daoTrace("\n");
+    (void)imageSizeY; /* kept for signature symmetry with the other centroiders; box rows never cross imageSizeY */
 
     if (searchRange < 0 || searchRange > DAO_CENTROID_CORR_MAX_SEARCH_RANGE) {
         daoError("daoCentroidSpotsCorrelation: searchRange=%d out of range [0..%d]\n",
@@ -1490,6 +1493,7 @@ void daoCentroidSpotsUpdateReference(const float* image, int imageSizeX, int ima
     const float* ref, const float* cent, int boxSize, int nSuba,
     float threshold, float alpha, float* refImageInOut) {
     daoTrace("\n");
+    (void)imageSizeY; /* kept for signature symmetry with the other centroiders; box rows never cross imageSizeY */
     if (alpha <= 0.0f) return;
 
     const float* refX = ref;
@@ -1526,6 +1530,7 @@ void daoCentroidSpotsUpdateReferenceDouble(const double* image, int imageSizeX, 
     const double* ref, const double* cent, int boxSize, int nSuba,
     double threshold, double alpha, double* refImageInOut) {
     daoTrace("\n");
+    (void)imageSizeY; /* kept for signature symmetry with the other centroiders; box rows never cross imageSizeY */
     if (alpha <= 0.0) return;
 
     const double* refX = ref;

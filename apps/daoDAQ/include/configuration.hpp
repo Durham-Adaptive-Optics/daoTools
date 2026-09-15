@@ -187,7 +187,17 @@ namespace Dao::DAQ
             }
 
             try {
+                // yaml-cpp's Node::as<T>() default-constructs a local `T t;` in
+                // impl.h before assigning into it; with some T/optimization
+                // combinations GCC can't prove that path always initializes it
+                // before use, and warns here at the (inlined) call site rather
+                // than in yaml-cpp's own header. Known false positive, not a
+                // real uninitialized read -- narrowly silenced around just
+                // this statement.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
                 store = parameter.as<typename UnwrapOptional<T>::type>();
+#pragma GCC diagnostic pop
             } catch (YAML::BadConversion const& e) {
                 auto const err = fmt::format("(server.config) parameter '{}' has incorrect value-type", name);
                 throw std::runtime_error(err);
@@ -206,7 +216,12 @@ namespace Dao::DAQ
                 }
 
                 try {
+                    // See the matching comment in loadRequired() above: known
+                    // GCC + yaml-cpp template false positive, not a real bug.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
                     store = parameter.as<typename UnwrapOptional<T>::type>();
+#pragma GCC diagnostic pop
                 } catch (YAML::BadConversion const& e) {
                     auto const err = fmt::format("(server.config) parameter '{}' has incorrect value-type", name);
                     throw std::runtime_error(err);
