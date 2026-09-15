@@ -3,7 +3,7 @@
  <class>MainWindow</class>
  <widget class="QMainWindow" name="MainWindow">
   <property name="geometry">
-   <rect><x>0</x><y>0</y><width>430</width><height>270</height></rect>
+   <rect><x>0</x><y>0</y><width>430</width><height>300</height></rect>
   </property>
   <property name="windowTitle">
    <string>Loop</string>
@@ -11,7 +11,7 @@
   <widget class="QWidget" name="centralwidget">
    <widget class="QGroupBox" name="loopGroup">
     <property name="geometry">
-     <rect><x>10</x><y>10</y><width>410</width><height>110</height></rect>
+     <rect><x>10</x><y>10</y><width>410</width><height>140</height></rect>
     </property>
     <property name="title">
      <string>Loop</string>
@@ -32,10 +32,14 @@
      <property name="geometry"><rect><x>205</x><y>60</y><width>180</width><height>34</height></rect></property>
      <property name="text"><string>OPEN LOOP</string></property>
     </widget>
+    <widget class="QCheckBox" name="enableCheck">
+     <property name="geometry"><rect><x>15</x><y>102</y><width>370</width><height>22</height></rect></property>
+     <property name="text"><string>Enable integrator</string></property>
+    </widget>
    </widget>
    <widget class="QGroupBox" name="integGroup">
     <property name="geometry">
-     <rect><x>10</x><y>130</y><width>410</width><height>130</height></rect>
+     <rect><x>10</x><y>160</y><width>410</width><height>130</height></rect>
     </property>
     <property name="title">
      <string>Leaky integrator</string>
