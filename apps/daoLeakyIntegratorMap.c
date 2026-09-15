@@ -50,8 +50,14 @@ char lpCmdShmName[32];
 char gainShmName[32];
 char leakyShmName[32];
 char mapShmName[32];
+char enableShmName[64];
+int enableGiven = 0;   /* -e was passed explicitly: use enableShmName as-is, don't derive it */
 int modal=0; // modal integrator flag
 double clipping = 10.0; // clipping value
+
+#define LI_PRINT_INTERVAL_S 1.0   /* throttle telemetry: print once every N seconds of wall time,
+                                    * not every frame -- a frame-count throttle would make the
+                                    * print rate depend on the loop's own speed. */
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -73,9 +79,18 @@ static void ShowHelp(void)
     daoInfo("   -S               list of SHM (full path separated by space)\n");
     daoInfo("   -s               semaphore number\n");
     daoInfo("   -m               modal integrator, leaky and gain should be arrays\n");
+    daoInfo("   -e <shm>         optional enable shm (default: derived from <loopCmd> as\n");
+    daoInfo("                    <loopCmd base name>Enable.im.shm, e.g. lpCmd.im.shm ->\n");
+    daoInfo("                    lpCmdEnable.im.shm)\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage:\n");
-    daoInfo("   -S <in SHM> <offset SHM> <out SHM> <loopCmd SHM> <leak SHM> <gain SHM> -s <semNb> -m -L\n");
+    daoInfo("   -S <in SHM> <offset SHM> <out SHM> <loopCmd SHM> <leak SHM> <gain SHM> -s <semNb> [-e <enableShm>] -m -L\n");
+    daoInfo("\n");
+    daoInfo("   -e lets an external SHM enable/disable the integrator independently of\n");
+    daoInfo("   the loopCmd open/close state: when the enable SHM reads 0, this behaves\n");
+    daoInfo("   exactly like an open loop (output forced to 0), regardless of loopCmd.\n");
+    daoInfo("   If the enable SHM does not exist yet it is created here with value 1\n");
+    daoInfo("   (enabled), so default behaviour is unchanged whether -e is used or not.\n");
     daoInfo("\n");
 }
 
@@ -95,6 +110,7 @@ static int realTimeLoop()
     IMAGE *gainShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *leakyShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *mapShm = (IMAGE*) malloc(sizeof(IMAGE));
+    IMAGE *enableShm = (IMAGE*) malloc(sizeof(IMAGE));
     daoShmShm2Img(inShmName, &inShm[0]);
     daoShmShm2Img(offsetShmName, &offsetShm[0]);
     daoShmShm2Img(outShmName, &outShm[0]);
@@ -102,6 +118,25 @@ static int realTimeLoop()
     daoShmShm2Img(gainShmName, &gainShm[0]);
     daoShmShm2Img(leakyShmName, &leakyShm[0]);
     daoShmShm2Img(mapShmName, &mapShm[0]);
+
+    // Enable shm: -e overrides, otherwise derive <loopCmd base>Enable.im.shm
+    // from the loopCmd shm's name (same helper used for daoTimeDiff's
+    // Avg/Rms/Array sibling shms). Attach if it already exists; if not,
+    // create it here with value 1 (enabled) so existing setups that never
+    // heard of -e keep behaving exactly as before.
+    if (!enableGiven)
+    {
+        daoToolsInsertShmNamePrefix(lpCmdShmName, "Enable", enableShmName);
+    }
+    daoInfo("enableShmName    = %s\n", enableShmName);
+    if (daoShmShm2Img(enableShmName, &enableShm[0]) != DAO_SUCCESS)
+    {
+        uint32_t enableSize[2] = {1, 1};
+        daoInfo("enable shm not found, creating %s with enable=1\n", enableShmName);
+        daoShmImageCreate(enableShm, enableShmName, 2, enableSize, _DATATYPE_UINT32, 1, 0);
+        enableShm[0].array.UI32[0] = 1;
+    }
+
     int inSize = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
     int outSize = outShm[0].md[0].size[0]*outShm[0].md[0].size[1];
     float inMapped[outSize];
@@ -109,6 +144,9 @@ static int realTimeLoop()
     struct timespec t[3];
     double elapsedTime;
     clock_gettime(CLOCK_REALTIME, &t[1]);
+    struct timespec tLastPrint = t[1];
+    unsigned long iter = 0;
+    double fpsAccum = 0.0;
     int j, k;
     int cnt=0;
     int cntMap=0;
@@ -155,7 +193,7 @@ static int realTimeLoop()
             // New image, insert something here
             outShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
             avg=0;
-            if (lpCmdShm[0].array.UI32[0] == 1)
+            if (lpCmdShm[0].array.UI32[0] == 1 && enableShm[0].array.UI32[0] == 1)
             {
                 if (inShm[0].md[0].atype == _DATATYPE_FLOAT)
                 {
@@ -257,34 +295,50 @@ static int realTimeLoop()
             clock_gettime(CLOCK_REALTIME, &t[1]);
             elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
             elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
-            if (inShm[0].md[0].atype == _DATATYPE_FLOAT)
-            {
-                printf("\r fps = %8.3f Hz, %d in=[%6.3f,%6.3f,...,%6.3f], out[%6.3f, %6.3f,...,%6.3f]", 1e6/(1000*elapsedTime), 
-                                                                                  inSize, inShm[0].array.F[0],
-                                                                                  inShm[0].array.F[1],
-                                                                                  inShm[0].array.F[inSize],
-                                                                                  outShm[0].array.F[0],
-                                                                                  outShm[0].array.F[1],
-                                                                                  outShm[0].array.F[outSize]);
-            } 
-            else
-            {
-                printf("\r fps = %8.3f Hz, %d in=[%6.3lf,%6.3lf,...,%6.3lf], out[%6.3lf, %6.3lf,...,%6.3lf]", 1e6/(1000*elapsedTime), 
-                                                                                  inSize, inShm[0].array.D[0],
-                                                                                  inShm[0].array.D[1],
-                                                                                  inShm[0].array.D[inSize],
-                                                                                  outShm[0].array.D[0],
-                                                                                  outShm[0].array.D[1],
-                                                                                  outShm[0].array.D[outSize]);
 
+            // Accumulate telemetry; print only once every LI_PRINT_INTERVAL_S
+            // seconds of wall time so the per-iteration fflush(stdout) stays
+            // off the critical path.
+            fpsAccum += (elapsedTime > 0.0) ? 1e3 / elapsedTime : 0.0;
+            iter++;
+            double sinceLastPrint = (t[1].tv_sec - tLastPrint.tv_sec)
+                                   + (t[1].tv_nsec - tLastPrint.tv_nsec) / 1e9;
+            if (sinceLastPrint >= LI_PRINT_INTERVAL_S && iter > 0)
+            {
+                if (inShm[0].md[0].atype == _DATATYPE_FLOAT)
+                {
+                    printf("\r fps = %8.3f Hz (avg/%.1fs, %lu frames), %d in=[%6.3f,%6.3f,...,%6.3f], out[%6.3f, %6.3f,...,%6.3f]",
+                                                                                      fpsAccum / iter, sinceLastPrint, iter,
+                                                                                      inSize, inShm[0].array.F[0],
+                                                                                      inShm[0].array.F[1],
+                                                                                      inShm[0].array.F[inSize],
+                                                                                      outShm[0].array.F[0],
+                                                                                      outShm[0].array.F[1],
+                                                                                      outShm[0].array.F[outSize]);
+                }
+                else
+                {
+                    printf("\r fps = %8.3f Hz (avg/%.1fs, %lu frames), %d in=[%6.3lf,%6.3lf,...,%6.3lf], out[%6.3lf, %6.3lf,...,%6.3lf]",
+                                                                                      fpsAccum / iter, sinceLastPrint, iter,
+                                                                                      inSize, inShm[0].array.D[0],
+                                                                                      inShm[0].array.D[1],
+                                                                                      inShm[0].array.D[inSize],
+                                                                                      outShm[0].array.D[0],
+                                                                                      outShm[0].array.D[1],
+                                                                                      outShm[0].array.D[outSize]);
+                }
+                fflush(stdout);
+                fpsAccum = 0.0;
+                iter = 0;
+                tLastPrint = t[1];
             }
         }
         else
         {
             cnt++;
             printf("\rWAIT ... %d", cnt);
+            fflush(stdout);
         }
-        fflush(stdout);
     }
 
 
@@ -358,9 +412,14 @@ static void DecodeArgs(int argc, char **argv)
                         daoInfo("leakyShmName   = %s\n", leakyShmName);
                         daoInfo("mapShmName   = %s\n",   mapShmName);
                         break;
-            case 's':	
+            case 's':
                         (void)sscanf(*argv++,"%d", &semNb);
                         daoInfo("inputShm sem     : %d \n", semNb);
+                        break;
+            case 'e':
+                        (void)sscanf(*argv++, "%63s", enableShmName); argc -= 1;
+                        enableGiven = 1;
+                        daoInfo("enableShmName (given) = %s\n", enableShmName);
                         break;
             case 'L':
                         realTimeLoop();
