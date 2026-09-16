@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect><x>0</x><y>0</y><width>860</width><height>470</height></rect>
+  </property>
+  <property name="windowTitle">
+   <string>SHM Latency</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="mainLayout">
+    <item>
+     <widget class="QGroupBox" name="shmGroup">
+      <property name="title">
+       <string>SHMs</string>
+      </property>
+      <layout class="QGridLayout" name="shmLayout">
+       <item row="0" column="0">
+        <widget class="QLabel" name="shm1Title">
+         <property name="text"><string>SHM 1 (start)</string></property>
+        </widget>
+       </item>
+       <item row="0" column="1">
+        <widget class="QLineEdit" name="shm1Edit">
+         <property name="placeholderText"><string>/tmp/&lt;name&gt;.im.shm</string></property>
+        </widget>
+       </item>
+       <item row="0" column="2">
+        <widget class="QPushButton" name="shm1BrowseButton">
+         <property name="text"><string>Browse...</string></property>
+        </widget>
+       </item>
+       <item row="1" column="0">
+        <widget class="QLabel" name="shm2Title">
+         <property name="text"><string>SHM 2 (end)</string></property>
+        </widget>
+       </item>
+       <item row="1" column="1">
+        <widget class="QLineEdit" name="shm2Edit">
+         <property name="placeholderText"><string>/tmp/&lt;name&gt;.im.shm</string></property>
+        </widget>
+       </item>
+       <item row="1" column="2">
+        <widget class="QPushButton" name="shm2BrowseButton">
+         <property name="text"><string>Browse...</string></property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </item>
+    <item>
+     <widget class="QGroupBox" name="argsGroup">
+      <property name="title">
+       <string>daoTimeDiff args</string>
+      </property>
+      <layout class="QHBoxLayout" name="argsLayout">
+       <item>
+        <widget class="QLabel" name="sem1Title">
+         <property name="text"><string>sem1</string></property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QSpinBox" name="sem1Spin">
+         <property name="minimum"><number>0</number></property>
+         <property name="maximum"><number>15</number></property>
+         <property name="value"><number>5</number></property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="sem2Title">
+         <property name="text"><string>sem2</string></property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QSpinBox" name="sem2Spin">
+         <property name="minimum"><number>0</number></property>
+         <property name="maximum"><number>15</number></property>
+         <property name="value"><number>5</number></property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="popSizeTitle">
+         <property name="text"><string>window (-n)</string></property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QSpinBox" name="popSizeSpin">
+         <property name="minimum"><number>2</number></property>
+         <property name="maximum"><number>100000</number></property>
+         <property name="value"><number>100</number></property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QCheckBox" name="moreInfoCheck">
+         <property name="text"><string>verbose (-m)</string></property>
+         <property name="toolTip">
+          <string>Ask daoTimeDiff to also print frame IDs / diff / negative-timestamp counter in its tmux session</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="argsSpacer">
+         <property name="orientation"><enum>Qt::Horizontal</enum></property>
+         <property name="sizeHint" stdset="0">
+          <size><width>40</width><height>20</height></size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+    </item>
+    <item>
+     <layout class="QHBoxLayout" name="buttonLayout">
+      <item>
+       <widget class="QPushButton" name="startButton">
+        <property name="text"><string>Start</string></property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="stopButton">
+        <property name="text"><string>Stop</string></property>
+        <property name="enabled"><bool>false</bool></property>
+       </widget>
+      </item>
+     </layout>
+    </item>
+    <item>
+     <widget class="QLabel" name="sessionLabel">
+      <property name="text"><string>tmux session: --</string></property>
+      <property name="wordWrap"><bool>true</bool></property>
+     </widget>
+    </item>
+    <item>
+     <widget class="QLabel" name="statsLabel">
+      <property name="text"><string>AVG: --   RMS: --   n: 0</string></property>
+     </widget>
+    </item>
+    <item>
+     <layout class="QHBoxLayout" name="plotsLayout">
+      <item>
+       <widget class="GraphicsView" name="plotWidget"/>
+      </item>
+      <item>
+       <widget class="GraphicsView" name="histWidget"/>
+      </item>
+     </layout>
+    </item>
+   </layout>
+  </widget>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>GraphicsView</class>
+   <extends>QGraphicsView</extends>
+   <header>pyqtgraph</header>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections/>
+</ui>
