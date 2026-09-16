@@ -86,11 +86,34 @@ static void ShowHelp(void)
     daoInfo("   -S <in SHM> <offset SHM> <out SHM> <loopCmd SHM> <leak SHM> <gain SHM> -s <semNb> [-e <enableShm>] -m -L\n");
     daoInfo("\n");
     daoInfo("   -e lets an external SHM enable/disable the integrator independently of\n");
-    daoInfo("   the loopCmd open/close state: when the enable SHM reads 0, this behaves\n");
-    daoInfo("   exactly like an open loop (output forced to 0), regardless of loopCmd.\n");
+    daoInfo("   the loopCmd open/close state: when the enable SHM reads 0, the output is\n");
+    daoInfo("   zeroed and published once, then the out SHM semaphores are no longer\n");
+    daoInfo("   posted until enable returns to 1, regardless of loopCmd.\n");
     daoInfo("   If the enable SHM does not exist yet it is created here with value 1\n");
     daoInfo("   (enabled), so default behaviour is unchanged whether -e is used or not.\n");
     daoInfo("\n");
+}
+
+/*--------------------------------------------------------------------------*/
+/* Force the output frame to 0. The output array is also the integrator's
+ * state (see daoToolsLeakyIntegrator), so this doubles as a state reset. */
+static void zeroOutput(IMAGE *outShm, int atype, int size)
+{
+    int j;
+    if (atype == _DATATYPE_FLOAT)
+    {
+        for (j = 0; j < size; j++)
+        {
+            outShm[0].array.F[j] = 0.0;
+        }
+    }
+    else
+    {
+        for (j = 0; j < size; j++)
+        {
+            outShm[0].array.D[j] = 0.0;
+        }
+    }
 }
 
 /*--------------------------------------------------------------------------*/
@@ -146,6 +169,9 @@ static int realTimeLoop()
     int j;
     int cnt=0;
     float avg=0;
+    /* enable==0: publish a single zeroed frame, then go quiet (stop
+     * finalizing) until enable goes back to 1. */
+    int zeroSent = 0;
     while (end ==0)
     {
         t[0] = t[1];
@@ -157,8 +183,26 @@ static int realTimeLoop()
             // New image, insert something here
             outShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
             avg=0;
-            if (lpCmdShm[0].array.UI32[0] == 1 && enableShm[0].array.UI32[0] == 1)
+            int enabled = (enableShm[0].array.UI32[0] == 1);
+            int publish = 1;   /* finalize (post the out shm semaphores) this frame? */
+            if (!enabled)
             {
+                /* Disabled: leave consumers on a known zeroed frame, published
+                 * exactly once, then stop posting entirely so nothing
+                 * downstream is woken while we are off. */
+                if (zeroSent)
+                {
+                    publish = 0;
+                }
+                else
+                {
+                    zeroOutput(outShm, inShm[0].md[0].atype, inSize);
+                    zeroSent = 1;
+                }
+            }
+            else if (lpCmdShm[0].array.UI32[0] == 1)
+            {
+                zeroSent = 0;
                 if (inShm[0].md[0].atype == _DATATYPE_FLOAT)
                 {
                     if (modal == 0)
@@ -238,23 +282,15 @@ static int realTimeLoop()
             }
             else
             {
-                if (inShm[0].md[0].atype == _DATATYPE_FLOAT)
-                {
-                    for (j=0; j< inSize; j++)
-                    {
-                        outShm[0].array.F[j] = 0.0;
-                    }
-                }
-                else
-                {
-                    for (j=0; j< inSize; j++)
-                    {
-                        outShm[0].array.D[j] = 0.0;
-                    }
-                }
-
+                /* Open loop but still enabled: keep publishing zeros every
+                 * frame, as before. */
+                zeroSent = 0;
+                zeroOutput(outShm, inShm[0].md[0].atype, inSize);
             }
-            daoShmImagePart2ShmFinalize(&outShm[0]);
+            if (publish)
+            {
+                daoShmImagePart2ShmFinalize(&outShm[0]);
+            }
 
             clock_gettime(CLOCK_REALTIME, &t[1]);
             elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
