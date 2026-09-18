@@ -103,6 +103,15 @@ sudo yum install cfitsio-devel yaml-cpp-devel fmt-devel zeromq-devel \
 (CLI11 has no RHEL package as of writing; `configure` falls back to looking for
 a vendored `CLI11.hpp`/`CLI/CLI.hpp` header if pkg-config can't find it.)
 
+## macOS (Homebrew)
+```bash
+brew install openblas pkg-config protobuf cfitsio yaml-cpp fmt zeromq
+```
+
+> **Note:** Homebrew installs OpenBLAS as `openblas.pc`. The `waf` configure script
+> automatically checks for both `blas` and `openblas` pkg-config packages, so no
+> additional configuration is needed.
+
 ## Optional dependencies
 `waf configure` auto-detects each of these and **silently skips** the app(s)
 that need it if missing - not having them is not an error, just a smaller build.

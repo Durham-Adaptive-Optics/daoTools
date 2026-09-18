@@ -91,14 +91,19 @@ def configure(conf):
 	except Exception as e:
 		print('CUDA not found or incomplete: skipping GPU.', e)
 
-	# Check for BLAS
+	# Check for BLAS (try both 'blas' and 'openblas' pkg-config names)
 	conf.env.BLAS_AVAILABLE = False  # Default to False
 	try:
 		conf.check_cfg(package='blas', args='--cflags --libs', uselib_store='BLAS')
 		conf.env.BLAS_AVAILABLE = True
 		print("BLAS detected: enabling BLAS build.")
 	except:
-		print("BLAS not found: skipping BLAS.")
+		try:
+			conf.check_cfg(package='openblas', args='--cflags --libs', uselib_store='BLAS')
+			conf.env.BLAS_AVAILABLE = True
+			print("OpenBLAS detected: enabling BLAS build.")
+		except:
+			print("BLAS not found: skipping BLAS.")
 
 	# Check for FFTW (single- and double-precision; both required to enable
 	# the FFT-based correlation centroider, daoToolsCorrFFT).
