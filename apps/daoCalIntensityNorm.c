@@ -421,10 +421,7 @@
  /*==========================================================================*/
  int main(int argc, char **argv)
  {
-     int RT_priority = 93;
-     struct sched_param schedpar;
-     schedpar.sched_priority = RT_priority;
-     sched_setscheduler(0, SCHED_FIFO, &schedpar);
+     daoToolsSetRtPriority(93);
 
      sArgv0 = *argv;
      DecodeArgs(argc, argv);

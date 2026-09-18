@@ -233,12 +233,8 @@ int main(int argc, char **argv)
      **	Fetch the arguments and do what is requested
      */
 {
-    int RT_priority = 93; //any number from 0-99
-    struct sched_param schedpar;
-
-    schedpar.sched_priority = RT_priority;
     // r = seteuid(euid_called); //This goes up to maximum privileges
-    sched_setscheduler(0, SCHED_FIFO, &schedpar); //other option is SCHED_RR, might be faster
+    daoToolsSetRtPriority(93); //any number from 0-99; falls back + warns if not permitted
     // r = seteuid(euid_real);//Go back to normal privileges
 
     sArgv0 = *argv;

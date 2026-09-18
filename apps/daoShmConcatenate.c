@@ -328,15 +328,10 @@ static void DecodeArgs(int argc, char **argv)
 /*==========================================================================*/
 int main(int argc, char **argv)
 {
-    int RT_priority = 93; /* 1..99 */
-    struct sched_param schedpar;
-
     sArgv0 = (argc > 0) ? argv[0] : (char *)"program";
 
     /* RT setup early */
-    memset(&schedpar, 0, sizeof(schedpar));
-    schedpar.sched_priority = RT_priority;
-    sched_setscheduler(0, SCHED_FIFO, &schedpar);
+    daoToolsSetRtPriority(93);
 
     /* Your normal argument decode / program start */
     DecodeArgs(argc, argv);

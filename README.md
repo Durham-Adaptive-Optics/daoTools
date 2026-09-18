@@ -27,8 +27,10 @@ AO real-time pipeline, operating directly on `dao.shm` `IMAGE`s:
 - **Misc.** — `daoDmCombine` (multi-channel DM command summing),
   `daoDescrambleOcam2Image` (OCAM2K scrambled-readout reordering),
   `daoToolsImgNormalize`, `daoComputeChecksum`, `daoRtSetup`/`daoToolsEnableFTZ`
-  (real-time process setup, denormal flush-to-zero), and `daoLogToFile`
-  (throttled, size-rotated file logging).
+  (real-time process setup, denormal flush-to-zero), `daoToolsSetRtPriority`
+  (request `SCHED_FIFO` real-time priority with a safe, logged fallback --
+  see [Real-time scheduling priority](#real-time-scheduling-priority) below),
+  and `daoLogToFile` (throttled, size-rotated file logging).
 
 Most `apps/*.c` binaries call straight into this library, add SHM
 attach/argument-parsing/real-time-loop boilerplate, and nothing else — the
@@ -120,6 +122,71 @@ Some of our plot tool uses magicPlot (optional)
 ```
 pip install magicPlot
 ```
+
+# Real-time scheduling priority
+
+Every real-time loop in `apps/` requests `SCHED_FIFO` scheduling once at
+startup via `daoToolsSetRtPriority(priority)` (`daoTools.h`, e.g. priority
+93), so the OS doesn't preempt it for ordinary processes.
+
+That request can be silently denied: Linux caps how high a priority a given
+user may request (the `rtprio` resource limit), and it defaults to **0** on
+most distros. Before `daoToolsSetRtPriority` existed, every tool called
+`sched_setscheduler()` directly with no check on its return value -- if the
+request was denied (`EPERM`), the loop just kept running at normal priority
+with no indication at all. That's dangerous for a control loop with little
+stability margin: it becomes vulnerable to timing jitter from anything else
+that uses the CPU, even a lightweight, read-only monitor GUI.
+
+`daoToolsSetRtPriority` still tries for the requested priority first --
+identical behaviour to before when it succeeds -- and only on failure checks
+this user's actual `rtprio` limit and falls back to the highest priority
+currently allowed. Either way it logs which priority it actually got
+(`daoInfo` on success, `daoWarning` on fallback/failure), so the operator
+always knows.
+
+### Raising the limit (Linux)
+
+Add a line to `/etc/security/limits.conf` (or a file under
+`/etc/security/limits.d/`), then start a new login session (log out/in, or a
+fresh login shell) for it to take effect:
+
+```
+<username>  -  rtprio  99
+```
+
+or for everyone in a group:
+
+```
+@rtgroup  -  rtprio  99
+```
+
+Confirm it applied with:
+
+```
+ulimit -r
+```
+
+### Does this affect Windows or macOS?
+
+No new platform support is added or removed here -- it only changes how the
+*existing*, Linux-oriented real-time code behaves:
+
+- `sched_setscheduler()`/`SCHED_FIFO` are POSIX real-time scheduling calls;
+  none of `apps/`'s real-time-priority code has ever been guarded for
+  Windows, so real-time scheduling in this codebase has always been
+  Linux-only in practice (same as `mlockall()` and the
+  `pthread_setaffinity_np` CPU-pinning code used elsewhere in the tree).
+- **macOS**: `RLIMIT_RTPRIO` (the fallback-limit lookup) doesn't exist on
+  macOS/BSD, so `daoToolsSetRtPriority` guards that part behind
+  `#ifdef RLIMIT_RTPRIO`. This means the code now *compiles* cleanly on
+  macOS (a plain, unconditional `RLIMIT_RTPRIO` would have been a hard
+  compile error there) and logs a clear warning if `sched_setscheduler`
+  fails, instead of silently running non-real-time as before. Functionally
+  unchanged from before this fix -- just no silent failure and no compile
+  break.
+- **Windows**: unaffected either way -- `sched_setscheduler` has no Windows
+  equivalent and this codebase was never built/run there.
 
 # Build
 ```
