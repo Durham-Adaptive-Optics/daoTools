@@ -4,6 +4,11 @@ import platform
 if platform.system() == "Darwin":
     my_ld_flags = ['']
     my_link_flags = ['-L'+os.getenv('DAOROOT')+'/lib/']
+    # Homebrew's fftw isn't on the default linker search path (it lives
+    # under a Cellar prefix), so pass through the -L path pkg-config found
+    # at configure time or -lfftw3f/-lfftw3 below fail with "library not found".
+    if bld.env.FFTW_AVAILABLE:
+        my_link_flags += ['-L' + p for p in bld.env.LIBPATH_FFTW3F + bld.env.LIBPATH_FFTW3]
     my_cxx_flags = ['-std=c++14']
     my_cflags = ['-O3', '-ffast-math']
 else:

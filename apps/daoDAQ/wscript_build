@@ -1,4 +1,12 @@
 import os
+import platform
+
+# libstdc++fs only exists for GNU libstdc++ (pre-GCC 9); macOS links against
+# libc++, which has had <filesystem> built in since C++17 support landed, so
+# there is no such library to link against there.
+daoDAQ_lib = ['dao', 'daoNuma', 'daoProto', 'pthread']
+if platform.system() != "Darwin":
+    daoDAQ_lib.append('stdc++fs')
 
 bld.program(
     target='daoDAQ',
@@ -15,13 +23,7 @@ bld.program(
         f"{os.getenv('DAOROOT')}/lib64"
     ],
 
-    lib=[
-        'dao',
-        'daoNuma',
-        'daoProto',
-        'pthread',
-	    'stdc++fs'
-    ],
+    lib=daoDAQ_lib,
 
     cxxflags=[
         '-O3',

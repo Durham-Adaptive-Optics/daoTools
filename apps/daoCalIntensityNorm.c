@@ -214,7 +214,6 @@
      unsigned long cnt0Illum = illumPixShm[0].md[0].cnt0 - 1;
      unsigned long cnt0Ff    = ffShm[0].md[0].cnt0 - 1;
      unsigned long cnt0Bg    = bgShm[0].md[0].cnt0 - 1;
-     unsigned long frameCnt  = 0;
 
      clock_gettime(CLOCK_REALTIME, &t[1]);
      tPrint = t[1];
@@ -310,7 +309,6 @@
 
              // Accumulate stats; print an average once per second so the
              // status line and its write syscall stay off the RT path.
-             frameCnt++;
              accComp    += compTime;
              accElapsed += elapsedTime;
              if (compTime > maxComp) maxComp = compTime;
