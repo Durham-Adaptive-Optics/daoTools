@@ -40,6 +40,19 @@ void daoToolsInsertShmNamePrefix(const char* base_string,
                                  char* final_string);
 
 /**
+ * @brief Request SCHED_FIFO real-time priority for the calling thread,
+ * falling back gracefully (and logging via daoWarning) if this user's
+ * rtprio ulimit is below the requested priority -- rather than the
+ * unchecked sched_setscheduler() every RT tool used to call directly, which
+ * fails silently (EPERM) in that case and leaves the loop running at normal
+ * priority with no indication at all. Transparent when priority is granted
+ * (identical behaviour to the old direct call); only changes anything in
+ * the failure case, where it now gets the highest priority this user's
+ * rtprio limit actually allows instead of none.
+ */
+void daoToolsSetRtPriority(int priority);
+
+/**
  * @brief Append one line to a log file, in
  * "<UTC ISO8601 with milliseconds>Z <errorId> <message>" format, with
  * per-tag throttling and size-capped rotation.

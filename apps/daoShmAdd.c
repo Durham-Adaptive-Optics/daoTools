@@ -323,12 +323,8 @@ static void DecodeArgs(int argc, char **argv)
 /*==========================================================================*/
 int main(int argc, char **argv)
 {
-    int RT_priority = 93; /* 0-99 */
-    struct sched_param schedpar;
-
     /* Try to go RT (OK if it fails due to perms) */
-    schedpar.sched_priority = RT_priority;
-    (void)sched_setscheduler(0, SCHED_FIFO, &schedpar);
+    daoToolsSetRtPriority(93);
 
     sArgv0 = *argv;
     DecodeArgs(argc, argv);
