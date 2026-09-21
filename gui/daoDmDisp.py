@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
 
-from PyQt5.uic import loadUiType
 import sys
 from PyQt5 import QtCore
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import (
+    QApplication, QComboBox, QGridLayout, QHBoxLayout, QLabel, QMainWindow,
+    QPushButton, QScrollArea, QVBoxLayout, QWidget,
+)
 import numpy as np
 import pyqtgraph as pg
 import time
 import dao
-import os
-
-path = os.getenv('DAOROOT') + '/data/'
-Ui_MainWindow, QMainWindow = loadUiType(os.path.join(path, 'daoDmDisp.ui'))
 
 COLORMAPS = {
     'grey':    [(0,0,0),(255,255,255)],
@@ -63,72 +61,96 @@ def make_stylesheet(light):
 DEFAULT_LABELS = ('Flat', 'Loop', 'Turbulence', 'Pokes')  # channels 00, 01, 02, 03
 
 
-class Main(QMainWindow, Ui_MainWindow):
-    def __init__(self, name, mapName, labels=DEFAULT_LABELS):
+class Main(QMainWindow):
+    def __init__(self, name, mapName, labels=None, channels=4):
         super(Main, self).__init__()
-        self.setupUi(self)
-        self.scale = 1000
+        if channels < 1:
+            raise ValueError('channels must be a positive integer')
+        if labels is None:
+            labels = [
+                DEFAULT_LABELS[i] if i < len(DEFAULT_LABELS) else f'Channel {i:02d}'
+                for i in range(channels)
+            ]
+        if len(labels) != channels:
+            raise ValueError(f'expected {channels} channel labels')
 
-        self.shmdm  = dao.shm(f'/tmp/{name}.im.shm')
-        self.shmdm1 = dao.shm(f'/tmp/{name}00.im.shm')
-        self.shmdm2 = dao.shm(f'/tmp/{name}01.im.shm')
-        self.shmdm3 = dao.shm(f'/tmp/{name}02.im.shm')
-        self.shmdm4 = dao.shm(f'/tmp/{name}03.im.shm')
-        self.map    = dao.shm(f'/tmp/{mapName}.im.shm')
-
+        self.shmdm = dao.shm(f'/tmp/{name}.im.shm')
+        self.channel_shms = [
+            dao.shm(f'/tmp/{name}{i:02d}.im.shm') for i in range(channels)
+        ]
+        self.map = dao.shm(f'/tmp/{mapName}.im.shm')
         self.dmMask = self.map.get_data()
-        self.dmM  = np.copy(self.dmMask).astype(np.float32)
-        self.dm1M = np.copy(self.dmMask).astype(np.float32)
-        self.dm2M = np.copy(self.dmMask).astype(np.float32)
-        self.dm3M = np.copy(self.dmMask).astype(np.float32)
-        self.dm4M = np.copy(self.dmMask).astype(np.float32)
+        self.active_actuators = self.dmMask == 1
+        # Keep the combined stream first in the data lists, but show it last.
+        self.streams = [self.shmdm] + self.channel_shms
+        self.dm_arrays = [self.dmMask.astype(np.float32) for _ in self.streams]
+        self.dmM = self.dm_arrays[0]
 
-        self.dmM [self.dmMask == 1] = self.shmdm.get_data()[:,0]
-        self.dm1M[self.dmMask == 1] = self.shmdm1.get_data()[:,0]
-        self.dm2M[self.dmMask == 1] = self.shmdm2.get_data()[:,0]
-        self.dm3M[self.dmMask == 1] = self.shmdm3.get_data()[:,0]
-        self.dm4M[self.dmMask == 1] = self.shmdm4.get_data()[:,0]
+        central = QWidget()
+        self.setCentralWidget(central)
+        layout = QVBoxLayout(central)
+        self.titleLabel = QLabel(f'DM Display — {name}  (map: {mapName})')
+        self.titleLabel.setAlignment(QtCore.Qt.AlignCenter)
+        layout.addWidget(self.titleLabel)
 
-        for vb_name, gv_name in [('vb',  'graphicsView'),
-                                  ('vb1', 'graphicsView_1'),
-                                  ('vb2', 'graphicsView_2'),
-                                  ('vb3', 'graphicsView_3'),
-                                  ('vb4', 'graphicsView_4')]:
-            gv = getattr(self, gv_name)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        panels = QWidget()
+        self.grid = QGridLayout(panels)
+        scroll.setWidget(panels)
+        layout.addWidget(scroll)
+        self.images = [None] * len(self.streams)
+        titles = [f'{name} — Combined'] + [
+            f'{name}{i:02d} — {label}' for i, label in enumerate(labels)
+        ]
+        for position, index in enumerate(list(range(1, channels + 1)) + [0]):
+            panel = QWidget()
+            panel_layout = QVBoxLayout(panel)
+            label = QLabel(titles[index])
+            label.setAlignment(QtCore.Qt.AlignCenter)
+            panel_layout.addWidget(label)
+            view = pg.GraphicsView()
+            view.setMinimumSize(150, 150)
             vb = pg.ViewBox()
             vb.setAspectLocked(True)
             vb.setDefaultPadding(0)
             vb.setBorder(None)
-            gv.setCentralItem(vb)
-            setattr(self, vb_name, vb)
-
-        for img_name in ('img', 'img1', 'img2', 'img3', 'img4'):
+            view.setCentralItem(vb)
             img = pg.ImageItem()
-            getattr(self, 'vb' + img_name[3:]).addItem(img)
-            setattr(self, img_name, img)
+            vb.addItem(img)
+            self.images[index] = img
+            panel_layout.addWidget(view)
+            row, column = divmod(position, 3)
+            self.grid.addWidget(panel, row, column)
+            self.grid.setRowStretch(row, 1)
+        for column in range(3):
+            self.grid.setColumnStretch(column, 1)
 
-        self.img.setImage(self.dmM)
-        self.img1.setImage(self.dm1M)
-        self.img2.setImage(self.dm2M)
-        self.img3.setImage(self.dm3M)
-        self.img4.setImage(self.dm4M)
-
-        self.titleLabel.setText(f'DM Display — {name}  (map: {mapName})')
-        self.chanLabel1.setText(f'{name}00 — {labels[0]}')
-        self.chanLabel2.setText(f'{name}01 — {labels[1]}')
-        self.chanLabel3.setText(f'{name}02 — {labels[2]}')
-        self.chanLabel4.setText(f'{name}03 — {labels[3]}')
-        self.chanLabelMain.setText(f'{name} — Combined')
+        controls = QHBoxLayout()
+        controls.addWidget(QLabel('Colormap:'))
+        self.cmapCombo = QComboBox()
+        controls.addWidget(self.cmapCombo)
+        self.pushButton = QPushButton('Reset All')
+        controls.addWidget(self.pushButton)
+        controls.addStretch()
+        self.minLabel = QLabel('0.0')
+        self.maxLabel = QLabel('0.0')
+        controls.addWidget(QLabel('Min:'))
+        controls.addWidget(self.minLabel)
+        controls.addWidget(QLabel('Max:'))
+        controls.addWidget(self.maxLabel)
+        layout.addLayout(controls)
+        rows = (channels + 3) // 3
+        self.resize(660, min(180 * rows + 100, 850))
 
         self.cmapName = 'grey'
         for cmapName in COLORMAPS:
             self.cmapCombo.addItem(cmapName)
         self.cmapCombo.setCurrentText(self.cmapName)
         self.cmapCombo.currentTextChanged.connect(self.ChangeColormap)
-        for img in (self.img, self.img1, self.img2, self.img3, self.img4):
+        for img in self.images:
             img.setColorMap(make_colormap(self.cmapName))
 
-        self.pushButton.toggle()
         self.pushButton.clicked.connect(self.ResetAll)
 
         self.imCnt1 = self.shmdm.get_counter()
@@ -136,6 +158,7 @@ class Main(QMainWindow, Ui_MainWindow):
         self.timer.setInterval(100)
         self.timer.timeout.connect(self.Update)
         self.t1 = time.time()
+        self.Update()
 
     def Start(self):
         self.timer.start()
@@ -145,13 +168,13 @@ class Main(QMainWindow, Ui_MainWindow):
 
     def ResetAll(self):
         zeroCmd = self.shmdm.get_data() * 0
-        for s in (self.shmdm, self.shmdm1, self.shmdm2, self.shmdm3, self.shmdm4):
+        for s in self.streams:
             s.set_data(zeroCmd)
 
     def ChangeColormap(self, name):
         self.cmapName = name
         cm = make_colormap(name)
-        for img in (self.img, self.img1, self.img2, self.img3, self.img4):
+        for img in self.images:
             img.setColorMap(cm)
         self.Update()
 
@@ -165,17 +188,9 @@ class Main(QMainWindow, Ui_MainWindow):
 
     @QtCore.pyqtSlot()
     def Update(self):
-        self.dmM [self.dmMask == 1] = self.shmdm.get_data()[:,0]
-        self.dm1M[self.dmMask == 1] = self.shmdm1.get_data()[:,0]
-        self.dm2M[self.dmMask == 1] = self.shmdm2.get_data()[:,0]
-        self.dm3M[self.dmMask == 1] = self.shmdm3.get_data()[:,0]
-        self.dm4M[self.dmMask == 1] = self.shmdm4.get_data()[:,0]
-
-        self.SetImage(self.img,  self.dmM)
-        self.SetImage(self.img1, self.dm1M)
-        self.SetImage(self.img2, self.dm2M)
-        self.SetImage(self.img3, self.dm3M)
-        self.SetImage(self.img4, self.dm4M)
+        for stream, data, img in zip(self.streams, self.dm_arrays, self.images):
+            data[self.active_actuators] = stream.get_data()[:, 0]
+            self.SetImage(img, data)
 
         self.minLabel.setText(str(np.min(self.dmM)))
         self.maxLabel.setText(str(np.max(self.dmM)))
@@ -186,35 +201,32 @@ class Main(QMainWindow, Ui_MainWindow):
         self.imCnt1 = self.imCnt2
 
 
+def parse_args(argv=None):
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description='Display DM channels and the combined command in a three-column grid.')
+    parser.add_argument('-s', '--name', default='dmCmd', help='DM stream name')
+    parser.add_argument('-m', '--map', default='dmMap', help='actuator map stream name')
+    parser.add_argument('-n', '--channels', type=int, default=4,
+                        help='number of channels, starting at 00 (default: 4)')
+    parser.add_argument('-l', '--labels',
+                        help='comma-separated labels, one per channel; defaults to '
+                             'Flat, Loop, Turbulence, Pokes, then numbered labels')
+    parser.add_argument('--light', action='store_true', help='use the light theme')
+    args = parser.parse_args(argv)
+    if args.channels < 1:
+        parser.error('-n/--channels must be a positive integer')
+    if args.labels is not None:
+        args.labels = [label.strip() for label in args.labels.split(',')]
+        if len(args.labels) != args.channels:
+            parser.error(f'-l/--labels needs exactly {args.channels} comma-separated names')
+    return args
+
+
 if __name__ == '__main__':
-    import getopt
-    name     = 'dmCmd'
-    mapName  = 'dmMap'
-    labels   = list(DEFAULT_LABELS)
-    light    = False
-    usage = ('daoDmDisp.py -s <name> -m <map> [-l <chan00,chan01,chan02,chan03>] [--light]'
-              '  (default labels: %s)' % ','.join(DEFAULT_LABELS))
-    try:
-        opts, args = getopt.getopt(sys.argv[1:], "hs:m:l:", ["help", "name=", "map=", "labels=", "light"])
-    except getopt.GetoptError:
-        print('err, usage: ' + usage)
-        sys.exit(2)
-    for opt, arg in opts:
-        if opt == '-h':
-            print(usage)
-            sys.exit()
-        elif opt in ("-s", "--name"):
-            name = arg
-        elif opt in ("-m", "--map"):
-            mapName = arg
-        elif opt in ("-l", "--labels"):
-            parts = [p.strip() for p in arg.split(',')]
-            if len(parts) != 4:
-                print('err, -l/--labels needs exactly 4 comma-separated names (00,01,02,03)')
-                sys.exit(2)
-            labels = parts
-        elif opt == '--light':
-            light = True
+    args = parse_args()
+    name, mapName, light = args.name, args.map, args.light
 
     if light:
         pg.setConfigOption('background', '#f0f0f0')
@@ -226,7 +238,7 @@ if __name__ == '__main__':
     app = QApplication([])
     app.setStyleSheet(make_stylesheet(light))
 
-    main = Main(name, mapName, labels)
+    main = Main(name, mapName, args.labels, args.channels)
     main.setWindowTitle(f'DM Display — {name}')
     main.show()
     main.Start()

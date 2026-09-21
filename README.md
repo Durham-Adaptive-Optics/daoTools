@@ -197,6 +197,26 @@ No new platform support is added or removed here -- it only changes how the
 - **Windows**: unaffected either way -- `sched_setscheduler` has no Windows
   equivalent and this codebase was never built/run there.
 
+# DM display
+
+`daoDmDisp.py` lays out the channel displays followed by the combined command
+in three columns, adding rows as needed. Large grids scroll. The default is
+four channels; use `-n` / `--channels` for another count:
+
+```bash
+daoDmDisp.py -s dmCmd -m dmMap          # 4 channels
+daoDmDisp.py -s dmCmd -m dmMap -n 6     # 6 channels
+daoDmDisp.py -s dmCmd -m dmMap -n 8 --light
+daoDmDisp.py -n 6 -l Flat,Loop,Turbulence,Pokes,Focus,TipTilt
+```
+
+For `-n 6`, the display reads `dmCmd00` through `dmCmd05`, plus the
+combined `dmCmd` stream and the `dmMap` actuator map from `/tmp/*.im.shm`.
+These streams must already exist. Default labels are Flat, Loop, Turbulence,
+Pokes, then Channel 04, Channel 05, etc. Custom labels must supply one name
+per channel. The layout is generated in Python, so no separate `.ui` file
+is needed for each channel count.
+
 # Build
 ```
 waf configure --prefix=$DAOROOT
