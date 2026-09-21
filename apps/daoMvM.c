@@ -29,7 +29,6 @@
 #include <sys/time.h>
 #include <termios.h>
 #include <gsl/gsl_blas.h>
-#include <omp.h>
 #include <pthread.h>
 
 // DAO header
