@@ -91,6 +91,18 @@
 
    </div>
 
+Project Links
+=============
+
+.. raw:: html
+
+  <div class="repo-badges">
+    <a href="https://github.com/Durham-Adaptive-Optics/daoBase" class="repo-badge">daoBase on GitHub</a>
+    <a href="https://github.com/Durham-Adaptive-Optics/daoTools" class="repo-badge">daoTools on GitHub</a>
+    <a href="https://daobase.readthedocs.io/en/latest/" class="repo-badge">daoBase Documentation</a>
+    <a href="https://daotools.readthedocs.io/en/latest/" class="repo-badge">daoTools Documentation</a>
+  </div>
+
 daoTools Documentation
 ======================
 
@@ -122,3 +134,9 @@ daoTools Documentation
 
    daoDAQ
    daoDAQParser
+
+.. toctree::
+  :maxdepth: 1
+  :caption: Project
+
+  cite

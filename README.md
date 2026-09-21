@@ -3,6 +3,40 @@
 
 It ships three things: a C function library (`libdaoTools`) that the real-time per-pixel/per-mode math lives in, 70+ command-line applications in `apps/` that are thin real-time wrappers around it, and a set of PyQt5 GUIs in `gui/` for live monitoring and control. Everything communicates over `dao.shm`, so any of these pieces can be mixed, replaced, or driven from your own code independently.
 
+## Documentation
+
+Full installation, usage, and API documentation is available on
+[Read the Docs](https://daotools.readthedocs.io/en/latest/).
+
+## Citation
+
+If you use DAO or daoTools in research or other published work, please cite
+daoBase, the core DAO library, using its DOI:
+
+**DOI:** [10.5281/zenodo.17264152](https://doi.org/10.5281/zenodo.17264152)
+
+```bibtex
+@software{barr_2025_17264152,
+  author       = {Barr, David and
+                  Cetre, Sylvain and
+                  Connolly, John and
+                  Thomas Davies},
+  title        = {Durham-Adaptive-Optics/daoBase: Initial Release},
+  month        = oct,
+  year         = 2025,
+  publisher    = {Zenodo},
+  version      = {v0.0.1},
+  doi          = {10.5281/zenodo.17264152},
+  url          = {https://doi.org/10.5281/zenodo.17264152},
+}
+```
+
+Standard citation format:
+
+> Barr, D., Cetre, S., Connolly, J., & Thomas Davies. (2025).
+> Durham-Adaptive-Optics/daoBase: Initial Release (v0.0.1). Zenodo.
+> https://doi.org/10.5281/zenodo.17264152
+
 # The daoTools library
 
 `libdaoTools` (built from `src/c/daoTools.c`, declared in `include/daoTools.h`)
