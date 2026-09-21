@@ -1,7 +1,7 @@
 Python API
 ==========
 
-The ``daoTools`` Python package provides core utilities shared across DAO RTC scripts and higher-level controller modules.
+The ``daoTools`` Python modules provide core utilities shared across DAO RTC scripts and higher-level controller modules. They are installed into the Python module directory as flat modules rather than as a namespace package.
 
 Source locations:
 

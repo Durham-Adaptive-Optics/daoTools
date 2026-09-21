@@ -289,10 +289,15 @@ Data Conversion & I/O
      - Write a NumPy ``.npy`` file into a SHM stream.
 
    * - ``daoTakeDataCubeFITS.py``
-     - Record N frames from a SHM stream to a FITS cube.
+     - Record an ROI from N frames from a SHM stream to a FITS cube. Usage is
+       ``<shm> <nFrames> <description> <width> <cx> <cy>``. The output is
+       written below ``$DAODATA/data`` and includes ``FPS``, ``DIT``,
+       ``Nframes``, ``ROI``, ``CX``, and ``CY`` FITS header values.
 
    * - ``daoTakeDataCubeNPY.py``
-     - Record N frames to a NumPy ``.npy`` file.
+     - Record an ROI from N frames to a NumPy ``.npy`` file. Usage is
+       ``<shm> <nFrames> <description> <width> <cx> <cy>``; output is written
+       below ``$DAODATA/data``.
 
    * - ``daoDescrambleOcam2``
      - Reorder pixels from OCAM2k's scrambled readout format.

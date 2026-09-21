@@ -55,8 +55,8 @@ not actually built/shipped) and the project-scaffolding tools
 | `daoShm2Fits` | SHM | FITS file | `-L <shm> <outputPath>` |
 | `daoFits2Shm.py` | FITS file | SHM (created if absent) | Streams a FITS file into a SHM at a fixed rate. `-f <fits> -s <shm> -p <pause>` |
 | `daoNpy2Shm.py` | `.npy` file | SHM (created if absent) | Same, from a NumPy file. `-n <npy> -s <shm> -p <pause>` |
-| `daoTakeDataCubeFITS.py` | SHM | FITS cube, `<base>Percent` (progress) | Records N frames to a FITS cube. `<shm> <nFrames> <description>` |
-| `daoTakeDataCubeNPY.py` | SHM | `.npy` cube, `<base>Percent` (progress) | Same, to a `.npy` file. `<shm> <nFrames> <description>` |
+| `daoTakeDataCubeFITS.py` | SHM | FITS cube, `<base>Percent` (progress) | Records an ROI from N frames to `$DAODATA/data/<base><timestamp>Cube<description>.fits`. Usage: `<shm> <nFrames> <description> <width> <cx> <cy>`. The FITS header includes `FPS`, `DIT`, `Nframes`, `ROI`, `CX`, and `CY`; `FPS` and `DIT` are read from `<base>Fps.im.shm` and `<base>Dit.im.shm`. |
+| `daoTakeDataCubeNPY.py` | SHM | `.npy` cube, `<base>Percent` (progress) | Records an ROI from N frames to `$DAODATA/data/<base>Cube<description>.npy`. Usage: `<shm> <nFrames> <description> <width> <cx> <cy>`. |
 | `daoSnapshot.py` | SHM | FITS or `.npy` file | Single-frame grab. |
 | `daoShmRate.py` | SHM | terminal only | Prints the live update rate. `<SHM> [--interval <s>]` |
 | `daoStrCmd.py` / `daoReadStr.py` / `daoWriteStr.py` | `<name>SCmd` (write) / `<name>SRsp` (read) | matching command/reply SHM | Generic string-over-SHM command helpers: pack a null-terminated string into a `uint8` SHM (`StrCmd`/`WriteStr`) or unpack one back to text (`ReadStr`). |

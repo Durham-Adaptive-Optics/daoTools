@@ -9,7 +9,7 @@ Source: ``src/python/``
 ProcessController (Base Class)
 -------------------------------
 
-``ProcessController`` (``daoProcessController.py``) is the common base for all process controllers. It handles SHM naming conventions, path parsing, and tmux session naming.
+``ProcessController`` (``daoProcessController.py``) is the common base for all process controllers. It handles SHM naming conventions, path parsing, and tmux session naming. The modules in ``src/python`` are installed as flat Python modules, so imports use the module name directly.
 
 .. code-block:: python
 
@@ -269,11 +269,11 @@ Additional SHMs: ``nChannels`` individual channel SHMs (auto-named ``<output>00.
     from daoDMCombinerController import DMCombinderController
 
     ctrl = DMCombinderController(
-        input_shm='/tmp/dm_in.im.shm',
-        output_shm='/tmp/dm.im.shm',
-        process='daoDMCombiner',
-        output_shape=(97,),
-        nChannels=4        # 4 additive command channels
+      input_shm='/tmp/dm_in.im.shm',
+      output_shm='/tmp/dm.im.shm',
+      process='daoDMCombiner',
+      output_shape=(97,),
+      nChannels=4        # 4 additive command channels
     )
 
     ctrl.createShm()

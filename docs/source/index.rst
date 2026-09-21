@@ -1,6 +1,6 @@
 .. raw:: html
 
-   <div style="background: linear-gradient(135deg, #68246D 0%, #4a1a50 100%); color: white; padding: 60px 40px; margin-bottom: 40px; border-radius: 8px;">
+  <div style="background: linear-gradient(135deg, #68246D 0%, #00AEEF 100%); color: white; padding: 60px 40px; margin-bottom: 40px; border-radius: 8px;">
      <div style="display: flex; align-items: center; gap: 30px; flex-wrap: wrap;">
        <div>
          <h1 style="color: white; font-size: 2.8em; margin: 0 0 10px 0;">daoTools</h1>

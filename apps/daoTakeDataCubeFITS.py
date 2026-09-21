@@ -39,16 +39,16 @@ if __name__ == '__main__':
 #%% Modified July 10, 2025 - Saving data to FITS file 
     
     data = dataCube[:,cx-int(width/2):cx+int(width/2),cy-int(width/2):cy+int(width/2)]
-    DIT = dao.shm(f"/tmp/{self.baseName}Dit.im.shm", np.zeros((1,1)).astype(np.uint32))
-    FPS = dao.shm(f"/tmp/{self.baseName}Fps.im.shm", , np.zeros((1,1)).astype(np.uint32))
+    dit = dao.shm(f"/tmp/{baseName}Dit.im.shm", np.zeros((1, 1)).astype(np.uint32))
+    fps = dao.shm(f"/tmp/{baseName}Fps.im.shm", np.zeros((1, 1)).astype(np.uint32))
 
     time_stamp = time.strftime("%Y-%m-%d%T%H_%M_%S", time.localtime())
     
     hdu = fits.PrimaryHDU(data)
     
     header = hdu.header
-    header['FPS'] = FPS
-    header['DIT'] = DIT
+    header['FPS'] = fps.get_data()[0, 0]
+    header['DIT'] = dit.get_data()[0, 0]
     header['Nframes'] = nFrame
     header['ROI'] = width
     header['CX'] = cx
@@ -58,7 +58,7 @@ if __name__ == '__main__':
     hdul = fits.HDUList([hdu])
     
     filename = f"{os.getenv('DAODATA')}/data/{baseName}{time_stamp}Cube{desc}.fits"
-    print(f"saving in {fileName}")
-    hdul.writeto{filename}
+    print(f"saving in {filename}")
+    hdul.writeto(filename, overwrite=True)
     
     
