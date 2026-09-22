@@ -23,50 +23,41 @@ def configure(conf):
 	conf.write_config_header('config.h')
 	print('→ prefix is ' + conf.options.prefix)
 
-	conf.check_cfg( package='protobuf',
-				args='--cflags --libs',
-				uselib_store='PROTOBUF'
-				)
- 
-	conf.check_cfg( package='cfitsio',
-				args='--cflags --libs',
-				uselib_store='cfitsio'
-				)
- 
-	conf.check_cfg(package='yaml-cpp',
-				args='--cflags --libs',
-				uselib_store='YAMLCPP'
-				)
- 
-	conf.check_cfg(package='fmt',
-				args='--cflags --libs',
-				uselib_store='FMT'
-				)
- 
-	# Check for ZeroMQ
-	conf.check_cfg(package='libzmq',
-				args='--cflags --libs',
-				uselib_store='ZMQ'
-				)
- 
+	# Optional C++ application dependencies must not block the core C tools.
+	for package, uselib in (
+		('protobuf', 'PROTOBUF'),
+		('cfitsio', 'cfitsio'),
+		('yaml-cpp', 'YAMLCPP'),
+		('fmt', 'FMT'),
+		('libzmq', 'ZMQ'),
+	):
+		conf.env[uselib.upper() + '_AVAILABLE'] = bool(conf.check_cfg(
+			package=package, args='--cflags --libs',
+			uselib_store=uselib, mandatory=False))
+
+	# daoDAQ requires CFITSIO's unsigned 64-bit image/data constants.
+	# A .pc file alone may refer to headers that are too old or shadowed.
+	if conf.env.CFITSIO_AVAILABLE:
+		conf.env.CFITSIO_AVAILABLE = bool(conf.check_cxx(
+			fragment="""#include <fitsio.h>
+int main() {
+    float version;
+    fits_get_version(&version);
+    return TULONGLONG == 0 || ULONGLONG_IMG == 0;
+}""",
+			uselib='cfitsio', mandatory=False,
+			msg='Checking for usable CFITSIO with unsigned 64-bit support'))
+
 	# Enable draft API support
 	conf.env.CFLAGS += ['-DZMQ_BUILD_DRAFT_API']
 	conf.env.CXXFLAGS += ['-DZMQ_BUILD_DRAFT_API']
 
-	# --- CLI11 (header-only) ---
-	conf.env.HAVE_CLI11 = False
-	# Try pkg-config if the distro provides it (some do)
-	try:
-		conf.check_cfg(package='CLI11', args='--cflags --libs', uselib_store='CLI11')
-		conf.env.HAVE_CLI11 = True
-	except:
-		# Fallback: just verify the header exists from libcli11-dev
-		if conf.check_cxx(header_name='CLI11.hpp', mandatory=False):
-			conf.env.HAVE_CLI11 = True
-		elif conf.check_cxx(header_name='CLI/CLI.hpp', mandatory=False):
-			conf.env.HAVE_CLI11 = True
-		else:
-			conf.fatal('CLI11 not found. Install libcli11-dev or provide CLI11.hpp')
+	# Both consumers include CLI/CLI.hpp; verify that exact include path,
+	# even when pkg-config reports CLI11 as installed.
+	conf.check_cfg(package='CLI11', args='--cflags --libs',
+		uselib_store='CLI11', mandatory=False)
+	conf.env.HAVE_CLI11 = bool(conf.check_cxx(
+		header_name='CLI/CLI.hpp', uselib='CLI11', mandatory=False))
 
 	# Check for CUDA
 	conf.env.CUDA_AVAILABLE = False  # Default to False

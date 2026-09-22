@@ -429,15 +429,25 @@ daoApplyGain = bld.program(
 	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
-daoDownsample = bld.program(
-	source = 'daoDownsample.cpp',
-	target = 'daoDownsample',
-	includes = '../include '+os.getenv('DAOROOT')+'/include/',
-	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-ldaoNuma', '-ldaoProto'] + my_ld_flags,
-	use= 'daoTools CLI11 PROTOBUF ZMQ',
-	cxxflags = ['-O3', '-fno-tree-vectorize', '-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto', '-std=c++17']
-)
+downsample_missing = [
+    label for available, label in (
+        (bld.env.HAVE_CLI11, 'CLI11'),
+        (bld.env.PROTOBUF_AVAILABLE, 'protobuf'),
+        (bld.env.ZMQ_AVAILABLE, 'ZeroMQ'),
+    ) if not available
+]
+if downsample_missing:
+    print("Skipping daoDownsample build (missing or unusable: %s)." % ', '.join(downsample_missing))
+else:
+	daoDownsample = bld.program(
+		source = 'daoDownsample.cpp',
+		target = 'daoDownsample',
+		includes = '../include '+os.getenv('DAOROOT')+'/include/',
+		linkflags = my_link_flags,
+		ldflags = ['-ldao' , '-lpthread', '-ldaoNuma', '-ldaoProto'] + my_ld_flags,
+		use= 'daoTools CLI11 PROTOBUF ZMQ',
+		cxxflags = ['-O3', '-fno-tree-vectorize', '-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto', '-std=c++17']
+	)
 
 if bld.env.BLAS_AVAILABLE:
 	daoMvM = bld.program(
@@ -496,4 +506,17 @@ daoShmAdd = bld.program(
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
-bld.recurse("daoDAQ")
+daq_missing = [
+    label for available, label in (
+        (bld.env.HAVE_CLI11, 'CLI11'),
+        (bld.env.CFITSIO_AVAILABLE, 'CFITSIO'),
+        (bld.env.FMT_AVAILABLE, 'fmt'),
+        (bld.env.ZMQ_AVAILABLE, 'ZeroMQ'),
+        (bld.env.PROTOBUF_AVAILABLE, 'protobuf'),
+        (bld.env.YAMLCPP_AVAILABLE, 'yaml-cpp'),
+    ) if not available
+]
+if daq_missing:
+    print("Skipping daoDAQ build (missing or unusable: %s)." % ', '.join(daq_missing))
+else:
+    bld.recurse("daoDAQ")
