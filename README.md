@@ -262,6 +262,26 @@ keep the same public `shm` interface.
 See [the migration regression tests](tests/README.md) for the exact rename
 mapping, before/after numerical checks, and validation limits.
 
+# Optional build dependencies
+
+Configuration continues when optional C++ application dependencies are missing.
+The build prints the name of each skipped program and its missing or unusable
+dependencies:
+
+| Program | Required optional dependencies |
+| --- | --- |
+| `daoDAQ` | CFITSIO, CLI11, fmt, ZeroMQ, protobuf, yaml-cpp |
+| `daoDownsample` | CLI11, protobuf, ZeroMQ |
+
+CFITSIO must provide the unsigned 64-bit constants used by daoDAQ; configuration
+checks both its headers and library. CLI11 must provide `CLI/CLI.hpp`.
+The core C library and other tools remain enabled. Existing BLAS, CUDA, and
+FFTW checks continue to control their respective targets.
+
+After installing a missing dependency, rerun `waf configure` and `waf build`
+to enable the corresponding programs. Skipping a program does not uninstall
+an older copy that is already present.
+
 # Build
 ```
 waf configure --prefix=$DAOROOT
