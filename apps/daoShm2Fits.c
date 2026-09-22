@@ -84,7 +84,7 @@ static int realTimeLoop()
     daoInfo("Ouput folder = %s", outputPath);
     fflush(stdout);
     inShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(shmName, &inShm[0]);
+    daoShmOpen(shmName, &inShm[0]);
 
     //int nbInVal = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
     struct timespec t[3];
@@ -98,7 +98,7 @@ static int realTimeLoop()
         // Wait for new image
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
-        if (daoShmWaitForSemaphoreTimeout(inShm, 2, &timeout) != -1)
+        if (daoShmWaitSemTimeout(inShm, 2, &timeout) != -1)
         {
             // New image, insert something here
             clock_gettime(CLOCK_REALTIME, &t[1]);

@@ -86,9 +86,9 @@ static int realTimeLoop()
     inShm = (IMAGE*) malloc(sizeof(IMAGE));
     maskShm = (IMAGE*) malloc(sizeof(IMAGE));
     extractShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(inShmName, &inShm[0]);
-    daoShmShm2Img(maskShmName, &maskShm[0]);
-    daoShmShm2Img(extractShmName, &extractShm[0]);
+    daoShmOpen(inShmName, &inShm[0]);
+    daoShmOpen(maskShmName, &maskShm[0]);
+    daoShmOpen(extractShmName, &extractShm[0]);
 
     daoInfo("Starting loop, %s/%s \n",inShmName, extractShmName);
     fflush(stdout);
@@ -104,7 +104,7 @@ static int realTimeLoop()
         t[0] = t[1];
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
-        if (daoShmWaitForSemaphoreTimeout(inShm, semNb, &timeout) != -1)
+        if (daoShmWaitSemTimeout(inShm, semNb, &timeout) != -1)
         {
             clock_gettime(CLOCK_REALTIME, &t[2]);
             daoToolsShmExtract(inShm, maskShm, extractShm);

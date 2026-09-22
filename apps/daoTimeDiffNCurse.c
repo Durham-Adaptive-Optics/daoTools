@@ -89,13 +89,13 @@ static int realTimeLoop()
     shm0 = (IMAGE*) malloc(sizeof(IMAGE));
     shm1 = (IMAGE*) malloc(sizeof(IMAGE));
     latencyShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(shm0Name, &shm0[0]);
-    daoShmShm2Img(shm1Name, &shm1[0]);
+    daoShmOpen(shm0Name, &shm0[0]);
+    daoShmOpen(shm1Name, &shm1[0]);
     // Create size array, using 2D of 1x1... can be change to 1D
     uint32_t size[2];
     size[0] = 1;
     size[1] = 1;
-    daoShmImageCreate(latencyShm, latencyShmName, 2, size, _DATATYPE_FLOAT, 1, 0);
+    daoShmCreate(latencyShm, latencyShmName, 2, size, _DATATYPE_FLOAT, 1, 0);
 
     WINDOW * mainwin;
     mainwin = initscr();
@@ -127,7 +127,7 @@ static int realTimeLoop()
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
         // wait for 2nd shm
-        if (daoShmWaitForSemaphoreTimeout(shm1, sem1, &timeout) != DAO_TIMEOUT)
+        if (daoShmWaitSemTimeout(shm1, sem1, &timeout) != DAO_TIMEOUT)
         {
             t[0] = shm0[0].md[0].atime.tsfixed.secondlong;
             frameId0 = daoShmGetCounter(shm0);//shm0[0].md[0].cnt2;
@@ -149,7 +149,7 @@ static int realTimeLoop()
             else
             {
                 validFrames++;
-                daoShmImage2Shm((float *)latency, 1, &latencyShm[0]);
+                daoShmSetData(&latencyShm[0], (float *)latency, 1);
             }
             printw("frame ID SHM0 = %ld\n", frameId0);
             printw("frame ID SHM1 = %ld\n", frameId1);

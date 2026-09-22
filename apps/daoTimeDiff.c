@@ -111,19 +111,19 @@ static int realTimeLoop()
     avgShm = (IMAGE*) malloc(sizeof(IMAGE));
     rmsShm = (IMAGE*) malloc(sizeof(IMAGE));
     arrayShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(shm0Name, &shm0[0]);
-    daoShmShm2Img(shm1Name, &shm1[0]);
+    daoShmOpen(shm0Name, &shm0[0]);
+    daoShmOpen(shm1Name, &shm1[0]);
     // Create size array, using 2D of 1x1... can be change to 1D
     uint32_t size[2];
     size[0] = 1;
     size[1] = 1;
-    daoShmImageCreate(latencyShm, latencyShmName, 2, size, _DATATYPE_FLOAT, 1, 0);
-    daoShmImageCreate(avgShm, avgShmName, 2, size, _DATATYPE_FLOAT, 1, 0);
-    daoShmImageCreate(rmsShm, rmsShmName, 2, size, _DATATYPE_FLOAT, 1, 0);
+    daoShmCreate(latencyShm, latencyShmName, 2, size, _DATATYPE_FLOAT, 1, 0);
+    daoShmCreate(avgShm, avgShmName, 2, size, _DATATYPE_FLOAT, 1, 0);
+    daoShmCreate(rmsShm, rmsShmName, 2, size, _DATATYPE_FLOAT, 1, 0);
     uint32_t arraySize[2];
     arraySize[0] = (uint32_t)popSize;
     arraySize[1] = 1;
-    daoShmImageCreate(arrayShm, arrayShmName, 2, arraySize, _DATATYPE_FLOAT, 1, 0);
+    daoShmCreate(arrayShm, arrayShmName, 2, arraySize, _DATATYPE_FLOAT, 1, 0);
 
     // Sliding window for the AVG/RMS/Array SHMs (merged in from the former
     // daoTimeDiffStat pairing - see -n). circCount tracks how many samples
@@ -159,7 +159,7 @@ static int realTimeLoop()
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
         // wait for 2nd shm
-        if (daoShmWaitForSemaphoreTimeout(shm1, sem1, &timeout) != DAO_TIMEOUT)
+        if (daoShmWaitSemTimeout(shm1, sem1, &timeout) != DAO_TIMEOUT)
         {
             // Full sec+nsec timestamp: tsfixed.secondlong alone is only the
             // nsec-within-second component (tsfixed and ts are a union over
@@ -182,7 +182,7 @@ static int realTimeLoop()
             }
             else
             {
-                daoShmImage2Shm((float *)latency, 1, &latencyShm[0]);
+                daoShmSetData(&latencyShm[0], (float *)latency, 1);
 
                 // push into the sliding window, then recompute AVG/RMS
                 circBuf[circHead] = latency[0];
@@ -203,8 +203,8 @@ static int realTimeLoop()
 
                 avgOut[0] = (float)avg;
                 rmsOut[0] = (float)rms;
-                daoShmImage2Shm((float *)avgOut, 1, &avgShm[0]);
-                daoShmImage2Shm((float *)rmsOut, 1, &rmsShm[0]);
+                daoShmSetData(&avgShm[0], (float *)avgOut, 1);
+                daoShmSetData(&rmsShm[0], (float *)rmsOut, 1);
 
                 // circBuf in chronological order: not yet full -> it hasn't
                 // wrapped, so it's already in order; full -> the oldest
@@ -218,7 +218,7 @@ static int realTimeLoop()
                     memcpy(orderedBuf, circBuf + circHead, (size_t)(popSize - circHead) * sizeof(float));
                     memcpy(orderedBuf + (popSize - circHead), circBuf, (size_t)circHead * sizeof(float));
                 }
-                daoShmImage2Shm(orderedBuf, (uint32_t)circCount, &arrayShm[0]);
+                daoShmSetData(&arrayShm[0], orderedBuf, (uint32_t)circCount);
             }
 
             struct timespec now;

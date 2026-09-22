@@ -93,8 +93,8 @@ void * clockRealTimeLoop(void *thread_data)
     size[0] = 1;
     size[1] = 1;
     // Create SHM
-    daoShmImageCreate(shm, clockName, 2, size, _DATATYPE_UINT32, 1, 0);
-    daoShmImageCreate(shmFreq, freqName, 2, size, _DATATYPE_FLOAT, 1, 0);
+    daoShmCreate(shm, clockName, 2, size, _DATATYPE_UINT32, 1, 0);
+    daoShmCreate(shmFreq, freqName, 2, size, _DATATYPE_FLOAT, 1, 0);
     shmFreq[0].array.F[0] = frequency;
     // MAIN LOOP
     daoInfo("ENTERING LOOP\n");
@@ -127,7 +127,7 @@ void * clockRealTimeLoop(void *thread_data)
         clock_gettime(CLOCK_REALTIME, &t[2]);
         clock[0]++;// = clock[0] + 1;
         shm[0].md[0].cnt2++; 
-        daoShmImage2Shm((unsigned int*)clock, 1, &shm[0]);
+        daoShmSetData(&shm[0], (unsigned int*)clock, 1);
         t[0]=t[1];
         clock_gettime(CLOCK_REALTIME, &t[1]);
         elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;    // sec to ms

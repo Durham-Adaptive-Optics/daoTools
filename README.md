@@ -251,6 +251,17 @@ Pokes, then Channel 04, Channel 05, etc. Custom labels must supply one name
 per channel. The layout is generated in Python, so no separate `.ui` file
 is needed for each channel count.
 
+# daoBase API compatibility
+
+The C/C++ tools use daoBase's primary shared-memory API
+(`daoShmCreate`, `daoShmOpen`, `daoShmSetData`, etc.). Build and install
+daoBase with that API (commit `8f64d74` or later) before rebuilding daoTools;
+older installed headers/libraries do not provide these names. Python callers
+keep the same public `shm` interface.
+
+See [the migration regression tests](tests/README.md) for the exact rename
+mapping, before/after numerical checks, and validation limits.
+
 # Build
 ```
 waf configure --prefix=$DAOROOT

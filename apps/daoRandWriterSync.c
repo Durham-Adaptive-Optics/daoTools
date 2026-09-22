@@ -83,9 +83,9 @@ static int realTimeLoop()
     daoInfo("Starting loop, %s \n", outShmName);
     fflush(stdout);
     outShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(outShmName, &outShm[0]);
+    daoShmOpen(outShmName, &outShm[0]);
     clockShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(clockShmName, &clockShm[0]);
+    daoShmOpen(clockShmName, &clockShm[0]);
 
     int outSize = outShm[0].md[0].size[0]*outShm[0].md[0].size[1];
     struct timespec t[4];
@@ -99,7 +99,7 @@ static int realTimeLoop()
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
         // Wait for the clock frame using semaphore
-        if (daoShmWaitForSemaphoreTimeout(clockShm, semNb, &timeout) != DAO_TIMEOUT)
+        if (daoShmWaitSemTimeout(clockShm, semNb, &timeout) != DAO_TIMEOUT)
         {
             t[0] = t[1];
             outShm[0].md[0].cnt2 = clockShm[0].md[0].cnt2;
@@ -109,7 +109,7 @@ static int realTimeLoop()
                 outCmd[k] = 1 - 2 * (float)rand() / (float)RAND_MAX;
             }
 
-            daoShmImage2Shm((float *)outCmd, outSize, &outShm[0]);
+            daoShmSetData(&outShm[0], (float *)outCmd, outSize);
 
             clock_gettime(CLOCK_REALTIME, &t[1]);
             elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;

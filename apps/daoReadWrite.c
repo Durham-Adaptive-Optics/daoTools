@@ -85,8 +85,8 @@ static int realTimeLoop()
     fflush(stdout);
     inShm = (IMAGE*) malloc(sizeof(IMAGE));
     outShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(inShmName, &inShm[0]);
-    daoShmShm2Img(outShmName, &outShm[0]);
+    daoShmOpen(inShmName, &inShm[0]);
+    daoShmOpen(outShmName, &outShm[0]);
 
     int nbInVal = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
     int nbOutVal = outShm[0].md[0].size[0]*outShm[0].md[0].size[1];
@@ -103,7 +103,7 @@ static int realTimeLoop()
         // Wait for new image
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
-        if (daoShmWaitForSemaphoreTimeout(inShm, semNb, &timeout) != -1)
+        if (daoShmWaitSemTimeout(inShm, semNb, &timeout) != -1)
         {
 
         // New image, insert something here
@@ -114,7 +114,7 @@ static int realTimeLoop()
         {
              outCmd[k] = offset + 1 - 2 * (float)rand()/(float)RAND_MAX;
         }
-        daoShmImage2Shm((float*)outCmd, nbOutVal, &outShm[0]);
+        daoShmSetData(&outShm[0], (float*)outCmd, nbOutVal);
 
         clock_gettime(CLOCK_REALTIME, &t[1]);
         elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
