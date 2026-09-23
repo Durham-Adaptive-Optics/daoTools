@@ -1,6 +1,9 @@
 #!/bin/bash
 # daoTmux
 # Usage: daoTmux <tmux_session_name> "<command>"
+# If the session is already running a process, stop it first (Ctrl-C, then
+# SIGTERM, then SIGKILL) and wait for it to exit before starting <command>.
+# DAO_TMUX_TIMEOUT: seconds to wait after Ctrl-C (default 10).
 
 if [ $# -lt 2 ]; then
     echo "Usage: $0 <tmux_session_name> \"<command>\""
@@ -10,14 +13,51 @@ fi
 tmuxname="$1"
 shift
 cmd="$*"
+timeout="${DAO_TMUX_TIMEOUT:-10}"
 
-# Kill existing process in tmux session if it exists
-tmux send-keys -t "$tmuxname" C-c 2>/dev/null
-sleep 0.1
+# Wait until no process is left in the job process groups, up to $1 seconds
+waitExit() {
+    local i
+    for ((i = 0; i < $1 * 10; i++)); do
+        pgrep -g "$pgids" >/dev/null || return 0
+        sleep 0.1
+    done
+    return 1
+}
+
+# Send signal $1 to every job process group. Signalling the whole group (as
+# Ctrl-C does) also stops the children of the launched command.
+signalJobs() {
+    local g
+    for g in ${pgids//,/ }; do
+        kill -"$1" -- "-$g" 2>/dev/null
+    done
+}
+
+# Stop existing process in tmux session if it exists
+if tmux has-session -t "$tmuxname" 2>/dev/null; then
+    shell=$(tmux display-message -p -t "$tmuxname" '#{pane_pid}')
+    # Process groups of the jobs started by the pane shell (not its own group)
+    own=$(ps -o pgid= -p "$shell" | tr -d ' ')
+    pgids=$(ps -o pgid= --ppid "$shell" | tr -d ' ' | sort -u | grep -vx "$own" | paste -sd,)
+    if [ -n "$pgids" ]; then
+        echo "Stopping process in tmux session \"$tmuxname\""
+        tmux send-keys -t "$tmuxname" C-c
+        if ! waitExit "$timeout"; then
+            echo "\"$tmuxname\" still running after ${timeout}s, sending SIGTERM" >&2
+            signalJobs TERM
+            if ! waitExit 2; then
+                echo "\"$tmuxname\" still running, sending SIGKILL" >&2
+                signalJobs KILL
+                waitExit 1
+            fi
+        fi
+    fi
+fi
 
 echo "Executing \"$cmd\" in tmux session \"$tmuxname\""
 
-# Create session if it doesn’t exist
+# Create session if it doesn't exist
 if ! tmux has-session -t "$tmuxname" 2>/dev/null; then
     tmux new -d -s "$tmuxname"
 fi
