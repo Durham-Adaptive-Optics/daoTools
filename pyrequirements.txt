@@ -9,3 +9,4 @@ sphinx
 screeninfo
 pytest
 pyqtgraph
+PyQt5
