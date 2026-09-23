@@ -15,28 +15,40 @@ shift
 cmd="$*"
 timeout="${DAO_TMUX_TIMEOUT:-10}"
 
-# Wait until the pane shell has no child process left, up to $1 seconds
+# Wait until no process is left in the job process groups, up to $1 seconds
 waitExit() {
     local i
     for ((i = 0; i < $1 * 10; i++)); do
-        pgrep -P "$shell" >/dev/null || return 0
+        pgrep -g "$pgids" >/dev/null || return 0
         sleep 0.1
     done
     return 1
 }
 
+# Send signal $1 to every job process group. Signalling the whole group (as
+# Ctrl-C does) also stops the children of the launched command.
+signalJobs() {
+    local g
+    for g in ${pgids//,/ }; do
+        kill -"$1" -- "-$g" 2>/dev/null
+    done
+}
+
 # Stop existing process in tmux session if it exists
 if tmux has-session -t "$tmuxname" 2>/dev/null; then
     shell=$(tmux display-message -p -t "$tmuxname" '#{pane_pid}')
-    if pgrep -P "$shell" >/dev/null; then
+    # Process groups of the jobs started by the pane shell (not its own group)
+    own=$(ps -o pgid= -p "$shell" | tr -d ' ')
+    pgids=$(ps -o pgid= --ppid "$shell" | tr -d ' ' | sort -u | grep -vx "$own" | paste -sd,)
+    if [ -n "$pgids" ]; then
         echo "Stopping process in tmux session \"$tmuxname\""
         tmux send-keys -t "$tmuxname" C-c
         if ! waitExit "$timeout"; then
             echo "\"$tmuxname\" still running after ${timeout}s, sending SIGTERM" >&2
-            pkill -TERM -P "$shell"
+            signalJobs TERM
             if ! waitExit 2; then
                 echo "\"$tmuxname\" still running, sending SIGKILL" >&2
-                pkill -KILL -P "$shell"
+                signalJobs KILL
                 waitExit 1
             fi
         fi
