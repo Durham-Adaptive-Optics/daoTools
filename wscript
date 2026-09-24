@@ -97,19 +97,25 @@ int main() {
 	except Exception as e:
 		print('CUDA not found or incomplete: skipping GPU.', e)
 
-	# Check for BLAS (try both 'blas' and 'openblas' pkg-config names)
+	# Check for BLAS. Prefer 'openblas': daoMvM calls openblas_set_num_threads,
+	# and a generic 'blas' .pc may resolve to reference BLAS (-lblas).
 	conf.env.BLAS_AVAILABLE = False  # Default to False
 	try:
-		conf.check_cfg(package='blas', args='--cflags --libs', uselib_store='BLAS')
+		conf.check_cfg(package='openblas', args='--cflags --libs', uselib_store='BLAS')
 		conf.env.BLAS_AVAILABLE = True
-		print("BLAS detected: enabling BLAS build.")
+		print("OpenBLAS detected: enabling BLAS build.")
 	except:
 		try:
-			conf.check_cfg(package='openblas', args='--cflags --libs', uselib_store='BLAS')
+			conf.check_cfg(package='blas', args='--cflags --libs', uselib_store='BLAS')
 			conf.env.BLAS_AVAILABLE = True
-			print("OpenBLAS detected: enabling BLAS build.")
+			print("BLAS detected: enabling BLAS build.")
 		except:
 			print("BLAS not found: skipping BLAS.")
+	# Homebrew's openblas.pc exports -fopenmp, which Apple clang rejects;
+	# callers only need the cblas headers, not OpenMP.
+	if Utils.unversioned_sys_platform() == 'darwin':
+		for var in ('CFLAGS_BLAS', 'CXXFLAGS_BLAS'):
+			conf.env[var] = [f for f in conf.env[var] if f != '-fopenmp']
 
 	# Check for FFTW (single- and double-precision; both required to enable
 	# the FFT-based correlation centroider, daoToolsCorrFFT).
