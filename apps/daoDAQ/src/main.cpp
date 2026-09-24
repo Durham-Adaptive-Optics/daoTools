@@ -63,7 +63,7 @@ int main(int argc, char* argv[]) {
     app.add_option(
         "--port, -p",
         tcpPort,
-        fmt::format("Specify DAQ server host port (default: {}", DEFAULT_TCP_PORT)
+        fmt::format("Specify DAQ server host port (default: {})", DEFAULT_TCP_PORT)
     );
 
     app.add_flag(
@@ -98,7 +98,7 @@ int main(int argc, char* argv[]) {
         log.SetLevel(logVerbosity);
 
         log.Info("new process started");
-        Dao::DAQ::DAQServer daqServer(DEFAULT_TCP_PORT, log);
+        Dao::DAQ::DAQServer daqServer(tcpPort, log);
         if (daqConfigPath.length()) {
             try {
                 std::ifstream daqConfigFile(daqConfigPath);

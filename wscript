@@ -137,10 +137,24 @@ def build(bld):
 	files = glob.glob('gui/*.py')
 	for file in files:
 		bld.install_files(bld.env.PREFIX+'/bin', file, chmod=0o0755, relative_trick=False)
+	# config
+	files = glob.glob('config/daq/*.yaml')
+	for file in files:
+		bld.install_files(bld.env.PREFIX+'/config/daq', file, relative_trick=False)
+	# default daoDAQ root_storage (config/daq/default.yaml): ${DAOROOT}/telemetry
+	if bld.cmd == 'install':
+		bld.add_post_fun(make_telemetry_dir)
 	# script
 	files = glob.glob('scripts/*')
 	for file in files:
 		bld.install_files(bld.env.PREFIX+'/bin', file, chmod=0o0755, relative_trick=False)
+
+def make_telemetry_dir(ctx):
+	from waflib import Options
+	path = os.path.join(ctx.env.PREFIX, 'telemetry')
+	if Options.options.destdir:
+		path = os.path.join(Options.options.destdir, path.lstrip(os.sep))
+	os.makedirs(path, exist_ok=True)
 
 docs = 'docs'
 
