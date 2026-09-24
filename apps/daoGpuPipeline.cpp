@@ -346,7 +346,7 @@ static bool enqueueFrame(Pipeline &p, cudaStream_t st)
             return false;
         prof.mark(st, daoGpuStageName(s));
         daoGpuPort *o = daoGpuStageOutput(s);
-        if (!needsCopyOut(o))
+        if (!needsCopyOut(o) || !daoGpuStagePublishes(s))   // not published this frame: host SHM left alone
             continue;
         bool last = k + 1 == p.stages.size();
         if (last || prof.on) {                       // nothing left to overlap with
@@ -430,7 +430,10 @@ static int run(const char *configPath, int cpu, int onlyStage)
     cudaGraphExec_t exec = nullptr;
     const char *profEnv = getenv("DAO_GPU_PIPELINE_PROFILE");
     prof.on = profEnv && *profEnv && strcmp(profEnv, "0") != 0;
+    std::vector<char> capturedPublish(p.stages.size());   // which outputs the graph copies back
     auto capture = [&]() {                           // one frame's work as a graph
+        for (size_t k = 0; k < p.stages.size(); k++)
+            capturedPublish[k] = daoGpuStagePublishes(p.stages[k]);
         if (exec)
             cudaGraphExecDestroy(exec);
         if (graph)
@@ -475,6 +478,8 @@ static int run(const char *configPath, int cpu, int onlyStage)
             paramsOk = r >= 0 && paramsOk;
             recapture = recapture || r == DAO_GPU_RECAPTURE;
         }
+        for (size_t k = 0; k < p.stages.size() && !recapture; k++)   // a stage starts / stops publishing:
+            recapture = daoGpuStagePublishes(p.stages[k]) != capturedPublish[k];   // its copy-back changes
         if (!paramsOk)                                   // the stage said why; skip this frame
             continue;
         if (recapture && useGraph && !capture()) {       // a stage's work changed (e.g. sizes)

@@ -124,7 +124,9 @@ int  daoGpuStageRun(daoGpuStage *s, cudaStream_t st);
  * update); returns once it is done. No-op for most stages. */
 int  daoGpuStagePost(daoGpuStage *s, cudaStream_t st);
 void daoGpuStageDestroy(daoGpuStage *s);
-/* Whether the stage's output is published this frame (default: every frame). */
+/* Whether the stage's output is published this frame (default: every frame). An
+ * output not published is not copied back to its host SHM either: the SHM is
+ * left untouched (the pipeline recaptures its graph when this changes). */
 void daoGpuStageSetPublish(daoGpuStage *s, int publish);
 int  daoGpuStagePublishes(const daoGpuStage *s);
 
