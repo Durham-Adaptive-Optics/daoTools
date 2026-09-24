@@ -32,9 +32,15 @@ not actually built/shipped) and the project-scaffolding tools
 | Tool | Inputs | Outputs | Notes |
 |---|---|---|---|
 | `daoMvM` | vector, matrix | vector | `y = M x`, CPU (BLAS, single call per frame). `-S <input> <matrix> <output> -s <semNb> [-C <cpu>] [-N <blasThreads>]` |
-| `daoMvMGPU` | vector, matrix | vector | Same, CUDA. `-S <input> <matrix> <output> -s <semNb> [-C <cpu>] [-G <gpu>]` |
+| `daoMvMGPU` | vector, matrix | vector | Same, CUDA. GPU SHMs are used in place (no host copy; the loop runs on their GPU). `-S <input> <matrix> <output> -s <semNb> [-C <cpu>] [-G <gpu>]` |
 | `daoMvM.py` | vector, matrix | vector | Python reference (NumPy or CuPy if available). `-m <matrix> -v <vector> -o <output> [-g]` |
 | `daoReconstructor.py` | vector, matrix | vector | Minimal Python MVM (nice +10, debug/offline use). `-i <input> -r <recon> -o <output>` |
+
+## GPU pipeline
+
+| Tool | Inputs | Outputs | Notes |
+|---|---|---|---|
+| `daoGpuPipeline` | the configuration's trigger and input SHMs, parameter SHMs | every stage's output SHM, published each frame | A chain of GPU stages (GPU versions of the tools in this file: pixel calibration / extraction, centroiders, MVM, gain) in one process, one CUDA graph per frame. `-c <config.yaml> [-s <stage>] [-C <cpu>] -L`; `-s N` runs only stage N, triggered by its input. See `docs/source/gpu_pipeline.rst`. |
 
 ## Pixel calibration
 
@@ -59,6 +65,7 @@ not actually built/shipped) and the project-scaffolding tools
 | `daoTakeDataCubeNPY.py` | SHM | `.npy` cube, `<base>Percent` (progress) | Records an ROI from N frames to `$DAODATA/data/<base>Cube<description>.npy`. Usage: `<shm> <nFrames> <description> <width> <cx> <cy>`. |
 | `daoSnapshot.py` | SHM | FITS or `.npy` file | Single-frame grab. |
 | `daoShmRate.py` | SHM | terminal only | Prints the live update rate. `<SHM> [--interval <s>]` |
+| `daoShmSlice` | SHM | SHM | Each time the input is published, copies its values `[offset, offset + n)` into the output (same data type; the input may be a GPU SHM) and publishes it, with the input's `cnt2`. `-S <in> <out> [-o <offset>] [-n <n>] -s <semNb>` (`n` defaults to the output's size) |
 | `daoStrCmd.py` / `daoReadStr.py` / `daoWriteStr.py` | `<name>SCmd` (write) / `<name>SRsp` (read) | matching command/reply SHM | Generic string-over-SHM command helpers: pack a null-terminated string into a `uint8` SHM (`StrCmd`/`WriteStr`) or unpack one back to text (`ReadStr`). |
 
 ## SHM arithmetic

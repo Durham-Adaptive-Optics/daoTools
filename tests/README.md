@@ -110,3 +110,23 @@ This is regression evidence for the interface transition, not a claim that
 every existing algorithm is correct. GPU execution, hardware/network delivery,
 macOS execution, and every executable's full operating modes have not been
 tested. The exact source checks cover the migration in those callers.
+
+# GPU stages and pipeline
+
+Built when CUDA is found (see `docs/source/gpu_pipeline.rst`).
+
+- `build/tests/testGpuStages [device]` runs each GPU stage (`libdaoToolsGpu`)
+  and the libdaoTools function (or application loop) it replaces on the same
+  SHMs, and compares the outputs: centroid slopes to within 1e-4 px, the
+  extraction and descrambling stages bit for bit. SHMs are created in
+  `$DAO_GPU_TEST_DIR` (default `/dev/shm/daoGpuStagesTest`); a folder that is
+  not tmpfs tests the copy mode instead of zero copy. The exit code is the
+  number of failures.
+- `bench_pyramid_pipeline.py` and `bench_sh_pipeline.py` time a pyramid WFS
+  chain and a Shack-Hartmann chain (three centroiders) as separate daoTools
+  processes and as `daoGpuPipeline`, on the same frames (`pipelineDriver.c`
+  writes each frame and times its output), and check the outputs.
+  `--shm-dir` sets the SHM folder (tmpfs for zero copy); the pyramid benchmark
+  also runs with and without MPS.
+- `bench_mvm_gpu.py` (with `benchMvMGPU.cu`) times `daoMvMGPU` with host SHMs
+  and GPU SHMs.
