@@ -15,11 +15,13 @@
  *
  * A stage is used by daoGpuPipeline (several stages in one process, one CUDA
  * graph per frame); everything a stage enqueues in daoGpuStageRun can be
- * captured in a CUDA graph.
+ * captured in a CUDA graph. Stages can also be written outside daoTools and
+ * loaded as plugins (daoGpuStageCreate, daoGpuRegisterStage below).
  */
 #ifndef DAO_GPU_STAGES_H
 #define DAO_GPU_STAGES_H
 
+#include <stdlib.h>
 #include <cuda_runtime.h>
 #include "dao.h"
 
@@ -102,6 +104,8 @@ daoGpuStage *daoGpuCentroidCorrelationFFTCreate(daoGpuPort *in, IMAGE *subApCent
                                                 daoGpuPort *out);
 
 /* ---- vectors */
+/* daoShmSlice: out[0, count) = in[offset, offset + count), any type (same as in) */
+daoGpuStage *daoGpuSliceCreate(daoGpuPort *in, long offset, long count, daoGpuPort *out);
 /* daoMvMGPU: out = matrix . in (matrix size[0] = outputs, size[1] = inputs; the
  * input may be longer: its first size[1] values are used) */
 daoGpuStage *daoGpuMvmCreate(daoGpuPort *in, IMAGE *matrix, daoGpuPort *out);
@@ -120,6 +124,64 @@ int  daoGpuStageRun(daoGpuStage *s, cudaStream_t st);
  * update); returns once it is done. No-op for most stages. */
 int  daoGpuStagePost(daoGpuStage *s, cudaStream_t st);
 void daoGpuStageDestroy(daoGpuStage *s);
+/* Whether the stage's output is published this frame (default: every frame). */
+void daoGpuStageSetPublish(daoGpuStage *s, int publish);
+int  daoGpuStagePublishes(const daoGpuStage *s);
+
+/* ------------------------------------------------ stages written elsewhere */
+/* A stage is its own functions and state. update() returns 0 (nothing
+ * changed), 1 (parameters reloaded), DAO_GPU_RECAPTURE (the work run() enqueues
+ * changed, e.g. new sizes: the runner captures its graph again) or < 0 (error:
+ * the frame is skipped). run() returns 1 on success. post() is optional. */
+#define DAO_GPU_RECAPTURE 2
+typedef struct {
+    int  (*update)(void *self, cudaStream_t st);
+    int  (*run)(void *self, cudaStream_t st);
+    int  (*post)(void *self, cudaStream_t st);
+    void (*destroy)(void *self);
+} daoGpuStageOps;
+
+/* A stage from its functions; in, out: its data ports (out is published each
+ * frame, with in's cnt2 if cnt2FromIn). ops is copied. */
+daoGpuStage *daoGpuStageCreate(const char *name, daoGpuPort *in, daoGpuPort *out, int cnt2FromIn,
+                               const daoGpuStageOps *ops, void *self);
+
+/* Stage types from plugins. A plugin is a shared library listed under
+ * "plugins:" in the daoGpuPipeline configuration; it exports
+ *     void daoGpuPluginRegister(void);
+ * which registers its stage types. A stage's factory gets its arguments from
+ * the configuration (its keys, SHMs opened by the pipeline). */
+typedef struct daoGpuStageArgs {
+    const char *type;
+    void *ctx;                                              /* the pipeline's */
+    const char *(*value)(void *ctx, const char *key);       /* NULL: no such key */
+    IMAGE *(*shm)(void *ctx, const char *key);              /* parameter SHM; NULL: absent or failed */
+    daoGpuPort *(*port)(void *ctx, const char *key);        /* data SHM port; NULL: absent or failed */
+} daoGpuStageArgs;
+
+typedef daoGpuStage *(*daoGpuStageFactory)(const daoGpuStageArgs *args);
+int daoGpuRegisterStage(const char *type, daoGpuStageFactory factory);
+daoGpuStageFactory daoGpuFindStage(const char *type);
+
+static inline const char *daoGpuArgValue(const daoGpuStageArgs *a, const char *key)
+{
+    return a->value(a->ctx, key);
+}
+static inline IMAGE *daoGpuArgShm(const daoGpuStageArgs *a, const char *key) { return a->shm(a->ctx, key); }
+static inline daoGpuPort *daoGpuArgPort(const daoGpuStageArgs *a, const char *key)
+{
+    return a->port(a->ctx, key);
+}
+static inline double daoGpuArgDouble(const daoGpuStageArgs *a, const char *key, double dflt)
+{
+    const char *v = a->value(a->ctx, key);
+    return v ? strtod(v, NULL) : dflt;
+}
+static inline long daoGpuArgLong(const daoGpuStageArgs *a, const char *key, long dflt)
+{
+    const char *v = a->value(a->ctx, key);
+    return v ? strtol(v, NULL, 10) : dflt;
+}
 
 #ifdef __cplusplus
 }

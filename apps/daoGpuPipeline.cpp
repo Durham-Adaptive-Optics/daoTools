@@ -42,12 +42,17 @@
  *     # vectors
  *     - mvm:       {in: ..., matrix: ..., out: ...}
  *     - applyGain: {in: ..., gain: ..., out: ..., modal: false}
+ *     - slice:     {in: ..., out: ..., offset: 0, count: n}      # count: default the size of out
+ *
+ * Stage types from other libraries (see daoGpuStages.h, daoGpuRegisterStage):
+ *   plugins: [/path/to/libmyStages.so]    # each exports daoGpuPluginRegister()
  *
  * Parameter SHMs (ff, bg, ref, masks, matrix, gain, ...) are reloaded to the GPU
  * when their cnt0 changes, between frames.
  */
 #include <yaml-cpp/yaml.h>
 #include <cuda_runtime.h>
+#include <dlfcn.h>
 #include <signal.h>
 #include <sys/mman.h>
 #include <string.h>
@@ -128,6 +133,62 @@ static T num(const YAML::Node &n, const char *key, const std::string &stage, con
     return n[key].as<T>();
 }
 
+/* Arguments of a plugin stage: its YAML keys and the pipeline's SHMs / ports. */
+struct PluginArgs {
+    Pipeline *p;
+    YAML::Node node;
+    std::map<std::string, std::string> values;            // keeps the returned strings alive
+};
+
+static const char *pluginValue(void *ctx, const char *key)
+{
+    PluginArgs *a = (PluginArgs *) ctx;
+    if (!a->node[key])
+        return nullptr;
+    std::string v = a->node[key].IsScalar() ? a->node[key].as<std::string>() : YAML::Dump(a->node[key]);
+    return (a->values[key] = v).c_str();
+}
+
+static IMAGE *pluginShm(void *ctx, const char *key)
+{
+    const char *name = pluginValue(ctx, key);
+    try {
+        return name ? ((PluginArgs *) ctx)->p->shm(name) : nullptr;
+    } catch (const std::exception &e) {
+        daoError("%s\n", e.what());
+        return nullptr;
+    }
+}
+
+static daoGpuPort *pluginPort(void *ctx, const char *key)
+{
+    const char *name = pluginValue(ctx, key);
+    try {
+        return name ? ((PluginArgs *) ctx)->p->port(name) : nullptr;
+    } catch (const std::exception &e) {
+        daoError("%s\n", e.what());
+        return nullptr;
+    }
+}
+
+/* Load the configuration's plugins: each registers its stage types. */
+static void loadPlugins(const YAML::Node &cfg)
+{
+    if (!cfg["plugins"])
+        return;
+    for (const auto &item : cfg["plugins"]) {
+        std::string path = item.as<std::string>();
+        void *h = dlopen(path.c_str(), RTLD_NOW | RTLD_GLOBAL);
+        if (!h)
+            throw std::runtime_error("plugin " + path + ": " + dlerror());
+        auto reg = (void (*)(void)) dlsym(h, "daoGpuPluginRegister");
+        if (!reg)
+            throw std::runtime_error("plugin " + path + ": no daoGpuPluginRegister()");
+        reg();
+        daoInfo("plugin %s loaded\n", path.c_str());
+    }
+}
+
 static void build(Pipeline &p, const YAML::Node &cfg)
 {
     std::set<daoGpuPort *> produced;
@@ -190,8 +251,15 @@ static void build(Pipeline &p, const YAML::Node &cfg)
             s = daoGpuMvmCreate(in, shm("matrix"), out);
         else if (type == "applyGain")
             s = daoGpuApplyGainCreate(in, shm("gain"), out, num<bool>(a, "modal", type, &no));
-        else
-            throw std::runtime_error("unknown stage type '" + type + "'");
+        else if (type == "slice") {
+            const long zero = 0, all = -1;
+            s = daoGpuSliceCreate(in, num<long>(a, "offset", type, &zero), num<long>(a, "count", type, &all), out);
+        } else if (daoGpuStageFactory factory = daoGpuFindStage(type.c_str())) {
+            PluginArgs pa{&p, a, {}};
+            daoGpuStageArgs args{type.c_str(), &pa, pluginValue, pluginShm, pluginPort};
+            s = factory(&args);
+        } else
+            throw std::runtime_error("unknown stage type '" + type + "' (a plugin missing under plugins:?)");
         if (!s)
             throw std::runtime_error(type + ": could not be created");
         // a host SHM read before any stage wrote it comes from outside: upload it each frame
@@ -301,6 +369,8 @@ static bool enqueueFrame(Pipeline &p, cudaStream_t st)
 static void publish(Pipeline &p)
 {
     for (daoGpuStage *s : p.stages) {
+        if (!daoGpuStagePublishes(s))                    // the stage skips this frame
+            continue;
         IMAGE *out = daoGpuStageOutput(s)->shm;
         long long cnt2 = daoGpuStageOutputCnt2(s);
         if (cnt2 >= 0)
@@ -335,6 +405,7 @@ static int run(const char *configPath, int cpu, int onlyStage)
             daoWarning("could not pin to CPU %d\n", cpu);
     }
 
+    loadPlugins(cfg);
     build(p, cfg);
     IMAGE *trigger = p.shm(p.triggerName);
     for (auto &kv : p.ports)
@@ -359,9 +430,18 @@ static int run(const char *configPath, int cpu, int onlyStage)
     cudaGraphExec_t exec = nullptr;
     const char *profEnv = getenv("DAO_GPU_PIPELINE_PROFILE");
     prof.on = profEnv && *profEnv && strcmp(profEnv, "0") != 0;
-    bool useGraph = !prof.on && cudaStreamBeginCapture(st, cudaStreamCaptureModeThreadLocal) == cudaSuccess
-                    && enqueueFrame(p, st) && cudaStreamEndCapture(st, &graph) == cudaSuccess
-                    && cudaGraphInstantiateWithFlags(&exec, graph, 0) == cudaSuccess;
+    auto capture = [&]() {                           // one frame's work as a graph
+        if (exec)
+            cudaGraphExecDestroy(exec);
+        if (graph)
+            cudaGraphDestroy(graph);
+        exec = nullptr;
+        graph = nullptr;
+        return cudaStreamBeginCapture(st, cudaStreamCaptureModeThreadLocal) == cudaSuccess
+               && enqueueFrame(p, st) && cudaStreamEndCapture(st, &graph) == cudaSuccess
+               && cudaGraphInstantiateWithFlags(&exec, graph, 0) == cudaSuccess;
+    };
+    bool useGraph = !prof.on && capture();
     if (!useGraph) {
         cudaGetLastError();
         daoWarning("CUDA graph unavailable, launching the stages one by one\n");
@@ -389,14 +469,23 @@ static int run(const char *configPath, int cpu, int onlyStage)
             clock_gettime(CLOCK_REALTIME, &rt);
             accWake += (rt.tv_sec * 1e9 + rt.tv_nsec - (double) trigger->md[0].atime.tsfixed.secondlong) * 1e-3;
         }
-        bool paramsOk = true;
-        for (daoGpuStage *s : p.stages)                  // rare: new flat, matrix, gain...
-            paramsOk = daoGpuStageUpdate(s, st) >= 0 && paramsOk;
+        bool paramsOk = true, recapture = false;
+        for (daoGpuStage *s : p.stages) {                // rare: new flat, matrix, gain...
+            int r = daoGpuStageUpdate(s, st);
+            paramsOk = r >= 0 && paramsOk;
+            recapture = recapture || r == DAO_GPU_RECAPTURE;
+        }
         if (!paramsOk)                                   // the stage said why; skip this frame
             continue;
+        if (recapture && useGraph && !capture()) {       // a stage's work changed (e.g. sizes)
+            cudaGetLastError();
+            useGraph = false;
+            daoWarning("CUDA graph capture failed, launching the stages one by one\n");
+        }
         double t1 = nowUs();
-        for (daoGpuPort *o : p.outputs)
-            daoShmBeginWrite(o->shm);
+        for (daoGpuStage *s : p.stages)                  // outputs about to be written
+            if (daoGpuStagePublishes(s))
+                daoShmBeginWrite(daoGpuStageOutput(s)->shm);
         if (useGraph)
             cudaGraphLaunch(exec, st);
         else

@@ -237,6 +237,7 @@ struct daoGpuStage {
     int (*run)(daoGpuStage *, cudaStream_t);
     int (*post)(daoGpuStage *, cudaStream_t);        /* optional */
     void (*destroy)(daoGpuStage *);
+    int noPublish;                                   /* skip publishing out this frame */
 };
 
 extern "C" const char *daoGpuStageName(const daoGpuStage *s) { return s->name; }
@@ -252,6 +253,81 @@ extern "C" void daoGpuStageDestroy(daoGpuStage *s)
 {
     if (s)
         s->destroy(s);
+}
+extern "C" void daoGpuStageSetPublish(daoGpuStage *s, int publish) { s->noPublish = !publish; }
+extern "C" int daoGpuStagePublishes(const daoGpuStage *s) { return !s->noPublish; }
+
+/* -------------------------------------------- stages written elsewhere */
+struct CustomStage {
+    daoGpuStage base;
+    daoGpuStageOps ops;
+    void *self;
+    char name[64];
+};
+
+static int customUpdate(daoGpuStage *b, cudaStream_t st)
+{
+    CustomStage *c = (CustomStage *) b;
+    return c->ops.update ? c->ops.update(c->self, st) : 0;
+}
+static int customRun(daoGpuStage *b, cudaStream_t st) { return ((CustomStage *) b)->ops.run(((CustomStage *) b)->self, st); }
+static int customPost(daoGpuStage *b, cudaStream_t st)
+{
+    CustomStage *c = (CustomStage *) b;
+    return c->ops.post ? c->ops.post(c->self, st) : 1;
+}
+static void customDestroy(daoGpuStage *b)
+{
+    CustomStage *c = (CustomStage *) b;
+    if (c->ops.destroy)
+        c->ops.destroy(c->self);
+    free(c);
+}
+
+extern "C" daoGpuStage *daoGpuStageCreate(const char *name, daoGpuPort *in, daoGpuPort *out, int cnt2FromIn,
+                                          const daoGpuStageOps *ops, void *self)
+{
+    if (!ops || !ops->run || !out) {
+        daoError("daoGpuStageCreate(%s): run() and an output port are required\n", name ? name : "?");
+        return NULL;
+    }
+    CustomStage *c = (CustomStage *) calloc(1, sizeof *c);
+    snprintf(c->name, sizeof c->name, "%s", name ? name : "stage");
+    c->base.name = c->name;
+    c->base.in = in ? in : out;                      /* cnt2 source, never NULL */
+    c->base.out = out;
+    c->base.cnt2FromIn = cnt2FromIn && in;
+    c->base.update = customUpdate;
+    c->base.run = customRun;
+    c->base.post = customPost;
+    c->base.destroy = customDestroy;
+    c->ops = *ops;
+    c->self = self;
+    return &c->base;
+}
+
+/* plugin stage types */
+#define MAX_STAGE_TYPES 64
+static struct { char type[64]; daoGpuStageFactory factory; } gTypes[MAX_STAGE_TYPES];
+static int gNTypes = 0;
+
+extern "C" int daoGpuRegisterStage(const char *type, daoGpuStageFactory factory)
+{
+    if (!type || !factory || gNTypes == MAX_STAGE_TYPES || daoGpuFindStage(type)) {
+        daoError("cannot register stage type %s\n", type ? type : "?");
+        return 0;
+    }
+    snprintf(gTypes[gNTypes].type, sizeof gTypes[0].type, "%s", type);
+    gTypes[gNTypes++].factory = factory;
+    return 1;
+}
+
+extern "C" daoGpuStageFactory daoGpuFindStage(const char *type)
+{
+    for (int k = 0; k < gNTypes; k++)
+        if (!strcmp(gTypes[k].type, type))
+            return gTypes[k].factory;
+    return NULL;
 }
 
 /* ------------------------------------------- calIntensityNorm / calIntensity */
@@ -454,6 +530,48 @@ extern "C" daoGpuStage *daoGpuCalIntensityCreate(daoGpuPort *raw, IMAGE *ff, IMA
                                                  IMAGE *validPix, IMAGE *illumPix, daoGpuPort *out)
 {
     return calCreate("calIntensity", 0, raw, ff, bg, ref, validPix, illumPix, out);
+}
+
+/* ---------------------------------------------------------------- slice */
+/* daoShmSlice: out[0, count) = in[offset, offset + count), a device copy */
+struct SliceStage {
+    daoGpuStage base;
+    size_t offset, bytes;
+};
+
+static int sliceUpdate(daoGpuStage *, cudaStream_t) { return 0; }
+
+static int sliceRun(daoGpuStage *b, cudaStream_t st)
+{
+    SliceStage *c = (SliceStage *) b;
+    return cudaMemcpyAsync(b->out->d, (const char *) b->in->d + c->offset, c->bytes, cudaMemcpyDeviceToDevice, st)
+           == cudaSuccess;
+}
+
+static void sliceDestroy(daoGpuStage *b) { free(b); }
+
+extern "C" daoGpuStage *daoGpuSliceCreate(daoGpuPort *in, long offset, long count, daoGpuPort *out)
+{
+    size_t es = elemSize(in->shm->md[0].atype);
+    if (count < 0)
+        count = nelem(out);
+    if (out->shm->md[0].atype != in->shm->md[0].atype || es == 0 || offset < 0 || count < 1
+        || offset + count > nelem(in) || count > nelem(out)) {
+        daoError("slice: cannot copy %ld values from offset %ld of %s (%ld) into %s (%ld, same type)\n", count,
+                 offset, in->shm->name, nelem(in), out->shm->name, nelem(out));
+        return NULL;
+    }
+    SliceStage *c = (SliceStage *) calloc(1, sizeof *c);
+    c->base.name = "slice";
+    c->base.in = in;
+    c->base.out = out;
+    c->base.cnt2FromIn = 1;
+    c->base.update = sliceUpdate;
+    c->base.run = sliceRun;
+    c->base.destroy = sliceDestroy;
+    c->offset = (size_t) offset * es;
+    c->bytes = (size_t) count * es;
+    return &c->base;
 }
 
 /* ------------------------------------------------------------------ mvm */

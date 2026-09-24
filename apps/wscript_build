@@ -493,7 +493,7 @@ if bld.env.CUDA_AVAILABLE and bld.env.YAMLCPP_AVAILABLE and platform.system() !=
 		target = 'daoGpuPipeline',
 		includes = ['../include', os.getenv('DAOROOT')+'/include/'] + bld.env.INCLUDES_CUDA,
 		linkflags = my_link_flags + ['-L' + p for p in bld.env.LIBPATH_CUDA],
-		ldflags = ['-ldao', '-lcudart', '-lpthread'] + my_ld_flags,
+		ldflags = ['-ldao', '-lcudart', '-lpthread', '-ldl'] + my_ld_flags,
 		use = ['daoTools', 'daoToolsGpu', 'YAMLCPP'],
 		cxxflags = ['-O2', '-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 		)

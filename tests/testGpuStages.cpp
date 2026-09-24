@@ -460,6 +460,9 @@ int main(int argc, char **argv)
             }
             check("mvm (first 104 of 208 inputs)", out->array.F, cpu.data(), nOut, 1e-5);
         }
+        IMAGE *sl = mk("vSlice", 52, 1, _DATATYPE_FLOAT);
+        if (runStage(daoGpuSliceCreate(port(in), 104, -1, port(sl)), st))
+            checkExact("slice (values 104..155)", sl->array.V, in->array.F + 104, 52 * sizeof(float));
     }
 
     for (auto &c : created) {
