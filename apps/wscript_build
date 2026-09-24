@@ -455,8 +455,8 @@ if bld.env.BLAS_AVAILABLE:
 		target = 'daoMvM',
 		includes = '../include '+os.getenv('DAOROOT')+'/include/',
 		linkflags = my_link_flags,
-		ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses', '-lopenblas'] + my_ld_flags,
-		use= 'daoTools',
+		ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+		use= 'daoTools BLAS',
 		cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 		)
 else:
