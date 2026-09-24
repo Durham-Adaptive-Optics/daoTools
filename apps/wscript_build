@@ -429,6 +429,16 @@ daoApplyGain = bld.program(
 	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
+daoShmSlice = bld.program(
+	source = 'daoShmSlice.c',
+	target = 'daoShmSlice',
+	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+	linkflags = my_link_flags,
+	ldflags = ['-ldao', '-lpthread', '-lm'] + my_ld_flags,
+	use= 'daoTools',
+	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
+	)
+
 downsample_missing = [
     label for available, label in (
         (bld.env.HAVE_CLI11, 'CLI11'),
