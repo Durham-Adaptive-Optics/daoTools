@@ -44,13 +44,13 @@ double tnowdouble;
 double tlastupdatedouble;
 
 
-char inShmName[32];
+char inShmName[DAO_SHM_NAME_LEN];
 int semNb = 0;
-char ffShmName[32];
-char bgShmName[32];
-char maskShmName[32];
-char calShmName[32];
-char fluxShmName[32];
+char ffShmName[DAO_SHM_NAME_LEN];
+char bgShmName[DAO_SHM_NAME_LEN];
+char maskShmName[DAO_SHM_NAME_LEN];
+char calShmName[DAO_SHM_NAME_LEN];
+char fluxShmName[DAO_SHM_NAME_LEN];
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -89,12 +89,12 @@ static int realTimeLoop()
     IMAGE *maskShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *calShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *fluxShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(inShmName, &inShm[0]);
-    daoShmOpen(ffShmName, &ffShm[0]);
-    daoShmOpen(bgShmName, &bgShm[0]);
-    daoShmOpen(maskShmName, &maskShm[0]);
-    daoShmOpen(calShmName, &calShm[0]);
-    daoShmOpen(fluxShmName, &fluxShm[0]);
+    daoToolsShmOpen(inShmName, &inShm[0]);
+    daoToolsShmOpen(ffShmName, &ffShm[0]);
+    daoToolsShmOpen(bgShmName, &bgShm[0]);
+    daoToolsShmOpen(maskShmName, &maskShm[0]);
+    daoToolsShmOpen(calShmName, &calShm[0]);
+    daoToolsShmOpen(fluxShmName, &fluxShm[0]);
 
     daoInfo("Starting loop, %s/%s \n",inShmName, calShmName);
     fflush(stdout);
@@ -184,12 +184,12 @@ static void DecodeArgs(int argc, char **argv)
                         (void)usleep(a1);
                         break;
             case 'S':
-                    	(void)sscanf(*argv++,"%s",inShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s",ffShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s",bgShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s",maskShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s",calShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s",fluxShmName); argc -= 1;
+                    	daoToolsArgName(inShmName, sizeof inShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(ffShmName, sizeof ffShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(bgShmName, sizeof bgShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(maskShmName, sizeof maskShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(calShmName, sizeof calShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(fluxShmName, sizeof fluxShmName, *argv++); argc -= 1;
                         daoInfo("image in         : %s\n", inShmName);
                         daoInfo("flat field       : %s\n", ffShmName);
                         daoInfo("background       : %s\n", bgShmName);

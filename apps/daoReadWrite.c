@@ -47,8 +47,8 @@ double tlastupdatedouble;
 IMAGE *inShm;
 IMAGE *outShm;
 
-char inShmName[32];
-char outShmName[32];
+char inShmName[DAO_SHM_NAME_LEN];
+char outShmName[DAO_SHM_NAME_LEN];
 float offset;
 int semNb = 0;
 
@@ -85,8 +85,8 @@ static int realTimeLoop()
     fflush(stdout);
     inShm = (IMAGE*) malloc(sizeof(IMAGE));
     outShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(inShmName, &inShm[0]);
-    daoShmOpen(outShmName, &outShm[0]);
+    daoToolsShmOpen(inShmName, &inShm[0]);
+    daoToolsShmOpen(outShmName, &outShm[0]);
 
     int nbInVal = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
     int nbOutVal = outShm[0].md[0].size[0]*outShm[0].md[0].size[1];
@@ -182,8 +182,8 @@ static void DecodeArgs(int argc, char **argv)
                         break;
             case 'L':
                         daoInfo("Simple SHM Reader and Writer from SHM real time control\n");
-                    	(void)sscanf(*argv++,"%s",inShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s",outShmName); argc -= 1;
+                    	daoToolsArgName(inShmName, sizeof inShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(outShmName, sizeof outShmName, *argv++); argc -= 1;
                     	(void)sscanf(*argv++,"%f",&offset); argc -= 1;
                         realTimeLoop();
                         break;

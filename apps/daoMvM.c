@@ -47,12 +47,12 @@ struct timespec tnow;
 double tlastupdatedouble;
 
 IMAGE *inputShm;
-char inputShmName[32];
+char inputShmName[DAO_SHM_NAME_LEN];
 int semNb = 0;
 IMAGE *matrixShm;
-char matrixShmName[32];
+char matrixShmName[DAO_SHM_NAME_LEN];
 IMAGE *outputShm;
-char outputShmName[32];
+char outputShmName[DAO_SHM_NAME_LEN];
 
 // Thread
 pthread_t controllerThread;
@@ -226,11 +226,11 @@ static int realTimeLoopPrep()
     signal(SIGINT, endme);
 
     inputShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(inputShmName, &inputShm[0]);
+    daoToolsShmOpen(inputShmName, &inputShm[0]);
     matrixShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(matrixShmName, &matrixShm[0]);
+    daoToolsShmOpen(matrixShmName, &matrixShm[0]);
     outputShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(outputShmName, &outputShm[0]);
+    daoToolsShmOpen(outputShmName, &outputShm[0]);
 
     clock_t launch, done;
     double diff;
@@ -291,9 +291,9 @@ static void DecodeArgs(int argc, char **argv)
                         (void)usleep(a1);
                         break;
             case 'S':
-                        (void)sscanf(*argv++,"%s", inputShmName); argc -= 1;
-                        (void)sscanf(*argv++,"%s", matrixShmName); argc -= 1;
-                        (void)sscanf(*argv++,"%s", outputShmName); argc -= 1;
+                        daoToolsArgName(inputShmName, sizeof inputShmName, *argv++); argc -= 1;
+                        daoToolsArgName(matrixShmName, sizeof matrixShmName, *argv++); argc -= 1;
+                        daoToolsArgName(outputShmName, sizeof outputShmName, *argv++); argc -= 1;
                         daoInfo("inputShm       = %s \n", inputShmName);
                         daoInfo("matrixShm      = %s \n", matrixShmName);
                         daoInfo("outputShm      = %s \n", outputShmName);

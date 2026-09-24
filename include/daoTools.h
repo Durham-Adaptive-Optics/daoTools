@@ -39,6 +39,31 @@ void daoToolsInsertShmNamePrefix(const char* base_string,
                                  const char* prefix,
                                  char* final_string);
 
+/* SHM name buffers are DAO_SHM_NAME_LEN bytes (dao.h); dao.h before the GPU SHM
+ * release does not define it: use the size of its name field. */
+#ifndef DAO_SHM_NAME_LEN
+#define DAO_SHM_NAME_LEN sizeof(((IMAGE *) 0)->name)
+#endif
+
+/**
+ * @brief daoToolsInsertShmNamePrefix writing at most `size` bytes.
+ * @return DAO_SUCCESS, or DAO_ERROR if the name is invalid or does not fit.
+ */
+int daoToolsInsertShmNamePrefixN(const char* base_string, const char* prefix,
+                                 char* final_string, size_t size);
+
+/**
+ * @brief Copy a command-line SHM name into a buffer of `size` bytes.
+ * Exits with an error if it does not fit, rather than overflowing the buffer.
+ */
+void daoToolsArgName(char* dst, size_t size, const char* arg);
+
+/**
+ * @brief daoShmOpen, exiting with an error if the SHM cannot be opened, rather
+ * than letting the tool run on an unopened IMAGE.
+ */
+void daoToolsShmOpen(const char* name, IMAGE* image);
+
 /**
  * @brief Request SCHED_FIFO real-time priority for the calling thread,
  * falling back gracefully (and logging via daoWarning) if this user's

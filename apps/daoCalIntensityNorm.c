@@ -59,13 +59,13 @@
  uid_t euid_called;
  uid_t suid;
 
- char rawShmName[64];
- char ffShmName[64];
- char bgShmName[64];
- char refShmName[64];
- char validPixShmName[64];
- char illumPixShmName[64];
- char intensityShmName[64];
+ char rawShmName[DAO_SHM_NAME_LEN];
+ char ffShmName[DAO_SHM_NAME_LEN];
+ char bgShmName[DAO_SHM_NAME_LEN];
+ char refShmName[DAO_SHM_NAME_LEN];
+ char validPixShmName[DAO_SHM_NAME_LEN];
+ char illumPixShmName[DAO_SHM_NAME_LEN];
+ char intensityShmName[DAO_SHM_NAME_LEN];
  int  semNb = 0;
 
  static int end = 0;
@@ -139,13 +139,13 @@
      IMAGE *illumPixShm  = (IMAGE*) malloc(sizeof(IMAGE));
      IMAGE *intensityShm = (IMAGE*) malloc(sizeof(IMAGE));
 
-     daoShmOpen(rawShmName,       &rawShm[0]);
-     daoShmOpen(ffShmName,        &ffShm[0]);
-     daoShmOpen(bgShmName,        &bgShm[0]);
-     daoShmOpen(refShmName,       &refShm[0]);
-     daoShmOpen(validPixShmName,  &validPixShm[0]);
-     daoShmOpen(illumPixShmName,  &illumPixShm[0]);
-     daoShmOpen(intensityShmName, &intensityShm[0]);
+     daoToolsShmOpen(rawShmName,       &rawShm[0]);
+     daoToolsShmOpen(ffShmName,        &ffShm[0]);
+     daoToolsShmOpen(bgShmName,        &bgShm[0]);
+     daoToolsShmOpen(refShmName,       &refShm[0]);
+     daoToolsShmOpen(validPixShmName,  &validPixShm[0]);
+     daoToolsShmOpen(illumPixShmName,  &illumPixShm[0]);
+     daoToolsShmOpen(intensityShmName, &intensityShm[0]);
 
      int imSize = rawShm[0].md[0].size[0] * rawShm[0].md[0].size[1];
 
@@ -386,13 +386,13 @@
                  (void)usleep(a1);
                  break;
              case 'S':
-                 (void)sscanf(*argv++, "%s", rawShmName);       argc -= 1;
-                 (void)sscanf(*argv++, "%s", ffShmName);        argc -= 1;
-                 (void)sscanf(*argv++, "%s", bgShmName);        argc -= 1;
-                 (void)sscanf(*argv++, "%s", refShmName);        argc -= 1;
-                 (void)sscanf(*argv++, "%s", validPixShmName);  argc -= 1;
-                 (void)sscanf(*argv++, "%s", illumPixShmName); argc -= 1;
-                 (void)sscanf(*argv++, "%s", intensityShmName); argc -= 1;
+                 daoToolsArgName(rawShmName, sizeof rawShmName, *argv++);       argc -= 1;
+                 daoToolsArgName(ffShmName, sizeof ffShmName, *argv++);        argc -= 1;
+                 daoToolsArgName(bgShmName, sizeof bgShmName, *argv++);        argc -= 1;
+                 daoToolsArgName(refShmName, sizeof refShmName, *argv++);        argc -= 1;
+                 daoToolsArgName(validPixShmName, sizeof validPixShmName, *argv++);  argc -= 1;
+                 daoToolsArgName(illumPixShmName, sizeof illumPixShmName, *argv++); argc -= 1;
+                 daoToolsArgName(intensityShmName, sizeof intensityShmName, *argv++); argc -= 1;
                  daoInfo("raw        : %s\n", rawShmName);
                  daoInfo("flatfield  : %s\n", ffShmName);
                  daoInfo("background : %s\n", bgShmName);

@@ -42,14 +42,14 @@ struct timespec tnow;
 double tnowdouble;
 double tlastupdatedouble;
 
-char inShmName[32];
+char inShmName[DAO_SHM_NAME_LEN];
 int semNb = 0;
-char offsetShmName[32];
-char outShmName[32];
-char lpCmdShmName[32];
-char gainShmName[32];
-char leakyShmName[32];
-char enableShmName[64];
+char offsetShmName[DAO_SHM_NAME_LEN];
+char outShmName[DAO_SHM_NAME_LEN];
+char lpCmdShmName[DAO_SHM_NAME_LEN];
+char gainShmName[DAO_SHM_NAME_LEN];
+char leakyShmName[DAO_SHM_NAME_LEN];
+char enableShmName[DAO_SHM_NAME_LEN];
 int enableGiven = 0;   /* -e was passed explicitly: use enableShmName as-is, don't derive it */
 int modal=0; // modal integrator flag
 double clipping = 10.0; // clipping value
@@ -132,12 +132,12 @@ static int realTimeLoop()
     IMAGE *gainShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *leakyShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *enableShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(inShmName, &inShm[0]);
-    daoShmOpen(offsetShmName, &offsetShm[0]);
-    daoShmOpen(outShmName, &outShm[0]);
-    daoShmOpen(lpCmdShmName, &lpCmdShm[0]);
-    daoShmOpen(gainShmName, &gainShm[0]);
-    daoShmOpen(leakyShmName, &leakyShm[0]);
+    daoToolsShmOpen(inShmName, &inShm[0]);
+    daoToolsShmOpen(offsetShmName, &offsetShm[0]);
+    daoToolsShmOpen(outShmName, &outShm[0]);
+    daoToolsShmOpen(lpCmdShmName, &lpCmdShm[0]);
+    daoToolsShmOpen(gainShmName, &gainShm[0]);
+    daoToolsShmOpen(leakyShmName, &leakyShm[0]);
 
     // Enable shm: -e overrides, otherwise derive <loopCmd base>Enable.im.shm
     // from the loopCmd shm's name (same helper used for daoTimeDiff's
@@ -146,7 +146,8 @@ static int realTimeLoop()
     // heard of -e keep behaving exactly as before.
     if (!enableGiven)
     {
-        daoToolsInsertShmNamePrefix(lpCmdShmName, "Enable", enableShmName);
+        if (daoToolsInsertShmNamePrefixN(lpCmdShmName, "Enable", enableShmName, sizeof enableShmName) != DAO_SUCCESS)
+            exit(EXIT_FAILURE);
     }
     daoInfo("enableShmName    = %s\n", enableShmName);
     if (daoShmOpen(enableShmName, &enableShm[0]) != DAO_SUCCESS)
@@ -397,12 +398,12 @@ static void DecodeArgs(int argc, char **argv)
                         break;
             case 'S':
                         daoInfo("Simple filter from SHM real time control\n");
-                    	(void)sscanf(*argv++,"%s", inShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", offsetShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", outShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", lpCmdShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", gainShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", leakyShmName); argc -= 1;
+                    	daoToolsArgName(inShmName, sizeof inShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(offsetShmName, sizeof offsetShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(outShmName, sizeof outShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(lpCmdShmName, sizeof lpCmdShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(gainShmName, sizeof gainShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(leakyShmName, sizeof leakyShmName, *argv++); argc -= 1;
                         daoInfo("inShmName      = %s\n", inShmName);
                         daoInfo("offsetShmName  = %s\n", offsetShmName);
                         daoInfo("outShmName     = %s\n", outShmName);
@@ -415,7 +416,7 @@ static void DecodeArgs(int argc, char **argv)
                         daoInfo("inputShm sem     : %d \n", semNb);
                         break;
             case 'e':
-                        (void)sscanf(*argv++, "%63s", enableShmName); argc -= 1;
+                        daoToolsArgName(enableShmName, sizeof enableShmName, *argv++); argc -= 1;
                         enableGiven = 1;
                         daoInfo("enableShmName (given) = %s\n", enableShmName);
                         break;

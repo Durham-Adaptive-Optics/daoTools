@@ -51,12 +51,12 @@ IMAGE *avgShm;
 IMAGE *rmsShm;
 IMAGE *arrayShm;
 
-char shm0Name[32];
-char shm1Name[32];
-char latencyShmName[64];
-char avgShmName[64];
-char rmsShmName[64];
-char arrayShmName[64];
+char shm0Name[DAO_SHM_NAME_LEN];
+char shm1Name[DAO_SHM_NAME_LEN];
+char latencyShmName[DAO_SHM_NAME_LEN];
+char avgShmName[DAO_SHM_NAME_LEN];
+char rmsShmName[DAO_SHM_NAME_LEN];
+char arrayShmName[DAO_SHM_NAME_LEN];
 int sem0;
 int sem1;
 int popSize = 100;   /* -n: sliding-window size for the AVG/RMS SHMs */
@@ -111,8 +111,8 @@ static int realTimeLoop()
     avgShm = (IMAGE*) malloc(sizeof(IMAGE));
     rmsShm = (IMAGE*) malloc(sizeof(IMAGE));
     arrayShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(shm0Name, &shm0[0]);
-    daoShmOpen(shm1Name, &shm1[0]);
+    daoToolsShmOpen(shm0Name, &shm0[0]);
+    daoToolsShmOpen(shm1Name, &shm1[0]);
     // Create size array, using 2D of 1x1... can be change to 1D
     uint32_t size[2];
     size[0] = 1;
@@ -292,14 +292,17 @@ static void DecodeArgs(int argc, char **argv)
                         break;
             case 'S':
                         daoInfo("Simple Camera Reader and Writer from SHM real time control\n");
-                    	(void)sscanf(*argv++,"%s",shm0Name); argc -= 1;
-                    	(void)sscanf(*argv++,"%s",shm1Name); argc -= 1;
+                    	daoToolsArgName(shm0Name, sizeof shm0Name, *argv++); argc -= 1;
+                    	daoToolsArgName(shm1Name, sizeof shm1Name, *argv++); argc -= 1;
                     	(void)sscanf(*argv++,"%d",&sem0); argc -= 1;
                     	(void)sscanf(*argv++,"%d",&sem1); argc -= 1;
-                    	(void)sscanf(*argv++,"%s",latencyShmName); argc -= 1;
-                        daoToolsInsertShmNamePrefix(latencyShmName, "Avg", avgShmName);
-                        daoToolsInsertShmNamePrefix(latencyShmName, "Rms", rmsShmName);
-                        daoToolsInsertShmNamePrefix(latencyShmName, "Array", arrayShmName);
+                    	daoToolsArgName(latencyShmName, sizeof latencyShmName, *argv++); argc -= 1;
+                        if (daoToolsInsertShmNamePrefixN(latencyShmName, "Avg", avgShmName, sizeof avgShmName) != DAO_SUCCESS)
+                            exit(EXIT_FAILURE);
+                        if (daoToolsInsertShmNamePrefixN(latencyShmName, "Rms", rmsShmName, sizeof rmsShmName) != DAO_SUCCESS)
+                            exit(EXIT_FAILURE);
+                        if (daoToolsInsertShmNamePrefixN(latencyShmName, "Array", arrayShmName, sizeof arrayShmName) != DAO_SUCCESS)
+                            exit(EXIT_FAILURE);
                         daoInfo("measurement SHM = %s\n", latencyShmName);
                         daoInfo("AVG SHM         = %s\n", avgShmName);
                         daoInfo("RMS SHM         = %s\n", rmsShmName);

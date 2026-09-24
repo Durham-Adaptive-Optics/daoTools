@@ -56,7 +56,7 @@ struct timespec tnow;
 double tlastupdatedouble;
 
 IMAGE *shm;
-char shmName[32];
+char shmName[DAO_SHM_NAME_LEN];
 float frequency;
 
 // Thread
@@ -146,7 +146,7 @@ static int realTimeLoop()
     signal(SIGINT, endme);
 
     shm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(shmName, &shm[0]);
+    daoToolsShmOpen(shmName, &shm[0]);
 
     clock_t launch, done;
     double diff;
@@ -207,7 +207,7 @@ static void DecodeArgs(int argc, char **argv)
                         break;
             case 'L':
                         daoInfo("CAM real time control\n");
-                        (void)sscanf(*argv++,"%s", shmName);
+                        daoToolsArgName(shmName, sizeof shmName, *argv++);
                         (void)sscanf(*argv++,"%f", &frequency);
                         daoInfo("%s \n", shmName);
                         daoInfo("%f \n", frequency);

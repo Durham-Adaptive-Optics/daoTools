@@ -42,10 +42,10 @@ struct timespec tnow;
 double tnowdouble;
 double tlastupdatedouble;
 
-char inShmName[32];
+char inShmName[DAO_SHM_NAME_LEN];
 int semNb = 0;
-char outShmName[32];
-char gainShmName[32];
+char outShmName[DAO_SHM_NAME_LEN];
+char gainShmName[DAO_SHM_NAME_LEN];
 int modal=0; // modal integrator flag
 
 static int   		end     = 0;		           // termination flag
@@ -86,9 +86,9 @@ static int realTimeLoop()
     IMAGE *inShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *outShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *gainShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(inShmName, &inShm[0]);
-    daoShmOpen(outShmName, &outShm[0]);
-    daoShmOpen(gainShmName, &gainShm[0]);
+    daoToolsShmOpen(inShmName, &inShm[0]);
+    daoToolsShmOpen(outShmName, &outShm[0]);
+    daoToolsShmOpen(gainShmName, &gainShm[0]);
 
     int inSize = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
     int outSize = outShm[0].md[0].size[0]*outShm[0].md[0].size[1];
@@ -234,9 +234,9 @@ static void DecodeArgs(int argc, char **argv)
                         break;
             case 'S':
                         daoInfo("Simple gain application from SHM real time control\n");
-                    	(void)sscanf(*argv++,"%s", inShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", gainShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", outShmName); argc -= 1;
+                    	daoToolsArgName(inShmName, sizeof inShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(gainShmName, sizeof gainShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(outShmName, sizeof outShmName, *argv++); argc -= 1;
                         daoInfo("inShmName      = %s\n", inShmName);
                         daoInfo("gainShmName    = %s\n", gainShmName);
                         daoInfo("outShmName     = %s\n", outShmName);

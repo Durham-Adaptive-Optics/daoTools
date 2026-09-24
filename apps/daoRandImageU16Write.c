@@ -43,8 +43,8 @@ struct timespec tnow;
 double tnowdouble;
 double tlastupdatedouble;
 
-char outShmName[32];
-char clockShmName[32];
+char outShmName[DAO_SHM_NAME_LEN];
+char clockShmName[DAO_SHM_NAME_LEN];
 
 int semNb = 0;
 static int   		end     = 0;		           // termination flag
@@ -84,9 +84,9 @@ static int realTimeLoop()
     daoInfo("Starting loop, %s \n", outShmName);
     fflush(stdout);
     outShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(outShmName, &outShm[0]);
+    daoToolsShmOpen(outShmName, &outShm[0]);
     clockShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(clockShmName, &clockShm[0]);
+    daoToolsShmOpen(clockShmName, &clockShm[0]);
 
     int outSize = outShm[0].md[0].size[0]*outShm[0].md[0].size[1];
     struct timespec t[4];
@@ -172,8 +172,8 @@ static void DecodeArgs(int argc, char **argv)
                         break;
             case 'S':
                         daoInfo("Simple writer from SHM real time control\n");
-                    	(void)sscanf(*argv++,"%s",outShmName); argc -= 1;
-                        (void)sscanf(*argv++,"%s",clockShmName); argc -= 1;
+                    	daoToolsArgName(outShmName, sizeof outShmName, *argv++); argc -= 1;
+                        daoToolsArgName(clockShmName, sizeof clockShmName, *argv++); argc -= 1;
                         break;
             case 's':	
                         (void)sscanf(*argv++,"%d", &semNb); argc -= 1;
