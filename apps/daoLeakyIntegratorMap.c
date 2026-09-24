@@ -134,13 +134,13 @@ static int realTimeLoop()
     IMAGE *leakyShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *mapShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *enableShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(inShmName, &inShm[0]);
-    daoShmShm2Img(offsetShmName, &offsetShm[0]);
-    daoShmShm2Img(outShmName, &outShm[0]);
-    daoShmShm2Img(lpCmdShmName, &lpCmdShm[0]);
-    daoShmShm2Img(gainShmName, &gainShm[0]);
-    daoShmShm2Img(leakyShmName, &leakyShm[0]);
-    daoShmShm2Img(mapShmName, &mapShm[0]);
+    daoShmOpen(inShmName, &inShm[0]);
+    daoShmOpen(offsetShmName, &offsetShm[0]);
+    daoShmOpen(outShmName, &outShm[0]);
+    daoShmOpen(lpCmdShmName, &lpCmdShm[0]);
+    daoShmOpen(gainShmName, &gainShm[0]);
+    daoShmOpen(leakyShmName, &leakyShm[0]);
+    daoShmOpen(mapShmName, &mapShm[0]);
 
     // Enable shm: -e overrides, otherwise derive <loopCmd base>Enable.im.shm
     // from the loopCmd shm's name (same helper used for daoTimeDiff's
@@ -152,11 +152,11 @@ static int realTimeLoop()
         daoToolsInsertShmNamePrefix(lpCmdShmName, "Enable", enableShmName);
     }
     daoInfo("enableShmName    = %s\n", enableShmName);
-    if (daoShmShm2Img(enableShmName, &enableShm[0]) != DAO_SUCCESS)
+    if (daoShmOpen(enableShmName, &enableShm[0]) != DAO_SUCCESS)
     {
         uint32_t enableSize[2] = {1, 1};
         daoInfo("enable shm not found, creating %s with enable=1\n", enableShmName);
-        daoShmImageCreate(enableShm, enableShmName, 2, enableSize, _DATATYPE_UINT32, 1, 0);
+        daoShmCreate(enableShm, enableShmName, 2, enableSize, _DATATYPE_UINT32, 1, 0);
         enableShm[0].array.UI32[0] = 1;
     }
 
@@ -183,7 +183,7 @@ static int realTimeLoop()
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
         // Wait for new image
-        if (daoShmWaitForSemaphoreTimeout(inShm, semNb, &timeout) != -1)
+        if (daoShmWaitSemTimeout(inShm, semNb, &timeout) != -1)
         {
             cntMap=0;
             if (inShm[0].md[0].atype == _DATATYPE_FLOAT)
@@ -325,7 +325,7 @@ static int realTimeLoop()
             }
             if (publish)
             {
-                daoShmImagePart2ShmFinalize(&outShm[0]);
+                daoShmSetDataPartFinalize(&outShm[0]);
             }
 
             clock_gettime(CLOCK_REALTIME, &t[1]);

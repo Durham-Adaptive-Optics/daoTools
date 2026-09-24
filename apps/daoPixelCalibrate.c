@@ -115,10 +115,10 @@ static int realTimeLoop()
     ffShm = (IMAGE*) malloc(sizeof(IMAGE));
     bgShm = (IMAGE*) malloc(sizeof(IMAGE));
     calShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(inShmName, &inShm[0]);
-    daoShmShm2Img(ffShmName, &ffShm[0]);
-    daoShmShm2Img(bgShmName, &bgShm[0]);
-    daoShmShm2Img(calShmName, &calShm[0]);
+    daoShmOpen(inShmName, &inShm[0]);
+    daoShmOpen(ffShmName, &ffShm[0]);
+    daoShmOpen(bgShmName, &bgShm[0]);
+    daoShmOpen(calShmName, &calShm[0]);
 
     daoInfo("Starting loop, %s/%s \n",inShmName, calShmName);
     fflush(stdout);
@@ -147,7 +147,7 @@ static int realTimeLoop()
         t[0] = t[1];
         clock_gettime(CLOCK_REALTIME, &timeout);   // sem_timedwait deadline is CLOCK_REALTIME
         timeout.tv_sec += 1; // 1 second timeout
-        if (daoShmWaitForSemaphoreTimeout(inShm, semNb, &timeout) != DAO_TIMEOUT)
+        if (daoShmWaitSemTimeout(inShm, semNb, &timeout) != DAO_TIMEOUT)
         {
             clock_gettime(CLOCK_MONOTONIC, &t[2]);
             if (calShm[0].md[0].atype == _DATATYPE_FLOAT)

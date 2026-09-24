@@ -90,10 +90,10 @@ static int realTimeLoop()
     IMAGE *centroidShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *refShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *thresholdShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(inShmName, &inShm[0]);
-    daoShmShm2Img(centroidShmName, &centroidShm[0]);
-    daoShmShm2Img(refShmName, &refShm[0]);
-    daoShmShm2Img(thresholdShmName, &thresholdShm[0]);
+    daoShmOpen(inShmName, &inShm[0]);
+    daoShmOpen(centroidShmName, &centroidShm[0]);
+    daoShmOpen(refShmName, &refShm[0]);
+    daoShmOpen(thresholdShmName, &thresholdShm[0]);
 
     int inSize = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
     struct timespec t[3];
@@ -109,7 +109,7 @@ static int realTimeLoop()
         // Wait for new image
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
-        if (daoShmWaitForSemaphoreTimeout(inShm, semNb, &timeout) != -1)
+        if (daoShmWaitSemTimeout(inShm, semNb, &timeout) != -1)
         {
             clock_gettime(CLOCK_REALTIME, &t[2]);
             // New image, insert something here
@@ -123,7 +123,7 @@ static int realTimeLoop()
                              nbSuba,
                              thresholdShm[0].array.F[0],
                              centroidShm[0].array.F); 
-            daoShmImagePart2ShmFinalize(&centroidShm[0]); 
+            daoShmSetDataPartFinalize(&centroidShm[0]);
 
             clock_gettime(CLOCK_REALTIME, &t[1]);
             elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;

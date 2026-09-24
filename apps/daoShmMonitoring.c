@@ -146,7 +146,7 @@ static int realTimeLoop()
     signal(SIGINT, endme);
 
     shm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(shmName, &shm[0]);
+    daoShmOpen(shmName, &shm[0]);
 
     clock_t launch, done;
     double diff;

@@ -171,7 +171,7 @@ void * realTimeLoop(void *thread_data)
     {
         clock_gettime(CLOCK_REALTIME, &timeout);   // sem_timedwait deadline is CLOCK_REALTIME
         timeout.tv_sec += 1;
-        if (daoShmWaitForSemaphoreTimeout(inputShm, semNb, &timeout) == DAO_TIMEOUT)
+        if (daoShmWaitSemTimeout(inputShm, semNb, &timeout) == DAO_TIMEOUT)
             continue;
 
         clock_gettime(CLOCK_MONOTONIC, &t[2]);
@@ -189,7 +189,7 @@ void * realTimeLoop(void *thread_data)
                         beta_d, outputShm[0].array.D, 1);
 
         // Publish the output.
-        daoShmImagePart2ShmFinalize(&outputShm[0]);
+        daoShmSetDataPartFinalize(&outputShm[0]);
 
         t[0] = t[1];
         clock_gettime(CLOCK_MONOTONIC, &t[1]);
@@ -226,11 +226,11 @@ static int realTimeLoopPrep()
     signal(SIGINT, endme);
 
     inputShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(inputShmName, &inputShm[0]);
+    daoShmOpen(inputShmName, &inputShm[0]);
     matrixShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(matrixShmName, &matrixShm[0]);
+    daoShmOpen(matrixShmName, &matrixShm[0]);
     outputShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(outputShmName, &outputShm[0]);
+    daoShmOpen(outputShmName, &outputShm[0]);
 
     clock_t launch, done;
     double diff;

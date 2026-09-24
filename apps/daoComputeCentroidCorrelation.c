@@ -113,11 +113,11 @@ static int realTimeLoop()
     IMAGE *subApCentreShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *refImageShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *thresholdShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(inShmName, &inShm[0]);
-    daoShmShm2Img(centroidShmName, &centroidShm[0]);
-    daoShmShm2Img(subApCentreShmName, &subApCentreShm[0]);
-    daoShmShm2Img(refImageShmName, &refImageShm[0]);
-    daoShmShm2Img(thresholdShmName, &thresholdShm[0]);
+    daoShmOpen(inShmName, &inShm[0]);
+    daoShmOpen(centroidShmName, &centroidShm[0]);
+    daoShmOpen(subApCentreShmName, &subApCentreShm[0]);
+    daoShmOpen(refImageShmName, &refImageShm[0]);
+    daoShmOpen(thresholdShmName, &thresholdShm[0]);
 
     int inSize = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
     struct timespec t[3];
@@ -133,7 +133,7 @@ static int realTimeLoop()
         // Wait for new image
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
-        if (daoShmWaitForSemaphoreTimeout(inShm, semNb, &timeout) != -1)
+        if (daoShmWaitSemTimeout(inShm, semNb, &timeout) != -1)
         {
             clock_gettime(CLOCK_REALTIME, &t[2]);
             // New image, insert something here
@@ -149,7 +149,7 @@ static int realTimeLoop()
                              searchRange,
                              thresholdShm[0].array.F[0],
                              centroidShm[0].array.F);
-            daoShmImagePart2ShmFinalize(&centroidShm[0]);
+            daoShmSetDataPartFinalize(&centroidShm[0]);
 
             // Off the critical path: this frame's centroids are already
             // published above, so there is plenty of time before the next
@@ -172,7 +172,7 @@ static int realTimeLoop()
                                  0.0f,
                                  refAlpha,
                                  refImageShm[0].array.F);
-                daoShmImagePart2ShmFinalize(&refImageShm[0]);
+                daoShmSetDataPartFinalize(&refImageShm[0]);
             }
 
             clock_gettime(CLOCK_REALTIME, &t[1]);

@@ -83,14 +83,14 @@ int main(int argc, char *argv[])
 
     // Open the source image shared memory
     IMAGE sourceShm;
-    if(daoShmShm2Img(args.sourceShmPath.c_str(), &sourceShm) != DAO_SUCCESS) {
+    if(daoShmOpen(args.sourceShmPath.c_str(), &sourceShm) != DAO_SUCCESS) {
         printf("Failed to open source image shared memory (%s)!\n", args.sourceShmPath.c_str());
         return EXIT_FAILURE;
     }
 
     // Open the output image shared memory
     IMAGE outShm;
-    if(daoShmShm2Img(args.outputShmPath.c_str(), &outShm) != DAO_SUCCESS) {
+    if(daoShmOpen(args.outputShmPath.c_str(), &outShm) != DAO_SUCCESS) {
         printf("Failed to open output image shared memory (%s)!\n", args.outputShmPath.c_str());
         return EXIT_FAILURE;
     }
@@ -165,7 +165,7 @@ int main(int argc, char *argv[])
             );
             DAO_PROFILE_STOP(downsampleProfile, "Downsample");
 
-            daoShmImage2Shm(outImage, outShm.md->size[0] * outShm.md->size[1], &outShm);
+            daoShmSetData(&outShm, outImage, outShm.md->size[0] * outShm.md->size[1]);
         }
     }
 }

@@ -158,7 +158,7 @@ static int realTimeLoop()
 
     for (shmCnt = 0; shmCnt < nbShm; shmCnt++)
     {
-        daoShmShm2Img(shmName[shmCnt], &shm[shmCnt]);
+        daoShmOpen(shmName[shmCnt], &shm[shmCnt]);
     }
 
     clock_t launch, done;

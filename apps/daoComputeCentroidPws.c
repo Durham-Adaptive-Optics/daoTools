@@ -95,13 +95,13 @@ static int realTimeLoop()
     IMAGE *pixIdShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *pixIdMapShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *fluxShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(inShmName, &inShm[0]);
-    daoShmShm2Img(centroidShmName, &centroidShm[0]);
-    daoShmShm2Img(refShmName, &refShm[0]);
-    daoShmShm2Img(thresholdShmName, &thresholdShm[0]);
-    daoShmShm2Img(pixIdShmName, &pixIdShm[0]);
-    daoShmShm2Img(pixIdMapShmName, &pixIdMapShm[0]);
-    daoShmShm2Img(fluxShmName, &fluxShm[0]);
+    daoShmOpen(inShmName, &inShm[0]);
+    daoShmOpen(centroidShmName, &centroidShm[0]);
+    daoShmOpen(refShmName, &refShm[0]);
+    daoShmOpen(thresholdShmName, &thresholdShm[0]);
+    daoShmOpen(pixIdShmName, &pixIdShm[0]);
+    daoShmOpen(pixIdMapShmName, &pixIdMapShm[0]);
+    daoShmOpen(fluxShmName, &fluxShm[0]);
 
     int inSize = inShm[0].md[0].size[0]/2;
     int pupilSize = pixIdShm[0].md[0].size[0]*pixIdShm[0].md[0].size[1];
@@ -118,7 +118,7 @@ static int realTimeLoop()
         // Wait for new image
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
-        if (daoShmWaitForSemaphoreTimeout(inShm, semNb, &timeout) != DAO_TIMEOUT)
+        if (daoShmWaitSemTimeout(inShm, semNb, &timeout) != DAO_TIMEOUT)
         {
             clock_gettime(CLOCK_REALTIME, &t[2]);
             // New image, insert something here
@@ -134,7 +134,7 @@ static int realTimeLoop()
                            inSize,
                            pupilSize);
 
-            daoShmImagePart2ShmFinalize(&centroidShm[0]); 
+            daoShmSetDataPartFinalize(&centroidShm[0]);
 
             clock_gettime(CLOCK_REALTIME, &t[1]);
             elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;

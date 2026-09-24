@@ -49,7 +49,7 @@ SmemDAQ::~SmemDAQ() {
  * in the case connection fails.
 */
 void SmemDAQ::establishResourceConnection() {
-    if (DAO_SUCCESS != daoShmShm2Img(params_.absPath.c_str(), &smem_)) {
+    if (DAO_SUCCESS != daoShmOpen(params_.absPath.c_str(), &smem_)) {
         std::string const err = fmt::format("failed to open smem {}", params_.absPath);
         throw std::runtime_error(err);
     }

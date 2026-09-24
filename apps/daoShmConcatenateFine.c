@@ -123,7 +123,7 @@ void * shmNRealTimeLoop(void *thread_data)
         // Wait for SHM semaphore
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec +=1;
-        if (daoShmWaitForSemaphoreTimeout(shmIn[args->shmId], 0, &timeout) != -1)
+        if (daoShmWaitSemTimeout(shmIn[args->shmId], 0, &timeout) != -1)
         {
             daoShmCopyToPosition(shmIn[args->shmId], shmOut, nbVal, shmPos[args->shmId], 0);
             clock_gettime(CLOCK_REALTIME, &t[0]);
@@ -168,7 +168,7 @@ void * finalizeRealTimeLoop(void *thread_data)
             {
                 updateCnt[k] = 0; // Reset counters after finalizing
             }
-            daoShmImagePart2ShmFinalize(&shmOut[0]);
+            daoShmSetDataPartFinalize(&shmOut[0]);
             cnt++; // Increment the counter
 
             // Calculate time spent and frequency
@@ -196,14 +196,14 @@ static int prepRealTime()
     signal(SIGINT, endme);
 
     shmOut = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(shmOutName, &shmOut[0]);
+    daoShmOpen(shmOutName, &shmOut[0]);
     daoInfo("%s shm created\n", shmOutName);
     
     // create shm (/tmp/<shmName><nameId>.im.shm)
     for (k=0; k<nbShm; k++)
     {
         shmIn[k] = (IMAGE *)malloc(sizeof(IMAGE));
-        daoShmShm2Img(shmName[k], &shmIn[k][0]);
+        daoShmOpen(shmName[k], &shmIn[k][0]);
         daoInfo("%s shm created\n", shmName[k]);
         updateCnt[k] = 0;
         if (k==0)

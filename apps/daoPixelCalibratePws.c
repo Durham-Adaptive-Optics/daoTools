@@ -89,12 +89,12 @@ static int realTimeLoop()
     IMAGE *maskShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *calShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *fluxShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(inShmName, &inShm[0]);
-    daoShmShm2Img(ffShmName, &ffShm[0]);
-    daoShmShm2Img(bgShmName, &bgShm[0]);
-    daoShmShm2Img(maskShmName, &maskShm[0]);
-    daoShmShm2Img(calShmName, &calShm[0]);
-    daoShmShm2Img(fluxShmName, &fluxShm[0]);
+    daoShmOpen(inShmName, &inShm[0]);
+    daoShmOpen(ffShmName, &ffShm[0]);
+    daoShmOpen(bgShmName, &bgShm[0]);
+    daoShmOpen(maskShmName, &maskShm[0]);
+    daoShmOpen(calShmName, &calShm[0]);
+    daoShmOpen(fluxShmName, &fluxShm[0]);
 
     daoInfo("Starting loop, %s/%s \n",inShmName, calShmName);
     fflush(stdout);
@@ -112,7 +112,7 @@ static int realTimeLoop()
         t[0] = t[1];
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
-        if (daoShmWaitForSemaphoreTimeout(inShm, semNb, &timeout) != DAO_TIMEOUT)
+        if (daoShmWaitSemTimeout(inShm, semNb, &timeout) != DAO_TIMEOUT)
         {
             clock_gettime(CLOCK_REALTIME, &t[2]);
             daoToolsShmCalibratePws(inShm, ffShm, bgShm, maskShm, calShm, fluxShm);
