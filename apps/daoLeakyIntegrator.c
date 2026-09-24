@@ -52,6 +52,7 @@ char leakyShmName[DAO_SHM_NAME_LEN];
 char enableShmName[DAO_SHM_NAME_LEN];
 int enableGiven = 0;   /* -e was passed explicitly: use enableShmName as-is, don't derive it */
 int modal=0; // modal integrator flag
+int keepPiston=0; // -P: do not remove the mean of the output (e.g. a tip/tilt mirror)
 double clipping = 10.0; // clipping value
 
 #define LI_PRINT_INTERVAL_S 1.0   /* throttle telemetry: print once every N seconds of wall time,
@@ -78,12 +79,14 @@ static void ShowHelp(void)
     daoInfo("   -S               list of SHM (full path separated by space)\n");
     daoInfo("   -s               semaphore number\n");
     daoInfo("   -m               modal integrator, leaky and gain should be arrays\n");
+    daoInfo("   -P               keep the piston: do not remove the mean of the output\n");
+    daoInfo("                    (removed by default; a 2-axis tip/tilt command needs -P)\n");
     daoInfo("   -e <shm>         optional enable shm (default: derived from <loopCmd> as\n");
     daoInfo("                    <loopCmd base name>Enable.im.shm, e.g. lpCmd.im.shm ->\n");
     daoInfo("                    lpCmdEnable.im.shm)\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage:\n");
-    daoInfo("   -S <in SHM> <offset SHM> <out SHM> <loopCmd SHM> <leak SHM> <gain SHM> -s <semNb> [-e <enableShm>] -m -L\n");
+    daoInfo("   -S <in SHM> <offset SHM> <out SHM> <loopCmd SHM> <leak SHM> <gain SHM> -s <semNb> [-e <enableShm>] [-m] [-P] -L\n");
     daoInfo("\n");
     daoInfo("   -e lets an external SHM enable/disable the integrator independently of\n");
     daoInfo("   the loopCmd open/close state: when the enable SHM reads 0, the output is\n");
@@ -229,6 +232,8 @@ static int realTimeLoop()
                         avg+=outShm[0].array.F[j];
                     }
                     avg=avg/inSize;
+                    if (keepPiston)
+                        avg = 0;
                     for (j=0; j< inSize; j++)
                     {
                         outShm[0].array.F[j] = outShm[0].array.F[j] - avg;
@@ -267,6 +272,8 @@ static int realTimeLoop()
                         avg+=outShm[0].array.D[j];
                     }
                     avg=avg/inSize;
+                    if (keepPiston)
+                        avg = 0;
                     for (j=0; j< inSize; j++)
                     {
                         outShm[0].array.D[j] = outShm[0].array.D[j] - avg;
@@ -395,6 +402,10 @@ static void DecodeArgs(int argc, char **argv)
                         break;
             case 'm':	
                         modal = 1;
+                        break;
+            case 'P':
+                        keepPiston = 1;
+                        daoInfo("piston kept (no mean removal)\n");
                         break;
             case 'S':
                         daoInfo("Simple filter from SHM real time control\n");
