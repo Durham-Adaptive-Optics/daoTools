@@ -9,11 +9,53 @@
 #include <configuration.hpp>
 #include <fmt/format.h>
 #include <daoTools.h>
+#include <cstdlib>
+#include <cctype>
 
  /* ---------------------------------------------------------------- */
 
 namespace Dao::DAQ
 {
+    /* Expands $NAME and ${NAME} environment variables in a path, so that
+     * configurations can say e.g. `root_storage: ${DAODATA}`. Throws if a
+     * referenced variable is not set.
+    */
+    static std::string expandEnvironment(std::string const& path) {
+        std::string out;
+        for (size_t i = 0; i < path.size(); ++i) {
+            if (path[i] != '$') {
+                out += path[i];
+                continue;
+            }
+
+            size_t start = i + 1, end = start;
+            bool const braced = start < path.size() && path[start] == '{';
+            if (braced) {
+                end = path.find('}', ++start);
+                if (end == std::string::npos) {
+                    throw std::runtime_error(fmt::format("(server.config) unterminated '${{' in '{}'", path));
+                }
+            } else {
+                while (end < path.size() && (std::isalnum(static_cast<unsigned char>(path[end])) || path[end] == '_'))
+                    ++end;
+            }
+
+            std::string const name = path.substr(start, end - start);
+            if (name.empty()) {
+                out += '$';
+                continue;
+            }
+
+            char const* value = std::getenv(name.c_str());
+            if (!value) {
+                throw std::runtime_error(fmt::format("(server.config) environment variable '{}' used in '{}' is not set", name, path));
+            }
+            out += value;
+            i = braced ? end : end - 1;
+        }
+        return out;
+    }
+
     URIClass DAQConfiguration::classFromURI(URI const& uri) const {
         auto const splitPos = uri.find("://");
         if (splitPos == std::string::npos) {
@@ -94,6 +136,7 @@ namespace Dao::DAQ
     void DAQConfiguration::load(YAML::Node const& ymlDoc) {
         // load session policies..
         loadRequired(sessionParams_.rootStorage, "root_storage", ymlDoc);
+        sessionParams_.rootStorage = expandEnvironment(sessionParams_.rootStorage);
 
         // load source policies..
         if (auto const& sourcesNode = ymlDoc["sources"]; sourcesNode) {

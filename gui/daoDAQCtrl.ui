@@ -1,0 +1,870 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>900</width>
+    <height>900</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>daoDAQCtrl</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="mainLayout">
+    <property name="spacing">
+     <number>8</number>
+    </property>
+    <property name="leftMargin">
+     <number>10</number>
+    </property>
+    <property name="topMargin">
+     <number>10</number>
+    </property>
+    <property name="rightMargin">
+     <number>10</number>
+    </property>
+    <property name="bottomMargin">
+     <number>10</number>
+    </property>
+
+    <item>
+     <widget class="QTabWidget" name="mainTabs">
+      <property name="currentIndex">
+       <number>0</number>
+      </property>
+      <widget class="QWidget" name="acquireTab">
+       <attribute name="title">
+        <string>Acquire</string>
+       </attribute>
+       <layout class="QVBoxLayout" name="acquireLayout">
+      <!-- server connection + process -->
+      <item>
+       <widget class="QGroupBox" name="serverGroup">
+        <property name="title">
+         <string>Server</string>
+        </property>
+        <layout class="QGridLayout" name="serverLayout">
+         <item row="0" column="0">
+          <widget class="QLabel" name="hostLabel">
+           <property name="text">
+            <string>Host</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="QLineEdit" name="hostEdit">
+           <property name="text">
+            <string>127.0.0.1</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="2">
+          <widget class="QLabel" name="portLabel">
+           <property name="text">
+            <string>Port</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="3">
+          <widget class="QSpinBox" name="portSpin">
+           <property name="minimum">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <number>65535</number>
+           </property>
+           <property name="value">
+            <number>62000</number>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="4">
+          <widget class="QPushButton" name="connectButton">
+           <property name="text">
+            <string>Connect</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="0" colspan="3">
+          <widget class="QLabel" name="stateLabel">
+           <property name="minimumSize">
+            <size>
+             <width>0</width>
+             <height>36</height>
+            </size>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignCenter</set>
+           </property>
+           <property name="text">
+            <string>DISCONNECTED</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="3">
+          <widget class="QPushButton" name="launchButton">
+           <property name="toolTip">
+            <string>Start a local daoDAQ process (logs to $DAODATA/daoDAQ.logs)</string>
+           </property>
+           <property name="text">
+            <string>Launch daoDAQ</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="4">
+          <widget class="QPushButton" name="shutdownButton">
+           <property name="toolTip">
+            <string>Send SIGINT to the local daoDAQ process</string>
+           </property>
+           <property name="text">
+            <string>Shut down</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="0" colspan="5">
+          <widget class="QLabel" name="pidLabel">
+           <property name="text">
+            <string/>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+
+      <!-- configuration -->
+      <item>
+       <widget class="QGroupBox" name="configGroup">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
+          <horstretch>0</horstretch>
+          <verstretch>1</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="title">
+         <string>Configuration</string>
+        </property>
+        <layout class="QVBoxLayout" name="configLayout">
+         <item>
+          <layout class="QHBoxLayout" name="configFileLayout">
+           <item>
+            <widget class="QComboBox" name="configCombo">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+               <horstretch>1</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="newButton">
+             <property name="toolTip">
+              <string>Start a new, empty configuration</string>
+             </property>
+             <property name="text">
+              <string>New</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="browseButton">
+             <property name="text">
+              <string>Load...</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="reloadButton">
+             <property name="toolTip">
+              <string>Re-read the current file from disk, dropping unsaved edits</string>
+             </property>
+             <property name="text">
+              <string>Reload</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="saveButton">
+             <property name="text">
+              <string>Save</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="saveAsButton">
+             <property name="text">
+              <string>Save as...</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+         <item>
+          <layout class="QHBoxLayout" name="rootLayout">
+           <item>
+            <widget class="QLabel" name="rootLabel">
+             <property name="text">
+              <string>root_storage</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLineEdit" name="rootEdit">
+             <property name="placeholderText">
+              <string>directory where session folders are created (must exist)</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="rootBrowseButton">
+             <property name="text">
+              <string>...</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+         <item>
+          <widget class="QTabWidget" name="configTabs">
+           <property name="currentIndex">
+            <number>0</number>
+           </property>
+           <widget class="QWidget" name="sourcesTab">
+            <attribute name="title">
+             <string>Sources</string>
+            </attribute>
+            <layout class="QHBoxLayout" name="sourcesTabLayout">
+             <item>
+              <widget class="QSplitter" name="sourcesSplitter">
+               <property name="orientation">
+                <enum>Qt::Horizontal</enum>
+               </property>
+               <widget class="QWidget" name="shmPanel">
+                <layout class="QVBoxLayout" name="shmPanelLayout">
+                 <property name="leftMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>0</number>
+                 </property>
+                 <item>
+                  <widget class="QLabel" name="shmLabel">
+                   <property name="text">
+                    <string>SHMs in /tmp - double-click to record</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QLineEdit" name="shmFilterEdit">
+                   <property name="placeholderText">
+                    <string>Search SHMs...</string>
+                   </property>
+                   <property name="clearButtonEnabled">
+                    <bool>true</bool>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QListWidget" name="shmList">
+                   <property name="selectionMode">
+                    <enum>QAbstractItemView::ExtendedSelection</enum>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QPushButton" name="addShmButton">
+                   <property name="text">
+                    <string>Add selected  &#8594;</string>
+                   </property>
+                  </widget>
+                 </item>
+                </layout>
+               </widget>
+               <widget class="QWidget" name="selectedPanel">
+                <layout class="QVBoxLayout" name="selectedPanelLayout">
+                 <property name="leftMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>0</number>
+                 </property>
+                 <item>
+                  <widget class="QLabel" name="selectedLabel">
+                   <property name="text">
+                    <string>Recorded - select to edit, double-click to remove</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QTableWidget" name="sourcesTable">
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                     <horstretch>0</horstretch>
+                     <verstretch>1</verstretch>
+                    </sizepolicy>
+                   </property>
+                   <property name="minimumSize">
+                    <size>
+                     <width>0</width>
+                     <height>130</height>
+                    </size>
+                   </property>
+                   <property name="editTriggers">
+                    <set>QAbstractItemView::NoEditTriggers</set>
+                   </property>
+                   <property name="selectionMode">
+                    <enum>QAbstractItemView::SingleSelection</enum>
+                   </property>
+                   <property name="selectionBehavior">
+                    <enum>QAbstractItemView::SelectRows</enum>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QGroupBox" name="sourceForm">
+                   <property name="title">
+                    <string>Selected source</string>
+                   </property>
+                   <layout class="QGridLayout" name="sourceFormLayout">
+                    <item row="0" column="0">
+                     <widget class="QLabel" name="samplesLabel">
+                      <property name="text">
+                       <string>samples</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="0" column="1">
+                     <widget class="QSpinBox" name="samplesSpin">
+                      <property name="toolTip">
+                       <string>Stop this source after N frames (0 = until STOP)</string>
+                      </property>
+                      <property name="specialValueText">
+                       <string>until STOP</string>
+                      </property>
+                      <property name="maximum">
+                       <number>2147483647</number>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="0" column="2">
+                     <widget class="QLabel" name="rolloverLabel">
+                      <property name="text">
+                       <string>file_rollover</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="0" column="3">
+                     <widget class="QSpinBox" name="rolloverSpin">
+                      <property name="toolTip">
+                       <string>Frames per FITS file (0 = everything in one file)</string>
+                      </property>
+                      <property name="specialValueText">
+                       <string>one file</string>
+                      </property>
+                      <property name="maximum">
+                       <number>2147483647</number>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="1" column="0">
+                     <widget class="QLabel" name="bufferLabel">
+                      <property name="text">
+                       <string>buffer_limit</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="1" column="1">
+                     <widget class="QSpinBox" name="bufferSpin">
+                      <property name="toolTip">
+                       <string>Max frames queued in RAM before dropping (0 = unlimited, not recommended)</string>
+                      </property>
+                      <property name="specialValueText">
+                       <string>unlimited</string>
+                      </property>
+                      <property name="maximum">
+                       <number>2147483647</number>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="1" column="2">
+                     <widget class="QLabel" name="eagerLabel">
+                      <property name="text">
+                       <string>eager_start</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="1" column="3">
+                     <widget class="QCheckBox" name="eagerCheck">
+                      <property name="toolTip">
+                       <string>Also record the frame already in the SHM when START is pressed</string>
+                      </property>
+                      <property name="checked">
+                       <bool>true</bool>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="2" column="0">
+                     <widget class="QLabel" name="daqAffLabel">
+                      <property name="text">
+                       <string>daq_affinity</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="2" column="1">
+                     <widget class="QSpinBox" name="daqAffSpin">
+                      <property name="toolTip">
+                       <string>CPU core for the capture thread</string>
+                      </property>
+                      <property name="specialValueText">
+                       <string>none</string>
+                      </property>
+                      <property name="minimum">
+                       <number>-1</number>
+                      </property>
+                      <property name="maximum">
+                       <number>1023</number>
+                      </property>
+                      <property name="value">
+                       <number>-1</number>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="2" column="2">
+                     <widget class="QLabel" name="sinkAffLabel">
+                      <property name="text">
+                       <string>sink_affinity</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="2" column="3">
+                     <widget class="QSpinBox" name="sinkAffSpin">
+                      <property name="toolTip">
+                       <string>CPU core for the disk-writer thread</string>
+                      </property>
+                      <property name="specialValueText">
+                       <string>none</string>
+                      </property>
+                      <property name="minimum">
+                       <number>-1</number>
+                      </property>
+                      <property name="maximum">
+                       <number>1023</number>
+                      </property>
+                      <property name="value">
+                       <number>-1</number>
+                      </property>
+                     </widget>
+                    </item>
+                   </layout>
+                  </widget>
+                 </item>
+                 <item>
+                  <layout class="QHBoxLayout" name="sourceButtonLayout">
+                   <item>
+                    <widget class="QPushButton" name="addFileButton">
+                     <property name="toolTip">
+                      <string>Add a file:// source, copied into the session folder at START</string>
+                     </property>
+                     <property name="text">
+                      <string>Add file...</string>
+                     </property>
+                    </widget>
+                   </item>
+                   <item>
+                    <widget class="QPushButton" name="removeSourceButton">
+                     <property name="text">
+                      <string>Remove</string>
+                     </property>
+                    </widget>
+                   </item>
+                  </layout>
+                 </item>
+                </layout>
+               </widget>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+           <widget class="QWidget" name="yamlTab">
+            <attribute name="title">
+             <string>YAML</string>
+            </attribute>
+            <layout class="QVBoxLayout" name="yamlTabLayout">
+             <item>
+              <widget class="QPlainTextEdit" name="configEdit">
+               <property name="lineWrapMode">
+                <enum>QPlainTextEdit::NoWrap</enum>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </widget>
+         </item>
+         <item>
+          <layout class="QHBoxLayout" name="configButtonLayout">
+           <item>
+            <widget class="QLabel" name="validLabel">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+               <horstretch>1</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="wordWrap">
+              <bool>true</bool>
+             </property>
+             <property name="text">
+              <string/>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="applyButton">
+             <property name="toolTip">
+              <string>Upload this configuration to daoDAQ and bring it to Ready (Idle)</string>
+             </property>
+             <property name="text">
+              <string>Apply to daoDAQ</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+        </layout>
+       </widget>
+      </item>
+
+      <!-- acquisition -->
+      <item>
+       <widget class="QGroupBox" name="acqGroup">
+        <property name="title">
+         <string>Acquisition</string>
+        </property>
+        <layout class="QGridLayout" name="acqLayout">
+         <item row="0" column="0">
+          <widget class="QPushButton" name="startButton">
+           <property name="minimumSize">
+            <size>
+             <width>0</width>
+             <height>40</height>
+            </size>
+           </property>
+           <property name="text">
+            <string>START</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="QPushButton" name="stopButton">
+           <property name="minimumSize">
+            <size>
+             <width>0</width>
+             <height>40</height>
+            </size>
+           </property>
+           <property name="text">
+            <string>STOP</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="2">
+          <widget class="QPushButton" name="releaseButton">
+           <property name="toolTip">
+            <string>Release the SHMs and unload the configuration (back to Off)</string>
+           </property>
+           <property name="text">
+            <string>Release</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="3">
+          <widget class="QPushButton" name="recoverButton">
+           <property name="toolTip">
+            <string>Leave the Error state: re-apply the uploaded configuration and go to Ready</string>
+           </property>
+           <property name="text">
+            <string>Recover</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="0" colspan="3">
+          <widget class="QLabel" name="sessionLabel">
+           <property name="textInteractionFlags">
+            <set>Qt::TextSelectableByMouse</set>
+           </property>
+           <property name="text">
+            <string>No session yet</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="3">
+          <widget class="QPushButton" name="openDirButton">
+           <property name="text">
+            <string>Open folder</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="0" colspan="4">
+          <widget class="QLabel" name="progressLabel">
+           <property name="text">
+            <string/>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+
+       </layout>
+      </widget>
+       <widget class="QWidget" name="extractTab">
+        <attribute name="title">
+         <string>Extract</string>
+        </attribute>
+        <layout class="QVBoxLayout" name="extractLayout">
+         <item>
+          <layout class="QHBoxLayout" name="extractRootLayout">
+           <item>
+            <widget class="QLabel" name="extractRootLabel">
+             <property name="text">
+              <string>root_storage</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLineEdit" name="extractRootEdit">
+             <property name="placeholderText">
+              <string>folder holding the daoDAQ session folders</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="extractRootBrowseButton">
+             <property name="text">
+              <string>...</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="scanButton">
+             <property name="toolTip">
+              <string>Re-read the sessions under root_storage</string>
+             </property>
+             <property name="text">
+              <string>Scan</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+         <item>
+          <widget class="QLabel" name="catalogLabel">
+           <property name="text">
+            <string>Recorded sessions - tick the sources to extract, double-click a row to use its time span</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QTreeWidget" name="catalogTree">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+             <horstretch>0</horstretch>
+             <verstretch>1</verstretch>
+            </sizepolicy>
+           </property>
+           <property name="alternatingRowColors">
+            <bool>true</bool>
+           </property>
+           <column>
+            <property name="text">
+             <string>session / source</string>
+            </property>
+           </column>
+           <column>
+            <property name="text">
+             <string>frames</string>
+            </property>
+           </column>
+           <column>
+            <property name="text">
+             <string>first frame</string>
+            </property>
+           </column>
+           <column>
+            <property name="text">
+             <string>last frame</string>
+            </property>
+           </column>
+           <column>
+            <property name="text">
+             <string>frame</string>
+            </property>
+           </column>
+          </widget>
+         </item>
+         <item>
+          <widget class="QGroupBox" name="rangeGroup">
+           <property name="title">
+            <string>Time range (local time, inclusive)</string>
+           </property>
+           <layout class="QGridLayout" name="rangeLayout">
+            <item row="0" column="0">
+             <widget class="QLabel" name="startLabel">
+              <property name="text">
+               <string>from</string>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="1">
+             <widget class="QDateTimeEdit" name="startEdit">
+              <property name="displayFormat">
+               <string>yyyy-MM-dd HH:mm:ss.zzz</string>
+              </property>
+              <property name="calendarPopup">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="2">
+             <widget class="QLabel" name="endLabel">
+              <property name="text">
+               <string>to</string>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="3">
+             <widget class="QDateTimeEdit" name="endEdit">
+              <property name="displayFormat">
+               <string>yyyy-MM-dd HH:mm:ss.zzz</string>
+              </property>
+              <property name="calendarPopup">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="4">
+             <widget class="QPushButton" name="fitRangeButton">
+              <property name="toolTip">
+               <string>Set the range to the span of the ticked sources</string>
+              </property>
+              <property name="text">
+               <string>Fit to ticked</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="0" colspan="5">
+             <widget class="QLabel" name="summaryLabel">
+              <property name="text">
+               <string/>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <widget class="QGroupBox" name="outputGroup">
+           <property name="title">
+            <string>Output</string>
+           </property>
+           <layout class="QGridLayout" name="outputLayout">
+            <item row="0" column="0">
+             <widget class="QLineEdit" name="outputEdit">
+              <property name="placeholderText">
+               <string>output file</string>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="1">
+             <widget class="QComboBox" name="formatCombo">
+              <property name="toolTip">
+               <string>File format; also follows the output file's extension</string>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="2">
+             <widget class="QPushButton" name="outputBrowseButton">
+              <property name="text">
+               <string>...</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="0">
+             <widget class="QProgressBar" name="extractProgress">
+              <property name="value">
+               <number>0</number>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="1">
+             <widget class="QPushButton" name="cancelExtractButton">
+              <property name="text">
+               <string>Cancel</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="2">
+             <widget class="QPushButton" name="extractButton">
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>34</height>
+               </size>
+              </property>
+              <property name="text">
+               <string>EXTRACT</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+     </widget>
+    </item>
+
+    <!-- activity log -->
+    <item>
+     <widget class="QPlainTextEdit" name="logEdit">
+      <property name="minimumSize">
+       <size>
+        <width>0</width>
+        <height>80</height>
+       </size>
+      </property>
+      <property name="maximumSize">
+       <size>
+        <width>16777215</width>
+        <height>140</height>
+       </size>
+      </property>
+      <property name="readOnly">
+       <bool>true</bool>
+      </property>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

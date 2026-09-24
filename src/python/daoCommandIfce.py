@@ -41,9 +41,10 @@ class daoCommandIfce:
             now = time.time()
             if(now-start >= self.local_timeout):
                 self.log.error("timeout resetting socket")
-                self.network_socket.close()
+                self.network_socket.close(linger=0)
                 self.network_socket = self.network_context.socket(zmq.REQ)
                 self.network_socket.connect(self.connect_string)
+                self.network_socket.setsockopt(zmq.RCVTIMEO, 200)
                 return 2, "Timeout"
     
     def check_status(self, status, payload):

@@ -1,0 +1,17 @@
+# daoDAQ default session configuration (example from docs/source/daoDAQ.rst).
+# Parameters: daoTools/apps/daoDAQ/README.md. Edit it in daoDAQCtrl.py, or copy it.
+
+# Each START creates <root_storage>/<YYYY-mm-dd_HH-MM-SS>/ here. $DAOROOT/telemetry is
+# created when daoTools is installed (and by daoDAQCtrl.py on Apply if missing).
+# $VAR / ${VAR} are expanded from daoDAQ's environment.
+root_storage: ${DAOROOT}/telemetry
+
+sources:
+  # Record 10 frames of the camera SHM, 4 frames per FITS file.
+  - uri: smem:///tmp/myShm.im.shm
+    samples: 10
+    file_rollover: 4
+    buffer_limit: 1500          # always set it, see the README
+
+  # A file copied into the session directory at START (uncomment and set the path):
+  # - uri: file:///path/to/my/file.ext
