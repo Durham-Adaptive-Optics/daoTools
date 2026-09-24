@@ -1,0 +1,35 @@
+#!/bin/bash
+# daoRtPin -- pin real-time processes to their own CPU (sourced by start scripts).
+#
+#   source daoRtPin
+#   daoTmux NAME "$(dao_rt_pin <index> "<command>")"
+#
+# dao_rt_pin prints <command> with "taskset -c <cpu>" inserted after its leading
+# VAR=value assignments (e.g. CUDA_VISIBLE_DEVICES=...), <cpu> being the
+# <index>-th CPU of daoRtCpus (performance cores first, one per physical core,
+# CPU 0's core left out), reused from the start past the end of the list. Give
+# each real-time role of a pipeline a fixed index, so a script restarting one
+# process puts it back on the same CPU.
+#
+# The command is printed unchanged when there is nothing to pin with: no
+# taskset (macOS...), or no CPU (DAO_RT_CPUS=none, see daoRtCpus), and when it
+# already starts with taskset (a CPU set chosen by hand wins).
+DAO_RT_CPUS_LIST=()
+if command -v taskset >/dev/null 2>&1; then
+    DAO_RT_CPUS_LIST=($(daoRtCpus 2>/dev/null || true))
+fi
+
+dao_rt_pin() {
+    local index="$1" cmd="$2" env=""
+    local n=${#DAO_RT_CPUS_LIST[@]}
+    cmd="${cmd#"${cmd%%[![:space:]]*}"}"              # leading spaces
+    while [[ "$cmd" =~ ^([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)(.*)$ ]]; do
+        env+="${BASH_REMATCH[1]}"
+        cmd="${BASH_REMATCH[2]}"
+    done
+    if [ "$n" -eq 0 ] || [[ "$cmd" == taskset[[:space:]]* ]]; then
+        printf '%s%s' "$env" "$cmd"
+        return
+    fi
+    printf '%staskset -c %s %s' "$env" "${DAO_RT_CPUS_LIST[$((index % n))]}" "$cmd"
+}
