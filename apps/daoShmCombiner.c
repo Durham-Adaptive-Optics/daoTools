@@ -119,10 +119,10 @@ void * shmNRealTimeLoop(void *thread_data)
         // Wait for SHM semaphore
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec +=1;
-        if (daoShmWaitForSemaphoreTimeout(shmIn[args->shmId], 0, &timeout) != -1)
+        if (daoShmWaitSemTimeout(shmIn[args->shmId], 0, &timeout) != -1)
         {
             clock_gettime(CLOCK_REALTIME, &t[0]);
-            if (daoShmCombineShm2Shm(shmIn, shm, nbShm, nbVal) == DAO_ERROR)
+            if (daoShmCombine(shmIn, shm, nbShm, nbVal) == DAO_ERROR)
             {
                 daoError("Combiner failed for thread %d\n", args->shmId);
             }
@@ -159,7 +159,7 @@ static int prepRealTime()
     signal(SIGINT, endme);
 
     shm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(shmName, &shm[0]);
+    daoShmOpen(shmName, &shm[0]);
     daoInfo("%s shm created", shmName);
     
     // create shm (/tmp/<shmName><nameId>.im.shm)
@@ -170,7 +170,7 @@ static int prepRealTime()
         sprintf(nameId, "%02d", k);
         daoToolsInsertShmNamePrefix(shmName, nameId, shmNameId);
         shmIn[k] = (IMAGE *)malloc(sizeof(IMAGE));
-        daoShmShm2Img(shmNameId, &shmIn[k][0]);
+        daoShmOpen(shmNameId, &shmIn[k][0]);
         daoInfo("%s shm created\n", shmNameId);
         updateCnt[k] = 0;
     }

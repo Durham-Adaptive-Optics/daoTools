@@ -40,7 +40,7 @@ int main(int argc, char* argv[])
     
 
     IMAGE *dmImg = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(inShmName, &dmImg[0]);
+    daoShmOpen(inShmName, &dmImg[0]);
     int nActs = dmImg[0].md[0].size[0]*inShm[0].md[0].size[0];
     printf("nActs: %d\n", nActs);
 
@@ -82,7 +82,7 @@ int main(int argc, char* argv[])
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
         // Get data
-        if (daoShmWaitForSemaphoreTimeout(inShm, 2, &timeout) != -1)
+        if (daoShmWaitSemTimeout(inShm, 2, &timeout) != -1)
         {
             // Send data
             sendto(udp_socket, dmImg[0].array.F, data_size, 0, (struct sockaddr*)&dest_addr, sizeof(dest_addr));

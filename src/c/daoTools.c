@@ -438,7 +438,7 @@ int_fast8_t daoToolsShmCalibrate(IMAGE* inShm, IMAGE* ffShm, IMAGE* bgShm, IMAGE
             calShm[0].array.F[k] = ((float)inShm[0].array.D[k] - bgShm[0].array.F[k]) * ffShm[0].array.F[k];
         }
     }
-    daoShmImagePart2ShmFinalize(&calShm[0]);
+    daoShmSetDataPartFinalize(&calShm[0]);
 
     return DAO_SUCCESS;
 }
@@ -512,7 +512,7 @@ int_fast8_t daoToolsShmCalibrate64(IMAGE* inShm, IMAGE* ffShm, IMAGE* bgShm, IMA
             calShm[0].array.D[k] = ((double)inShm[0].array.D[k] - bgShm[0].array.D[k]) * ffShm[0].array.D[k];
         }
     }
-    daoShmImagePart2ShmFinalize(&calShm[0]);
+    daoShmSetDataPartFinalize(&calShm[0]);
 
     return DAO_SUCCESS;
 }
@@ -612,7 +612,7 @@ int_fast8_t daoToolsShmCalibratePws(IMAGE* inShm, IMAGE* ffShm, IMAGE* bgShm, IM
             }
         }
     }
-    daoShmImagePart2ShmFinalize(&calShm[0]);
+    daoShmSetDataPartFinalize(&calShm[0]);
 
     return DAO_SUCCESS;
 }
@@ -1791,7 +1791,7 @@ int_fast8_t daoToolsShmExtract(IMAGE* inShm, IMAGE* maskShm, IMAGE* outShm) {
             }
         }
     }
-    daoShmImagePart2ShmFinalize(&outShm[0]);
+    daoShmSetDataPartFinalize(&outShm[0]);
 
     return DAO_SUCCESS;
 }
@@ -1821,7 +1821,7 @@ int_fast8_t daoToolsShmSubstractExtractFinalize(IMAGE *inAShm,
     {
         return DAO_ERROR;
     }
-    daoShmImagePart2ShmFinalize(&outShm[0]);
+    daoShmSetDataPartFinalize(&outShm[0]);
 
     return DAO_SUCCESS;
 }
@@ -2243,7 +2243,7 @@ int_fast8_t daoToolsShmSubstractExtractDualNormFinalize(IMAGE *inAShm,
     {
         return DAO_ERROR;
     }
-    daoShmImagePart2ShmFinalize(&outShm[0]);
+    daoShmSetDataPartFinalize(&outShm[0]);
 
     return DAO_SUCCESS;
 }
@@ -2463,7 +2463,7 @@ int_fast8_t daoToolsShmSubstractExtractNormAFinalize(IMAGE *inAShm,
     {
         return DAO_ERROR;
     }
-    daoShmImagePart2ShmFinalize(&outShm[0]);
+    daoShmSetDataPartFinalize(&outShm[0]);
 
     return DAO_SUCCESS;
 }
@@ -2572,7 +2572,7 @@ static int daoToolsValidIdx(IMAGE *maskShm, int inSize, const int **idxOut)
                 O[i] = (A[k] - B[k]) * inv;
             }
         }
-        daoShmImagePart2ShmFinalize(&outShm[0]);
+        daoShmSetDataPartFinalize(&outShm[0]);
         return DAO_SUCCESS;
     }
 
@@ -2761,7 +2761,7 @@ static int daoToolsValidIdx(IMAGE *maskShm, int inSize, const int **idxOut)
             }
         }
     }
-    daoShmImagePart2ShmFinalize(&outShm[0]);
+    daoShmSetDataPartFinalize(&outShm[0]);
 
     return DAO_SUCCESS;
 }
@@ -2806,7 +2806,7 @@ int_fast8_t daoToolsShmSubstractExtractNormImage(IMAGE* inAShm, IMAGE* inBShm, I
                 O[i] = A[j] * inv - B[j];
             }
         }
-        daoShmImagePart2ShmFinalize(&outShm[0]);
+        daoShmSetDataPartFinalize(&outShm[0]);
         return DAO_SUCCESS;
     }
 
@@ -2967,7 +2967,7 @@ int_fast8_t daoToolsShmSubstractExtractNormImage(IMAGE* inAShm, IMAGE* inBShm, I
         return DAO_ERROR;
     }
 
-    daoShmImagePart2ShmFinalize(&outShm[0]);
+    daoShmSetDataPartFinalize(&outShm[0]);
 
     return DAO_SUCCESS;
 }
@@ -3476,7 +3476,7 @@ int_fast8_t daoDmCombine(IMAGE **imageCube, IMAGE *image, int nbChannel, int nbV
         }
     }
 
-    daoShmImagePart2ShmFinalize(image);
+    daoShmSetDataPartFinalize(image);
 
     return DAO_SUCCESS;
 }
@@ -3516,7 +3516,7 @@ int_fast8_t daoShmCopyToPosition(IMAGE *imageIn, IMAGE *imageOut,
     imageOut->md[0].write = 0;
 
     if (finalize == 1) {
-        daoShmImagePart2ShmFinalize(imageOut);
+        daoShmSetDataPartFinalize(imageOut);
     }
 
     return DAO_SUCCESS;

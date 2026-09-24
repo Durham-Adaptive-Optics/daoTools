@@ -89,9 +89,9 @@ static int realTimeLoop()
     IMAGE *ocamRawShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *ocamShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *lutShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(ocamRawShmName, &ocamRawShm[0]);
-    daoShmShm2Img(ocamShmName, &ocamShm[0]);
-    daoShmShm2Img(lutShmName, &lutShm[0]);
+    daoShmOpen(ocamRawShmName, &ocamRawShm[0]);
+    daoShmOpen(ocamShmName, &ocamShm[0]);
+    daoShmOpen(lutShmName, &lutShm[0]);
 
     int imgWidth = ocamRawShm[0].md[0].size[0];
     int unscrambledSize = ocamShm[0].md[0].size[0] * ocamShm[0].md[0].size[1];
@@ -123,7 +123,7 @@ static int realTimeLoop()
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
         // Wait for new image
-        if (daoShmWaitForSemaphoreTimeout(ocamRawShm, semNb, &timeout) != -1)
+        if (daoShmWaitSemTimeout(ocamRawShm, semNb, &timeout) != -1)
         {
             clock_gettime(CLOCK_REALTIME, &t[0]);
             if (binning == 2)
@@ -146,7 +146,7 @@ static int realTimeLoop()
                 // Zero the rest of the 240x240 image
                 memset(&dst[14400], 0, (240 * 240 - 14400) * sizeof(uint16_t));
 
-                daoShmImagePart2ShmFinalize(&ocamShm[0]);
+                daoShmSetDataPartFinalize(&ocamShm[0]);
             }
             else
             {
@@ -158,7 +158,7 @@ static int realTimeLoop()
                     int off = srcOffset[i];
                     dst[i] = (src[off + 1] << 8) + src[off];
                 }
-                daoShmImagePart2ShmFinalize(&ocamShm[0]);
+                daoShmSetDataPartFinalize(&ocamShm[0]);
             }
             clock_gettime(CLOCK_REALTIME, &t[1]);
 

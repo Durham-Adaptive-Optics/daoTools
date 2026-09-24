@@ -87,15 +87,15 @@ static int realTimeLoop()
     signal(SIGINT, endme);
 
     shm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(shmName, &shm[0]);
+    daoShmOpen(shmName, &shm[0]);
     // Create receiving Avg SHM
     shmAvg = (IMAGE*) malloc(sizeof(IMAGE));
     daoToolsInsertShmNamePrefix(shmName, "Avg", shmNameAvg);
     uint32_t size[2];
     size[0] = shm[0].md[0].size[0];
     size[1] = shm[0].md[0].size[1];
-    daoShmImageCreate(shmAvg, shmNameAvg, 2, size, shm[0].md[0].atype, 1, 0);
-    //daoShmShm2Img(shmNameAvg, &shmAvg[0]);
+    daoShmCreate(shmAvg, shmNameAvg, 2, size, shm[0].md[0].atype, 1, 0);
+    //daoShmOpen(shmNameAvg, &shmAvg[0]);
     printf("Starting loop, %s -> %s, nAvg=%d\n",shmName, shmNameAvg, nbAvg );
     fflush(stdout);
 
@@ -124,7 +124,7 @@ static int realTimeLoop()
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
         // Wait for new image
-        if (daoShmWaitForSemaphoreTimeout(shm, semNb, &timeout) != DAO_TIMEOUT)
+        if (daoShmWaitSemTimeout(shm, semNb, &timeout) != DAO_TIMEOUT)
         {
             // if new image, add it in the cir buf.
             for (k=0; k<nbValue; k++)
@@ -153,8 +153,8 @@ static int realTimeLoop()
             }
             head = (head + 1) % (nbAvg + 1);
 
-    //        daoShmImage2Shm(avgValue, nbValue, &shmAvg[0]);
-            daoShmImagePart2ShmFinalize(&shmAvg[0]);
+    //        daoShmSetData(&shmAvg[0], avgValue, nbValue);
+            daoShmSetDataPartFinalize(&shmAvg[0]);
             printf("\r(%f,%f) -> (%.3f,%.3f)",
                     shm[0].array.F[0], shm[0].array.F[1],
                     shmAvg[0].array.F[0], shmAvg[0].array.F[1]);

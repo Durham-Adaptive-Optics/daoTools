@@ -139,13 +139,13 @@
      IMAGE *illumPixShm  = (IMAGE*) malloc(sizeof(IMAGE));
      IMAGE *intensityShm = (IMAGE*) malloc(sizeof(IMAGE));
 
-     daoShmShm2Img(rawShmName,       &rawShm[0]);
-     daoShmShm2Img(ffShmName,        &ffShm[0]);
-     daoShmShm2Img(bgShmName,        &bgShm[0]);
-     daoShmShm2Img(refShmName,       &refShm[0]);
-     daoShmShm2Img(validPixShmName,  &validPixShm[0]);
-     daoShmShm2Img(illumPixShmName,  &illumPixShm[0]);
-     daoShmShm2Img(intensityShmName, &intensityShm[0]);
+     daoShmOpen(rawShmName,       &rawShm[0]);
+     daoShmOpen(ffShmName,        &ffShm[0]);
+     daoShmOpen(bgShmName,        &bgShm[0]);
+     daoShmOpen(refShmName,       &refShm[0]);
+     daoShmOpen(validPixShmName,  &validPixShm[0]);
+     daoShmOpen(illumPixShmName,  &illumPixShm[0]);
+     daoShmOpen(intensityShmName, &intensityShm[0]);
 
      int imSize = rawShm[0].md[0].size[0] * rawShm[0].md[0].size[1];
 
@@ -225,7 +225,7 @@
          clock_gettime(CLOCK_REALTIME, &timeout);
          timeout.tv_sec += 1;
 
-         if (daoShmWaitForSemaphoreTimeout(rawShm, semNb, &timeout) != -1)
+         if (daoShmWaitSemTimeout(rawShm, semNb, &timeout) != -1)
          {
              clock_gettime(CLOCK_REALTIME, &t[2]);
 
@@ -299,7 +299,7 @@
              intensityShm[0].md[0].cnt2 = rawShm[0].md[0].cnt2;
 
              // Release semaphore, notify consumers
-             daoShmImagePart2ShmFinalize(&intensityShm[0]);
+             daoShmSetDataPartFinalize(&intensityShm[0]);
 
              clock_gettime(CLOCK_REALTIME, &t[1]);
              elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3

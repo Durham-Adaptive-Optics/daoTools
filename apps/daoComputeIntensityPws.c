@@ -86,10 +86,10 @@ static int realTimeLoop()
     IMAGE *intensityShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *validPixShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *validSubPixShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(imShmName, &imShm[0]);
-    daoShmShm2Img(intensityShmName, &intensityShm[0]);
-    daoShmShm2Img(validPixShmName, &validPixShm[0]);
-    daoShmShm2Img(validSubPixShmName, &validSubPixShm[0]);
+    daoShmOpen(imShmName, &imShm[0]);
+    daoShmOpen(intensityShmName, &intensityShm[0]);
+    daoShmOpen(validPixShmName, &validPixShm[0]);
+    daoShmOpen(validSubPixShmName, &validSubPixShm[0]);
 
     int validPixSize = validPixShm[0].md[0].size[0] * validPixShm[0].md[0].size[1];
 
@@ -130,7 +130,7 @@ static int realTimeLoop()
         // Wait for new image
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
-        if (daoShmWaitForSemaphoreTimeout(imShm, semNb, &timeout) != -1)
+        if (daoShmWaitSemTimeout(imShm, semNb, &timeout) != -1)
         {
             clock_gettime(CLOCK_REALTIME, &t[2]);
             // New image, insert something here
@@ -151,7 +151,7 @@ static int realTimeLoop()
                 intensityShm[0].array.F[k] =  imShm[0].array.F[lut[k]]/sum * validSubPixShm[0].array.UI32[lut[k]];
             }
 
-            daoShmImagePart2ShmFinalize(&intensityShm[0]); 
+            daoShmSetDataPartFinalize(&intensityShm[0]);
 
             clock_gettime(CLOCK_REALTIME, &t[1]);
             elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;

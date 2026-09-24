@@ -86,7 +86,7 @@ void * statRealTimeLoop(void *thread_data)
     IMAGE *shm = (IMAGE *)malloc(sizeof(IMAGE));
     IMAGE *shmAvg = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *shmRms = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(shmName, &shm[0]);
+    daoShmOpen(shmName, &shm[0]);
 
     daoToolsInsertShmNamePrefix(shmName, "Avg", shmNameAvg);
     daoToolsInsertShmNamePrefix(shmName, "Rms", shmNameRms);
@@ -94,8 +94,8 @@ void * statRealTimeLoop(void *thread_data)
     uint32_t size[2];
     size[0] = shm[0].md[0].size[0];
     size[1] = shm[0].md[0].size[1];
-    daoShmImageCreate(shmAvg, shmNameAvg, 2, size, shm[0].md[0].atype, 1, 0);
-    daoShmImageCreate(shmRms, shmNameRms, 2, size, shm[0].md[0].atype, 1, 0);
+    daoShmCreate(shmAvg, shmNameAvg, 2, size, shm[0].md[0].atype, 1, 0);
+    daoShmCreate(shmRms, shmNameRms, 2, size, shm[0].md[0].atype, 1, 0);
 
     daoInfo("Starting loop, %s -> %s, popSize=%d\n",shmName, shmNameAvg, popSize );
     daoInfo("               %s -> %s, popSize=%d\n",shmName, shmNameRms, popSize );
@@ -130,7 +130,7 @@ void * statRealTimeLoop(void *thread_data)
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
         // Wait for new image
-        if (daoShmWaitForSemaphoreTimeout(shm, semNb, &timeout) != -1)
+        if (daoShmWaitSemTimeout(shm, semNb, &timeout) != -1)
         {
             // if new image, add it in the cir buf.
             for (k = 0; k < nbValue; k++)
@@ -178,8 +178,8 @@ void * statRealTimeLoop(void *thread_data)
             }
             head = (head + 1) % (popSize + 1);
 
-            daoShmImage2Shm(avgValue, nbValue, &shmAvg[0]);
-            daoShmImage2Shm(rmsValue, nbValue, &shmRms[0]);
+            daoShmSetData(&shmAvg[0], avgValue, nbValue);
+            daoShmSetData(&shmRms[0], rmsValue, nbValue);
             printf("\r(%8.3f,%8.3f) -> AVG(%8.3f,%8.3f), RMS(%8.3f,%8.3f)",
                    shm[0].array.F[0], shm[0].array.F[1],
                    shmAvg[0].array.F[0], shmAvg[0].array.F[1],

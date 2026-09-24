@@ -91,23 +91,23 @@ static int realTimeLoop()
     char hoShmName[32];
 
     inShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(inShmName, &inShm[0]);
+    daoShmOpen(inShmName, &inShm[0]);
     mcShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(mcShmName, &mcShm[0]);
+    daoShmOpen(mcShmName, &mcShm[0]);
 
     // Create LO SHM
     loShm = (IMAGE*) malloc(sizeof(IMAGE));
     daoToolsInsertShmNamePrefix(inShmName, "LO", loShmName);
     size[0] = inShm[0].md[0].size[0];
     size[1] = inShm[0].md[0].size[1];
-    daoShmImageCreate(loShm, loShmName, 2, size, inShm[0].md[0].atype, 1, 0);
+    daoShmCreate(loShm, loShmName, 2, size, inShm[0].md[0].atype, 1, 0);
 
     // Create HO SHM
     hoShm = (IMAGE*) malloc(sizeof(IMAGE));
     daoToolsInsertShmNamePrefix(inShmName, "HO", hoShmName);
     size[0] = inShm[0].md[0].size[0];
     size[1] = inShm[0].md[0].size[1];
-    daoShmImageCreate(hoShm, hoShmName, 2, size, inShm[0].md[0].atype, 1, 0);
+    daoShmCreate(hoShm, hoShmName, 2, size, inShm[0].md[0].atype, 1, 0);
 
     printf("Starting loop, (%s) -> (%s,%s)\n",
            inShmName, loShmName, hoShmName);
@@ -128,7 +128,7 @@ static int realTimeLoop()
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
         // Wait for new image
-        if (daoShmWaitForSemaphoreTimeout(inShm, semNb, &timeout) != DAO_TIMEOUT)
+        if (daoShmWaitSemTimeout(inShm, semNb, &timeout) != DAO_TIMEOUT)
         {
             clock_gettime(CLOCK_REALTIME, &t[2]);
 
@@ -146,8 +146,8 @@ static int realTimeLoop()
                 }
             }
 
-            daoShmImagePart2ShmFinalize(&loShm[0]);
-            daoShmImagePart2ShmFinalize(&hoShm[0]);
+            daoShmSetDataPartFinalize(&loShm[0]);
+            daoShmSetDataPartFinalize(&hoShm[0]);
             
             t[0]=t[1];        
             clock_gettime(CLOCK_REALTIME, &t[1]);

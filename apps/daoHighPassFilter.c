@@ -95,32 +95,32 @@ static int realTimeLoop()
     IMAGE *enaShm;
 
     fcShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(fcShmName, &fcShm[0]);
+    daoShmOpen(fcShmName, &fcShm[0]);
     fpsShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(fpsShmName, &fpsShm[0]);
+    daoShmOpen(fpsShmName, &fpsShm[0]);
     enaShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(enaShmName, &enaShm[0]);
+    daoShmOpen(enaShmName, &enaShm[0]);
 
     char inShmNamePrev[32];
     char outShmNamePrev[32];
 
     inShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(inShmName, &inShm[0]);
+    daoShmOpen(inShmName, &inShm[0]);
     // Create Prev SHM
     inShmPrev = (IMAGE*) malloc(sizeof(IMAGE));
     daoToolsInsertShmNamePrefix(inShmName, "Prev", inShmNamePrev);
     size[0] = inShm[0].md[0].size[0];
     size[1] = inShm[0].md[0].size[1];
-    daoShmImageCreate(inShmPrev, inShmNamePrev, 2, size, inShm[0].md[0].atype, 1, 0);
+    daoShmCreate(inShmPrev, inShmNamePrev, 2, size, inShm[0].md[0].atype, 1, 0);
 
     outShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmShm2Img(outShmName, &outShm[0]);
+    daoShmOpen(outShmName, &outShm[0]);
     // Create Prev SHM
     outShmPrev = (IMAGE*) malloc(sizeof(IMAGE));
     daoToolsInsertShmNamePrefix(outShmName, "Prev", outShmNamePrev);
     size[0] = inShm[0].md[0].size[0];
     size[1] = inShm[0].md[0].size[1];
-    daoShmImageCreate(outShmPrev, inShmNamePrev, 2, size, inShm[0].md[0].atype, 1, 0);
+    daoShmCreate(outShmPrev, inShmNamePrev, 2, size, inShm[0].md[0].atype, 1, 0);
 
     printf("Starting loop, (%s,%s) -> (%s,%s)\n",
            inShmName, inShmNamePrev, outShmName, outShmNamePrev);
@@ -140,7 +140,7 @@ static int realTimeLoop()
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
         // Wait for new image
-        if (daoShmWaitForSemaphoreTimeout(inShm, semNb, &timeout) != DAO_TIMEOUT)
+        if (daoShmWaitSemTimeout(inShm, semNb, &timeout) != DAO_TIMEOUT)
         {
             clock_gettime(CLOCK_REALTIME, &t[2]);
             
@@ -171,15 +171,15 @@ static int realTimeLoop()
             {
                 if (inShm[0].md[0].atype == _DATATYPE_DOUBLE)
                 {
-                    daoShmImage2Shm(inShm[0].array.D, inSize, outShm);
+                    daoShmSetData(outShm, inShm[0].array.D, inSize);
                 }
                 else
                 {
-                    daoShmImage2Shm(inShm[0].array.F, inSize, outShm);
+                    daoShmSetData(outShm, inShm[0].array.F, inSize);
                 }
             }
 
-            daoShmImagePart2ShmFinalize(&outShm[0]);
+            daoShmSetDataPartFinalize(&outShm[0]);
             
             // After the call, update previous frame buffers
             for (int i = 0; i < inSize; ++i) 

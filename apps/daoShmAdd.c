@@ -168,7 +168,7 @@ static void *shmThreadLoop(void *thread_data)
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1;
 
-        if (daoShmWaitForSemaphoreTimeout(gShmIn[shmId], 0, &timeout) == -1)
+        if (daoShmWaitSemTimeout(gShmIn[shmId], 0, &timeout) == -1)
             continue;
 
         clock_gettime(CLOCK_REALTIME, &t0);
@@ -185,7 +185,7 @@ static void *shmThreadLoop(void *thread_data)
         gShmOut[0].md[0].cnt2 = gShmIn[shmId][0].md[0].cnt2;
 
         if (shouldFinalize(shmId))
-            daoShmImagePart2ShmFinalize(&gShmOut[0]);
+            daoShmSetDataPartFinalize(&gShmOut[0]);
 
         pthread_mutex_unlock(&gOutMutex);
 
@@ -223,13 +223,13 @@ static int prepRealTime(void)
         return DAO_ERROR;
     }
 
-    daoShmShm2Img(gShmOutName, &gShmOut[0]);
+    daoShmOpen(gShmOutName, &gShmOut[0]);
     daoInfo("Connected OUT: %s\n", gShmOutName);
 
-    daoShmShm2Img(gShmInName[0], &gShmIn[0][0]);
+    daoShmOpen(gShmInName[0], &gShmIn[0][0]);
     daoInfo("Connected IN1: %s\n", gShmInName[0]);
 
-    daoShmShm2Img(gShmInName[1], &gShmIn[1][0]);
+    daoShmOpen(gShmInName[1], &gShmIn[1][0]);
     daoInfo("Connected IN2: %s\n", gShmInName[1]);
 
     if (validateSizesAndTypes() == DAO_ERROR)
