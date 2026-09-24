@@ -13,7 +13,7 @@ Options:
 
 Controls:
   AUTO           toggle: rescale both axes (kept square) to 1.5 x the largest
-                 excursion from the target centre. Release to go back to --range.
+                 excursion from the target centre. Released, the last scale is kept.
   red cross      always visible, under the trail and dots, on the current
                  centre or on the point being proposed for it
   click in plot  move the cross there; the target does not move yet, so a
@@ -109,9 +109,8 @@ class TtDisplay:
     def __init__(self, args):
         # (origin, origin) is the default centre: 0 with --center, range/2 otherwise
         self.origin = 0.0 if args.center else args.range / 2.0
-        # half0 is the fixed half-range, restored when AUTO is released
-        self.half0 = args.range if args.center else args.range / 2.0
-        self.half = self.half0
+        # half-range of the view: --range at start, then whatever AUTO last set
+        self.half = args.range if args.center else args.range / 2.0
         self.cx = self.cy = self.origin
         self.centrePath = centre_file_path(args.centre_file)
         self.centreKey = args.shmName
@@ -185,7 +184,7 @@ class TtDisplay:
         self.autoButton.setFixedWidth(60)
         self.autoButton.setToolTip(
             "Autoscale both axes (kept square) to 1.5 x the largest excursion "
-            "from the target centre. Release to go back to --range.")
+            "from the target centre. Released, the last scale is kept.")
         self.centreButton = QtWidgets.QPushButton("CENTRE 0")
         self.centreButton.setFixedWidth(80)
         self.centreButton.setToolTip(
@@ -274,7 +273,6 @@ class TtDisplay:
             except (TypeError, ValueError):
                 pass
 
-        self.autoButton.toggled.connect(self._onAutoToggled)
         self.setCentreButton.clicked.connect(self._commitPending)
         self.centreButton.clicked.connect(self._resetCentre)
         self.plot.scene().sigMouseClicked.connect(self._onClick)
@@ -295,11 +293,6 @@ class TtDisplay:
         self._applyRange()
         if save:
             save_centre(self.centrePath, self.centreKey, self.cx, self.cy)
-
-    def _onAutoToggled(self, on):
-        if not on:
-            self.half = self.half0
-            self._applyRange()
 
     def _clearPending(self):
         """Forget the proposal, but leave the cross where it is."""
