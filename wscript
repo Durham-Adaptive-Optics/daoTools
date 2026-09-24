@@ -12,8 +12,23 @@ APPNAME='daoTools'
 
 top = '.'
 
-from waflib import Configure, Logs, Utils, Context
+from waflib import Configure, Logs, Utils, Context, Task, TaskGen
+from waflib.Tools import c_preproc
 #Configure.autoconfig = True # True/False/'clobber'
+
+# CUDA sources (.cu) compiled by nvcc (same as waf's optional extras/cuda.py);
+# flags in env.CUDAFLAGS, set where the GPU library is built (src/wscript_build).
+class cuda(Task.Task):
+	run_str = '${NVCC} ${CUDAFLAGS} ${CPPPATH_ST:INCPATHS} ${DEFINES_ST:DEFINES} -c ${SRC} -o ${TGT}'
+	color = 'GREEN'
+	ext_in = ['.h']
+	vars = ['CCDEPS']
+	scan = c_preproc.scan
+	shell = False
+
+@TaskGen.extension('.cu')
+def cuda_hook(self, node):
+	return self.create_compiled_task('cuda', node)
 
 def options(opt):
 	opt.load('compiler_c compiler_cxx gnu_dirs')
@@ -111,6 +126,7 @@ def build(bld):
 	bld.env.DEFINES=['WAF=1']
 	bld.recurse('src')
 	bld.recurse('apps')
+	bld.recurse('tests')
 
 	# include
 	files = glob.glob('include/*.h')
