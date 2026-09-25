@@ -167,7 +167,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix="shb") as tmp:
         driver = os.path.join(tmp, "driver")
         subprocess.run(["gcc", "-O2", "-I", os.path.join(DAOROOT, "include"), os.path.join(HERE, "pipelineDriver.c"),
-                        "-o", driver, "-L", os.path.join(DAOROOT, "lib"), "-ldao"], check=True)
+                        "-o", driver, "-L", os.path.join(DAOROOT, "lib"), "-L", os.path.join(DAOROOT, "lib64"), "-ldao"],
+                        check=True)
         frames_file = os.path.join(tmp, "frames.bin")
         d["frames"].tofile(frames_file)
         env = dict(os.environ, DAO_GPU_SOCKET=os.path.join(tmp, "d.sock"), DAO_GPU_NO_MPS_WARNING="1",

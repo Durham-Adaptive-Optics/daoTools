@@ -31,7 +31,8 @@ SHMS = ["/tmp/bmvm_in.im.shm", "/tmp/bmvm_mat.im.shm", "/tmp/bmvm_out.im.shm"]
 def build(tmp):
     exe = os.path.join(tmp, "benchMvMGPU")
     subprocess.run(["nvcc", "-O2", "-I", os.path.join(DAOROOT, "include"), os.path.join(HERE, "benchMvMGPU.cu"),
-                    "-o", exe, "-L", os.path.join(DAOROOT, "lib"), "-ldao"], check=True, capture_output=True)
+                    "-o", exe, "-L", os.path.join(DAOROOT, "lib"), "-L", os.path.join(DAOROOT, "lib64"), "-ldao"],
+                    check=True, capture_output=True)
     return exe
 
 
