@@ -4,7 +4,7 @@ import platform
 if platform.system() == "Darwin":
 	my_ld_flags = ['']
 	my_cxx_flags = ['-std=c++14']
-	my_cflags = ['-O3', '-ffast-math']
+	my_cflags = ['-O3', '-ffast-math', '-fno-finite-math-only']
 	my_link_flags = ['-Lsrc', '-L'+os.getenv('DAOROOT')+'/lib/']
 	if os.path.exists('/opt/homebrew/lib'):
 		my_link_flags.append('-L/opt/homebrew/lib')
@@ -14,7 +14,9 @@ else:
 	my_ld_flags = ['-lrt']
 	my_cxx_flags = ['']
 	# built and run on the same host -> -march=native (AVX2 + FMA on the EPYC).
-	my_cflags = ['-Ofast', '-march=native', '-funroll-loops']
+	# -fno-finite-math-only: -Ofast / -ffast-math, but NaN and infinity kept -- without
+	# it isnan() is compiled away (the NaN guards on commands, the averages, the stats)
+	my_cflags = ['-Ofast', '-march=native', '-funroll-loops', '-fno-finite-math-only']
 	my_link_flags = ['-Lsrc', '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/']
 
 telemetry_extra_ldflags = []

@@ -10,7 +10,7 @@ if platform.system() == "Darwin":
     if bld.env.FFTW_AVAILABLE:
         my_link_flags += ['-L' + p for p in bld.env.LIBPATH_FFTW3F + bld.env.LIBPATH_FFTW3]
     my_cxx_flags = ['-std=c++14']
-    my_cflags = ['-O3', '-ffast-math']
+    my_cflags = ['-O3', '-ffast-math', '-fno-finite-math-only']
 else:
     my_ld_flags = ['-lrt']
     my_link_flags = ['-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/']
@@ -18,7 +18,9 @@ else:
     # -march=native: this lib is built and run on the same host (AVX2 + FMA on
     # the EPYC). -Ofast keeps -ffast-math; FTZ/DAZ is set at runtime by
     # daoToolsEnableFTZ() so we do not rely on crtfastmath being linked.
-    my_cflags = ['-Ofast', '-march=native', '-funroll-loops']
+    # -fno-finite-math-only: -Ofast / -ffast-math, but NaN and infinity kept -- without
+    # it isnan() is compiled away (the NaN guards on commands, the averages, the stats)
+    my_cflags = ['-Ofast', '-march=native', '-funroll-loops', '-fno-finite-math-only']
     my_defines = []
 
 daoTools_sources = ['c/daoTools.c']

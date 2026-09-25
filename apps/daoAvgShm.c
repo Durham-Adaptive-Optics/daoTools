@@ -52,7 +52,18 @@ IMAGE *shmAvg;
 char shmName[DAO_SHM_NAME_LEN];
 char shmNameAvg[DAO_SHM_NAME_LEN];
 int nbAvg=100;
+double avgTime=0.0;        // > 0: average over this many seconds (-t) instead of nbAvg frames
+int maxFrames=100000;      // -m: the most frames kept for a time average (memory bound)
 int semNb=0;
+
+/* NaN or infinity, from the bits: daoTools builds with -ffast-math, where isnan()
+ * is assumed false and compiled away */
+static inline int notFinite(float v)
+{
+    uint32_t u;
+    memcpy(&u, &v, sizeof u);
+    return (u & 0x7f800000u) == 0x7f800000u;
+}
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -73,10 +84,16 @@ static void ShowHelp(void)
     daoInfo("   -d               display program debug output\n");
     daoInfo("   -S               list of SHM (full path separated by space)\n");
     daoInfo("   -s               semaphore number\n");
-    daoInfo("   -n               number of frame to average\n");
+    daoInfo("   -n               number of frames to average (default 100)\n");
+    daoInfo("   -t               average over this time instead, in seconds: the frames\n");
+    daoInfo("                    received in the last t s, however many (the loop rate)\n");
+    daoInfo("   -m               time average: the most frames kept (default 100000)\n");
     daoInfo("   -L               start real-time loop\n");
-    daoInfo("   usage:\n");
+    daoInfo("   usage (options before -L):\n");
     daoInfo("   -S <SHM> -n <nb Average> -s <semNb> -L\n");
+    daoInfo("   -S <SHM> -t <seconds> [-m <max frames>] -s <semNb> -L\n");
+    daoInfo("   The output, <SHM>Avg, is the mean of the frames in the window: after a\n");
+    daoInfo("   start, of those received so far.\n");
     printf("\n");
 }
 
@@ -100,26 +117,42 @@ static int realTimeLoop()
     printf("Starting loop, %s -> %s, nAvg=%d\n",shmName, shmNameAvg, nbAvg );
     fflush(stdout);
 
-    int nbValue = shm[0].md[0].size[0]*shm[0].md[0].size[1];
-    float *avgValue = shmAvg[0].array.F;//malloc(nbValue*sizeof(float));
-    float valueCircBuf[nbValue][nbAvg+1];
-    int k, l;
-    // reset buffer
-    for (k=0; k<nbValue; k++)
+    if (shm[0].md[0].atype != _DATATYPE_FLOAT)
     {
-        for (l=0; l<(nbAvg + 1); l++)
-        {
-            valueCircBuf[k][l] = 0.0;
-        }
-        avgValue[k] = 0.0;
+        daoError("%s is not float: daoAvgShm averages float SHMs\n", shmName);
+        exit(EXIT_FAILURE);
     }
-    int tail=0;
-    int head=0;
-    printf("Average telemetry running for %s -> %s, nAvg=%d\n",shmName, shmNameAvg, nbAvg );
-    struct timeval t[3];
-    gettimeofday(&t[1],NULL);
-    struct timespec timeout;
+    int nbValue = shm[0].md[0].size[0]*shm[0].md[0].size[1];
+    float *avgValue = shmAvg[0].array.F;
+
+    // The frames in the window, in a ring buffer (oldest at `first`, `count` of them),
+    // each with its arrival time; `sum` is their running sum, in double. By frames:
+    // capacity nbAvg, the oldest leaves when a new one comes in a full buffer. By time:
+    // the buffer grows as needed (up to maxFrames) and the frames older than avgTime
+    // leave at each new frame.
+    int timeMode = (avgTime > 0.0);
+    long capacity = timeMode ? 1024 : nbAvg;
+    if (capacity < 1)
+        capacity = 1;
+    float *buf = malloc((size_t)capacity * nbValue * sizeof(float));
+    double *stamp = malloc((size_t)capacity * sizeof(double));
+    double *sum = calloc(nbValue, sizeof(double));
+    if (buf == NULL || stamp == NULL || sum == NULL)
+    {
+        daoError("cannot allocate the average buffers\n");
+        exit(EXIT_FAILURE);
+    }
+    long first = 0, count = 0;
+    int k;
+    for (k=0; k<nbValue; k++)
+        avgValue[k] = 0.0;
+    if (timeMode)
+        printf("Average telemetry running for %s -> %s, over %g s\n", shmName, shmNameAvg, avgTime);
+    else
+        printf("Average telemetry running for %s -> %s, nAvg=%d\n", shmName, shmNameAvg, nbAvg);
+    struct timespec timeout, tNow;
     int cnt=0;
+    int warnedFull = 0;
     while (end ==0)
     {
         clock_gettime(CLOCK_REALTIME, &timeout);
@@ -127,38 +160,69 @@ static int realTimeLoop()
         // Wait for new image
         if (daoShmWaitSemTimeout(shm, semNb, &timeout) != DAO_TIMEOUT)
         {
-            // if new image, add it in the cir buf.
-            for (k=0; k<nbValue; k++)
+            clock_gettime(CLOCK_MONOTONIC, &tNow);
+            double now = tNow.tv_sec + 1e-9 * tNow.tv_nsec;
+            // the oldest frames leave: by time, those out of the window; by frames, one
+            // if the buffer is full
+            while (count > 0 && ((timeMode && now - stamp[first] > avgTime) ||
+                                 (!timeMode && count >= capacity)))
             {
-                valueCircBuf[k][tail] = shm[0].array.F[k]/nbAvg;
-                if (isnan(valueCircBuf[k][tail]))
-                {
-                    valueCircBuf[k][tail] = 0.0;
-                }
+                float *old = buf + (size_t)first * nbValue;
+                for (k=0; k<nbValue; k++)
+                    sum[k] -= old[k];
+                first = (first + 1) % capacity;
+                count--;
             }
-            tail = (tail + 1) % (nbAvg + 1);
-            for (k=0; k<nbValue; k++)
+            if (count == capacity)                 // time mode, full: grow, or drop the oldest
             {
-                if (!isnan(valueCircBuf[k][head]))
+                long newCap = capacity * 2 > maxFrames ? maxFrames : capacity * 2;
+                float *nb = newCap > capacity ? malloc((size_t)newCap * nbValue * sizeof(float)) : NULL;
+                double *ns = newCap > capacity ? malloc((size_t)newCap * sizeof(double)) : NULL;
+                if (nb != NULL && ns != NULL)
                 {
-                    // add value in the head
-                    avgValue[k] += valueCircBuf[k][head];
+                    long i;
+                    for (i=0; i<count; i++)        // unroll the ring: oldest first
+                    {
+                        long src = (first + i) % capacity;
+                        memcpy(nb + (size_t)i * nbValue, buf + (size_t)src * nbValue, nbValue * sizeof(float));
+                        ns[i] = stamp[src];
+                    }
+                    free(buf); free(stamp);
+                    buf = nb; stamp = ns; capacity = newCap; first = 0;
                 }
                 else
                 {
-                    // add value in the head
-                    avgValue[k] += 0.0;
+                    free(nb); free(ns);
+                    if (!warnedFull)
+                    {
+                        daoWarning("%ld frames in %g s: the window is capped at %ld frames (-m)\n",
+                                   count, avgTime, capacity);
+                        warnedFull = 1;
+                    }
+                    float *old = buf + (size_t)first * nbValue;
+                    for (k=0; k<nbValue; k++)
+                        sum[k] -= old[k];
+                    first = (first + 1) % capacity;
+                    count--;
                 }
-                // remove the tail value
-                avgValue[k] -= valueCircBuf[k][tail];
             }
-            head = (head + 1) % (nbAvg + 1);
-
-    //        daoShmSetData(&shmAvg[0], avgValue, nbValue);
+            // the new frame comes in (a NaN or an infinity counts as 0)
+            long slot = (first + count) % capacity;
+            float *cur = buf + (size_t)slot * nbValue;
+            for (k=0; k<nbValue; k++)
+            {
+                float v = shm[0].array.F[k];
+                cur[k] = notFinite(v) ? 0.0f : v;
+                sum[k] += cur[k];
+            }
+            stamp[slot] = now;
+            count++;
+            for (k=0; k<nbValue; k++)
+                avgValue[k] = (float)(sum[k] / count);
             daoShmSetDataPartFinalize(&shmAvg[0]);
-            printf("\r(%f,%f) -> (%.3f,%.3f)",
+            printf("\r(%f,%f) -> (%.3f,%.3f)  n=%ld   ",
                     shm[0].array.F[0], shm[0].array.F[1],
-                    shmAvg[0].array.F[0], shmAvg[0].array.F[1]);
+                    shmAvg[0].array.F[0], shmAvg[0].array.F[1], count);
         }
         else
         {
@@ -168,7 +232,7 @@ static int realTimeLoop()
         }
         fflush(stdout);
     }
-
+    free(buf); free(stamp); free(sum);
 
     printf("EXITING MAIN LOOP\n");
     fflush(stdout);
@@ -220,6 +284,14 @@ static void DecodeArgs(int argc, char **argv)
             case 'n':	(void)sscanf(*argv++,"%d",&nbAvg); 
                         daoInfo("nb Average       = %d \n", nbAvg);
                         argc -= 1;	
+                        break;
+            case 't':	(void)sscanf(*argv++,"%lf",&avgTime);
+                        daoInfo("average over     = %g s\n", avgTime);
+                        argc -= 1;
+                        break;
+            case 'm':	(void)sscanf(*argv++,"%d",&maxFrames);
+                        daoInfo("max frames       = %d\n", maxFrames);
+                        argc -= 1;
                         break;
             case 's':	
                         (void)sscanf(*argv++,"%d", &semNb); argc -= 1;
