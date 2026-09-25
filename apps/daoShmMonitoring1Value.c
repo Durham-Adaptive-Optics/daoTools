@@ -58,7 +58,7 @@ double tlastupdatedouble;
 #define NB_MAX_SHM 10
 
 IMAGE shm[NB_MAX_SHM];
-char shmName[NB_MAX_SHM][32];
+char shmName[NB_MAX_SHM][DAO_SHM_NAME_LEN];
 int nbShm;
 float frequency;
 
@@ -158,7 +158,7 @@ static int realTimeLoop()
 
     for (shmCnt = 0; shmCnt < nbShm; shmCnt++)
     {
-        daoShmOpen(shmName[shmCnt], &shm[shmCnt]);
+        daoToolsShmOpen(shmName[shmCnt], &shm[shmCnt]);
     }
 
     clock_t launch, done;
@@ -225,7 +225,7 @@ static void DecodeArgs(int argc, char **argv)
                         daoInfo("Nb SHM = %d\n", nbShm);
                         for (int shmCnt=0; shmCnt<nbShm; shmCnt++)
                         {
-                            (void)sscanf(*argv++,"%s", shmName[shmCnt]);
+                            daoToolsArgName(shmName[shmCnt], sizeof shmName[shmCnt], *argv++);
                             daoInfo("SHM %d = %s \n", shmCnt, shmName[shmCnt]);
                         }
                         (void)sscanf(*argv++,"%f", &frequency);

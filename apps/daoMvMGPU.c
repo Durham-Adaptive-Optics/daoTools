@@ -51,12 +51,12 @@ struct timespec tnow;
 double tlastupdatedouble;
 
 IMAGE *inputShm;
-char inputShmName[32];
+char inputShmName[DAO_SHM_NAME_LEN];
 int semNb = 0;
 IMAGE *matrixShm;
-char matrixShmName[32];
+char matrixShmName[DAO_SHM_NAME_LEN];
 IMAGE *outputShm;
-char outputShmName[32];
+char outputShmName[DAO_SHM_NAME_LEN];
 
 // Thread
 pthread_t controllerThread;
@@ -77,6 +77,7 @@ static void endme(int _a)
 #define MVM_PRINT_EVERY 2000     /* throttle telemetry: print once every N iterations */
 static int rtCpu = -1;           /* CPU core to pin the RT thread to (-1 = do not pin) */
 static int gpuId = 0;            /* CUDA device to run the MVM on (see -G) */
+static int gpuIdSet = 0;         /* -G given explicitly */
 
 static void mvmSetRtAffinity(int cpu)
 {
@@ -101,16 +102,22 @@ static void  *gdMatrix = NULL, *gdInput = NULL, *gdOutput = NULL;
 static void  *ghInput  = NULL, *ghOutput = NULL;
 static int    gIsFloat = 1;
 static size_t gElemSize = sizeof(float);
+/* GPU SHMs (daoShmCreateGpu): their payload is used in place on the GPU */
+static int    gInGpu = 0, gOutGpu = 0, gMatGpu = 0;
+static int    gCopyIn = 1, gCopyOut = 1;   /* host <-> GPU copies still needed */
 static int    gNInputs = 0, gNOutputs = 0;
 static const float  gAlphaF = 1.0f, gBetaF = 0.0f;
 static const double gAlphaD = 1.0,  gBetaD = 0.0;
 
 // Issue one matrix-vector multiply (H2D copy, gemv, D2H copy) on gStream.
+// The copies are skipped for GPU SHMs, whose payload gemv uses in place (the
+// output is still copied to its /tmp host copy if it is mirrored).
 // All calls are asynchronous; the caller synchronises once afterwards.
 static void mvmIssue(void)
 {
-    cudaMemcpyAsync(gdInput, ghInput, (size_t)gNInputs * gElemSize,
-                    cudaMemcpyHostToDevice, gStream);
+    if (gCopyIn)
+        cudaMemcpyAsync(gdInput, ghInput, (size_t)gNInputs * gElemSize,
+                        cudaMemcpyHostToDevice, gStream);
     if (gIsFloat)
         cublasSgemv(gHandle, CUBLAS_OP_T, gNInputs, gNOutputs, &gAlphaF,
                     (const float *)gdMatrix, gNInputs, (const float *)gdInput, 1,
@@ -119,8 +126,39 @@ static void mvmIssue(void)
         cublasDgemv(gHandle, CUBLAS_OP_T, gNInputs, gNOutputs, &gAlphaD,
                     (const double *)gdMatrix, gNInputs, (const double *)gdInput, 1,
                     &gBetaD, (double *)gdOutput, 1);
-    cudaMemcpyAsync(ghOutput, gdOutput, (size_t)gNOutputs * gElemSize,
-                    cudaMemcpyDeviceToHost, gStream);
+    if (gCopyOut)
+        cudaMemcpyAsync(ghOutput, gdOutput, (size_t)gNOutputs * gElemSize,
+                        cudaMemcpyDeviceToHost, gStream);
+}
+
+/* Runtime device index holding a GPU SHM's payload, -1 for a CPU SHM,
+ * -2 if its GPU is not visible or not accessible from this process. */
+static int shmDevice(IMAGE *img)
+{
+    int n = 0, i;
+    if (!daoShmIsGpu(img))
+        return -1;
+    if (!img->d_array)
+        return -2;
+    cudaGetDeviceCount(&n);
+    for (i = 0; i < n; i++)
+    {
+        struct cudaDeviceProp p;
+        if (cudaGetDeviceProperties(&p, i) == cudaSuccess &&
+            memcmp(p.uuid.bytes, img->md[0].gpu_uuid, 16) == 0)
+            return i;
+    }
+    return -2;
+}
+
+/* Pin a host buffer for async DMA. Returns 1 if pinned; *owned tells whether
+ * this program registered it (libdao already pins mirrored GPU SHM copies). */
+static int pinHost(void *p, size_t bytes, int *owned)
+{
+    cudaError_t e = cudaHostRegister(p, bytes, cudaHostRegisterPortable);
+    *owned = (e == cudaSuccess);
+    cudaGetLastError();
+    return e == cudaSuccess || e == cudaErrorHostMemoryAlreadyRegistered;
 }
 
 /*--------------------------------------------------------------------------*/
@@ -135,7 +173,9 @@ static void ShowHelp(void)
     daoInfo("   -S               list of SHM (full path separated by space)\n");
     daoInfo("   -s               semaphore number\n");
     daoInfo("   -C <cpu>         pin the real-time thread to CPU core <cpu>\n");
-    daoInfo("   -G <gpu>         CUDA device index to run on (default 0; see nvidia-smi -L)\n");
+    daoInfo("   -G <gpu>         CUDA device index to run on (default 0; see nvidia-smi -L).\n");
+    daoInfo("                    GPU SHMs (daoShmCreateGpu) are used in place, with no host copy;\n");
+    daoInfo("                    the loop then runs on their GPU\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage (options must precede -L):\n");
     daoInfo("    daoMvMGPU -S <input SHM> <matrix SHM> <output SHM> -s <semNb> [-C <cpu>] [-G <gpu>] -L\n");
@@ -171,6 +211,46 @@ void * realTimeLoop(void *thread_data)
         end = 1;
         return (void *)DAO_ERROR;
     }
+
+    // GPU SHMs fix the device: the loop runs where their payload lives.
+    {
+        IMAGE *shms[3] = { &inputShm[0], &matrixShm[0], &outputShm[0] };
+        const char *what[3] = { "input", "matrix", "output" };
+        int shmDev = -1, k;
+        for (k = 0; k < 3; k++)
+        {
+            int d = shmDevice(shms[k]);
+            if (d == -2)
+            {
+                daoError("%s SHM is a GPU SHM whose GPU is not accessible here\n", what[k]);
+                end = 1;
+                return (void *)DAO_ERROR;
+            }
+            if (d >= 0 && shmDev >= 0 && d != shmDev)
+            {
+                daoError("GPU SHMs on different GPUs (%d and %d): not supported\n", shmDev, d);
+                end = 1;
+                return (void *)DAO_ERROR;
+            }
+            if (d >= 0)
+                shmDev = d;
+        }
+        if (shmDev >= 0)
+        {
+            if (gpuIdSet && gpuId != shmDev)
+                daoWarning("-G %d ignored: the GPU SHMs are on GPU %d\n", gpuId, shmDev);
+            gpuId = shmDev;
+        }
+        gInGpu  = inputShm[0].d_array  != NULL;
+        gMatGpu = matrixShm[0].d_array != NULL;
+        gOutGpu = outputShm[0].d_array != NULL;
+        gCopyIn  = !gInGpu;
+        gCopyOut = !gOutGpu || (outputShm[0].md[0].gpu_flags & DAO_GPU_MIRROR);
+        daoInfo("input %s, matrix %s, output %s%s\n",
+                gInGpu ? "on GPU" : "in host memory", gMatGpu ? "on GPU" : "in host memory",
+                gOutGpu ? "on GPU" : "in host memory",
+                gOutGpu && gCopyOut ? " (host copy kept current)" : "");
+    }
     if (gpuId < 0 || gpuId >= gpuCount)
     {
         daoError("requested GPU %d out of range (%d device(s) present); falling back to GPU 0\n",
@@ -193,12 +273,18 @@ void * realTimeLoop(void *thread_data)
 
     // Busy-wait on GPU synchronisation instead of blocking in the driver:
     // trades one core for markedly lower per-frame wake latency.
-    cudaSetDeviceFlags(cudaDeviceScheduleSpin);
+    if (cudaSetDeviceFlags(cudaDeviceScheduleSpin) != cudaSuccess)
+    {
+        daoWarning("could not set spin scheduling (%s)\n", cudaGetErrorString(cudaGetLastError()));
+    }
 
-    // Device buffers: only the precision actually in use.
-    cudaMalloc(&gdMatrix, (size_t)gNInputs * gNOutputs * gElemSize);
-    cudaMalloc(&gdInput,  (size_t)gNInputs  * gElemSize);
-    cudaMalloc(&gdOutput, (size_t)gNOutputs * gElemSize);
+    // Device buffers: only the precision actually in use; GPU SHMs are used as is.
+    if (gMatGpu) gdMatrix = matrixShm[0].d_array;
+    else         cudaMalloc(&gdMatrix, (size_t)gNInputs * gNOutputs * gElemSize);
+    if (gInGpu)  gdInput = inputShm[0].d_array;
+    else         cudaMalloc(&gdInput,  (size_t)gNInputs  * gElemSize);
+    if (gOutGpu) gdOutput = outputShm[0].d_array;
+    else         cudaMalloc(&gdOutput, (size_t)gNOutputs * gElemSize);
 
     // Pin the SHM host buffers so H2D/D2H copies are DMA-direct and async
     // (pageable copies go through a driver staging buffer and force a sync).
@@ -206,11 +292,11 @@ void * realTimeLoop(void *thread_data)
     ghOutput = gIsFloat ? (void *)outputShm[0].array.F : (void *)outputShm[0].array.D;
     void *hMatrix = gIsFloat ? (void *)matrixShm[0].array.F : (void *)matrixShm[0].array.D;
 
-    int inPinned  = (cudaHostRegister(ghInput,  (size_t)gNInputs  * gElemSize, cudaHostRegisterPortable) == cudaSuccess);
-    int outPinned = (cudaHostRegister(ghOutput, (size_t)gNOutputs * gElemSize, cudaHostRegisterPortable) == cudaSuccess);
+    int inOwned = 0, outOwned = 0;
+    int inPinned  = !gCopyIn  || pinHost(ghInput,  (size_t)gNInputs  * gElemSize, &inOwned);
+    int outPinned = !gCopyOut || pinHost(ghOutput, (size_t)gNOutputs * gElemSize, &outOwned);
     if (!inPinned || !outPinned)
         daoInfo("Warning: SHM buffers not pinned (in=%d out=%d); copies will be slower.\n", inPinned, outPinned);
-    cudaGetLastError(); // clear a benign "already registered" error, if any
 
     cudaStreamCreateWithFlags(&gStream, cudaStreamNonBlocking);
 
@@ -218,8 +304,9 @@ void * realTimeLoop(void *thread_data)
     cublasSetStream(gHandle, gStream);
     cublasSetPointerMode(gHandle, CUBLAS_POINTER_MODE_HOST);
 
-    // Initial matrix upload.
-    cudaMemcpy(gdMatrix, hMatrix, (size_t)gNInputs * gNOutputs * gElemSize, cudaMemcpyHostToDevice);
+    // Initial matrix upload (a GPU SHM matrix is already there).
+    if (!gMatGpu)
+        cudaMemcpy(gdMatrix, hMatrix, (size_t)gNInputs * gNOutputs * gElemSize, cudaMemcpyHostToDevice);
     unsigned long cnt0Matrix = matrixShm[0].md[0].cnt0;
 
     // Warm up: the first cuBLAS call loads kernels / allocates workspace.
@@ -275,10 +362,13 @@ void * realTimeLoop(void *thread_data)
         // Off the critical path: refresh the matrix on the GPU if it changed.
         if (cnt0Matrix != matrixShm[0].md[0].cnt0)
         {
-            hMatrix = gIsFloat ? (void *)matrixShm[0].array.F : (void *)matrixShm[0].array.D;
-            cudaMemcpy(gdMatrix, hMatrix, (size_t)gNInputs * gNOutputs * gElemSize, cudaMemcpyHostToDevice);
-            daoInfo("New matrix detected (cnt %ld -> %ld), copied to GPU.\n",
-                    cnt0Matrix, matrixShm[0].md[0].cnt0);
+            if (!gMatGpu)   // a GPU SHM matrix is updated in place by its writer
+            {
+                hMatrix = gIsFloat ? (void *)matrixShm[0].array.F : (void *)matrixShm[0].array.D;
+                cudaMemcpy(gdMatrix, hMatrix, (size_t)gNInputs * gNOutputs * gElemSize, cudaMemcpyHostToDevice);
+            }
+            daoInfo("New matrix detected (cnt %ld -> %ld)%s.\n", cnt0Matrix, matrixShm[0].md[0].cnt0,
+                    gMatGpu ? "" : ", copied to GPU");
             cnt0Matrix = matrixShm[0].md[0].cnt0;
         }
 
@@ -309,11 +399,11 @@ void * realTimeLoop(void *thread_data)
         cudaGraphExecDestroy(graphExec);
         cudaGraphDestroy(graph);
     }
-    if (inPinned)  cudaHostUnregister(ghInput);
-    if (outPinned) cudaHostUnregister(ghOutput);
-    cudaFree(gdMatrix);
-    cudaFree(gdInput);
-    cudaFree(gdOutput);
+    if (inOwned)  cudaHostUnregister(ghInput);
+    if (outOwned) cudaHostUnregister(ghOutput);
+    if (!gMatGpu) cudaFree(gdMatrix);    // GPU SHM payloads belong to libdao
+    if (!gInGpu)  cudaFree(gdInput);
+    if (!gOutGpu) cudaFree(gdOutput);
     cublasDestroy(gHandle);
     cudaStreamDestroy(gStream);
 
@@ -331,11 +421,11 @@ static int realTimeLoopPrep()
     signal(SIGINT, endme);
 
     inputShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(inputShmName, &inputShm[0]);
+    daoToolsShmOpen(inputShmName, &inputShm[0]);
     matrixShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(matrixShmName, &matrixShm[0]);
+    daoToolsShmOpen(matrixShmName, &matrixShm[0]);
     outputShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(outputShmName, &outputShm[0]);
+    daoToolsShmOpen(outputShmName, &outputShm[0]);
 
     clock_t launch, done;
     double diff;
@@ -396,9 +486,9 @@ static void DecodeArgs(int argc, char **argv)
                         (void)usleep(a1);
                         break;
             case 'S':
-                        (void)sscanf(*argv++,"%s", inputShmName); argc -= 1;
-                        (void)sscanf(*argv++,"%s", matrixShmName); argc -= 1;
-                        (void)sscanf(*argv++,"%s", outputShmName); argc -= 1;
+                        daoToolsArgName(inputShmName, sizeof inputShmName, *argv++); argc -= 1;
+                        daoToolsArgName(matrixShmName, sizeof matrixShmName, *argv++); argc -= 1;
+                        daoToolsArgName(outputShmName, sizeof outputShmName, *argv++); argc -= 1;
                         daoInfo("inputShm       = %s \n", inputShmName);
                         daoInfo("matrixShm      = %s \n", matrixShmName);
                         daoInfo("outputShm      = %s \n", outputShmName);
@@ -413,6 +503,7 @@ static void DecodeArgs(int argc, char **argv)
                         break;
             case 'G':
                         (void)sscanf(*argv++,"%d", &gpuId); argc -= 1;
+                        gpuIdSet = 1;
                         daoInfo("GPU device     = %d \n", gpuId);
                         break;
             case 'L':

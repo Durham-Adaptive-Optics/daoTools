@@ -44,12 +44,12 @@ double tnowdouble;
 double tlastupdatedouble;
 
 int normalizeFlag = 0;   // 0 = no normalization, 1 = normalize output
-char inAShmName[32];
+char inAShmName[DAO_SHM_NAME_LEN];
 int semNb = 0;
-char inBShmName[32];
-char maskShmName[32];
-char extractShmName[32];
-char normShmName[32];
+char inBShmName[DAO_SHM_NAME_LEN];
+char maskShmName[DAO_SHM_NAME_LEN];
+char extractShmName[DAO_SHM_NAME_LEN];
+char normShmName[DAO_SHM_NAME_LEN];
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -93,11 +93,11 @@ static int realTimeLoop()
     maskShm = (IMAGE*) malloc(sizeof(IMAGE));
     extractShm = (IMAGE*) malloc(sizeof(IMAGE));
     normShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(inAShmName, &inAShm[0]);
-    daoShmOpen(inBShmName, &inBShm[0]);
-    daoShmOpen(maskShmName, &maskShm[0]);
-    daoShmOpen(extractShmName, &extractShm[0]);
-    daoShmOpen(normShmName, &normShm[0]);
+    daoToolsShmOpen(inAShmName, &inAShm[0]);
+    daoToolsShmOpen(inBShmName, &inBShm[0]);
+    daoToolsShmOpen(maskShmName, &maskShm[0]);
+    daoToolsShmOpen(extractShmName, &extractShm[0]);
+    daoToolsShmOpen(normShmName, &normShm[0]);
 
     daoInfo("Starting loop, (%s - %s) (%s) -> %s \n",inAShmName, inBShmName, maskShmName, extractShmName);
     fflush(stdout);
@@ -194,11 +194,11 @@ static void DecodeArgs(int argc, char **argv)
                         daoInfo("Output normalization ENABLED\n");
                         break;
             case 'S':
-                    	(void)sscanf(*argv++,"%s",inAShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s",inBShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s",maskShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s",extractShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s",normShmName); argc -= 1;
+                    	daoToolsArgName(inAShmName, sizeof inAShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(inBShmName, sizeof inBShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(maskShmName, sizeof maskShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(extractShmName, sizeof extractShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(normShmName, sizeof normShmName, *argv++); argc -= 1;
                         daoInfo("image in A       : %s\n", inAShmName);
                         daoInfo("image in B       : %s\n", inBShmName);
                         daoInfo("mask             : %s\n", maskShmName);

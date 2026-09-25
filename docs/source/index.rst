@@ -126,6 +126,7 @@ daoTools Documentation
    :caption: Applications & GUIs
 
    apps
+   gpu_pipeline
    gui
 
 .. toctree::

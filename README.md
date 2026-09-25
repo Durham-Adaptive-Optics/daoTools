@@ -65,10 +65,20 @@ AO real-time pipeline, operating directly on `dao.shm` `IMAGE`s:
   (request `SCHED_FIFO` real-time priority with a safe, logged fallback --
   see [Real-time scheduling priority](#real-time-scheduling-priority) below),
   and `daoLogToFile` (throttled, size-rotated file logging).
+- **Tool helpers** — `daoToolsArgName` (bounded copy of a SHM name given on the
+  command line), `daoToolsShmOpen` (`daoShmOpen` exiting with an error when the
+  SHM cannot be opened), `daoToolsInsertShmNamePrefixN` (derived SHM names with
+  a buffer size). Name buffers are `DAO_SHM_NAME_LEN` bytes (`dao.h`).
 
 Most `apps/*.c` binaries call straight into this library, add SHM
 attach/argument-parsing/real-time-loop boilerplate, and nothing else — the
 library is where the actual per-pixel/per-mode math lives.
+
+`libdaoToolsGpu` (`include/daoGpuStages.h`, `src/gpu/daoGpuStages.cu`, built
+when CUDA is found) holds GPU versions of the real-time steps above — pixel
+calibration and extraction, the Shack-Hartmann centroiders, matrix-vector
+multiply, gain — used by `daoGpuPipeline` to run a whole chain on one GPU as
+one CUDA graph per frame. See [GPU pipeline](#gpu-pipeline) below.
 
 # daoTools.py
 
@@ -88,9 +98,10 @@ image simulator (`pwfsImage`). It predates and is separate from the
 | Category | Tools |
 |---|---|
 | **Wavefront sensing & centroiding** | `daoComputeCentroid` (core Shack-Hartmann COG) and its `Pws` / `Relative` / `RelativeRef` / `Correlation` / `CorrelationFFT` variants, `daoComputeCentroids.py` / `daoComputeCentroidsSlow.py` (Python reference), `daoComputeIntensityPws`, `daoPrepCentroidLut.py`, `daoPrepPwfs.py` |
-| **Matrix-vector multiply** | `daoMvM` (CPU, needs BLAS), `daoMvMGPU` (CUDA), `daoMvM.py` (Python reference) |
+| **Matrix-vector multiply** | `daoMvM` (CPU, needs BLAS), `daoMvMGPU` (CUDA; uses GPU SHMs in place), `daoMvM.py` (Python reference) |
+| **GPU pipeline** | `daoGpuPipeline` (a chain of GPU stages in one process, one CUDA graph per frame, or one process per stage with `-s`) |
 | **Pixel calibration** | `daoPixelCalibrate` / `daoPixelCalibratePws`, `daoTakeBg.py` |
-| **SHM utilities** | `daoShmMonitoring` / `daoShmMonitoring1Value`, `daoShm2Fits`, `daoFits2Shm.py`, `daoSnapshot.py`, `daoShmRate.py` |
+| **SHM utilities** | `daoShmMonitoring` / `daoShmMonitoring1Value`, `daoShm2Fits`, `daoFits2Shm.py`, `daoSnapshot.py`, `daoShmRate.py`, `daoShmSlice` (copy a range of one SHM into another each frame) |
 | **SHM arithmetic** | `daoShmAdd`, `daoShmCombiner`, `daoShmConcatenate` / `daoShmConcatenateFine`, `daoAvgShm` / `daoAvgDoubleShm`, `daoStatShm`, `daoDownsample`, `daoPixelExtract`, `daoApplyGain` |
 | **Loop & filter** | `daoLeakyIntegrator` / `daoLeakyIntegratorMap`, `daoClock`, `daoHighPassFilter`, `daoModesCutoff` / `daoModesCutoffFull`, `daoCommandFilter` |
 | **Timing & latency** | `daoTimeDiff`, `daoTimeDiffNCurse`, `daoTimeDiffStat`, `daoSetLatency`, `daoPlotLatency.py` |
@@ -153,7 +164,7 @@ that need it if missing - not having them is not an error, just a smaller build.
 | dependency | apt package | enables | skipped without it |
 |---|---|---|---|
 | BLAS (any implementation) | `libopenblas-dev` | `daoMvM` (CPU real-time matrix-vector multiply) | `daoMvM` |
-| CUDA toolkit (`nvcc` + `cudart`) | see NVIDIA's install docs | `daoMvMGPU` | `daoMvMGPU` |
+| CUDA toolkit (`nvcc` + `cudart`) | see NVIDIA's install docs | `daoMvMGPU`, `libdaoToolsGpu`, `daoGpuPipeline` (also needs yaml-cpp), `tests/testGpuStages` | those |
 | FFTW, single **and** double precision | `libfftw3-dev` | the FFT-based correlation centroider (`daoToolsCorrFFT`, `daoComputeCentroidCorrelationFFT`) | that centroider only - `daoComputeCentroidCorrelation` (the windowed-search version) is unaffected |
 
 Check `waf configure`'s output for lines like `BLAS detected: enabling BLAS
@@ -258,6 +269,24 @@ The C/C++ tools use daoBase's primary shared-memory API
 daoBase with that API (commit `8f64d74` or later) before rebuilding daoTools;
 older installed headers/libraries do not provide these names. Python callers
 keep the same public `shm` interface.
+
+SHM names can be up to `DAO_SHM_NAME_LEN - 1` characters (defined by daoBase's
+`dao.h`; with an older `dao.h` the tools fall back to the size of `IMAGE.name`).
+A longer name, or an SHM that cannot be opened, stops a tool with an error
+message. The GPU parts (`daoMvMGPU` with GPU SHMs, `libdaoToolsGpu`,
+`daoGpuPipeline`) need a daoBase with GPU SHMs (`daoShmCreateGpu`).
+
+# GPU pipeline
+
+`daoGpuPipeline -c <config.yaml> -L` runs a chain of GPU stages — each the GPU
+version of a daoTools application, with the same result — in one process: the
+trigger SHM (usually the camera frame) starts one CUDA graph per frame, the
+intermediate data stays on the GPU (GPU SHMs), and every output SHM is still
+published each frame, so displays and telemetry keep working. `-s N` runs a
+single stage as its own process instead, to develop and tune stage by stage
+with the same configuration. Host SHMs read or written by the GPU should be in
+RAM (tmpfs, e.g. `/dev/shm`) so the GPU can use them in place. Stages,
+configuration and options: `docs/source/gpu_pipeline.rst`.
 
 See [the migration regression tests](tests/README.md) for the exact rename
 mapping, before/after numerical checks, and validation limits.

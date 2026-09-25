@@ -43,11 +43,11 @@ struct timespec tnow;
 double tnowdouble;
 double tlastupdatedouble;
 
-char inShmName[32];
-char servoShmName[32];
-char offsetShmName[32];
-char outShmName[32];
-char lpCmdShmName[32];
+char inShmName[DAO_SHM_NAME_LEN];
+char servoShmName[DAO_SHM_NAME_LEN];
+char offsetShmName[DAO_SHM_NAME_LEN];
+char outShmName[DAO_SHM_NAME_LEN];
+char lpCmdShmName[DAO_SHM_NAME_LEN];
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -86,11 +86,11 @@ static int realTimeLoop()
     IMAGE *offsetShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *outShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *lpCmdShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(inShmName, &inShm[0]);
-    daoShmOpen(servoShmName, &servoShm[0]);
-    daoShmOpen(offsetShmName, &offsetShm[0]);
-    daoShmOpen(outShmName, &outShm[0]);
-    daoShmOpen(lpCmdShmName, &lpCmdShm[0]);
+    daoToolsShmOpen(inShmName, &inShm[0]);
+    daoToolsShmOpen(servoShmName, &servoShm[0]);
+    daoToolsShmOpen(offsetShmName, &offsetShm[0]);
+    daoToolsShmOpen(outShmName, &outShm[0]);
+    daoToolsShmOpen(lpCmdShmName, &lpCmdShm[0]);
 
     int inSize = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
     int outSize = outShm[0].md[0].size[0]*outShm[0].md[0].size[1];
@@ -211,11 +211,11 @@ static void DecodeArgs(int argc, char **argv)
                         break;
             case 'L':
                         daoInfo("Simple filter from SHM real time control\n");
-                    	(void)sscanf(*argv++,"%s", inShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", servoShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", offsetShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", outShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", lpCmdShmName); argc -= 1;
+                    	daoToolsArgName(inShmName, sizeof inShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(servoShmName, sizeof servoShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(offsetShmName, sizeof offsetShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(outShmName, sizeof outShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(lpCmdShmName, sizeof lpCmdShmName, *argv++); argc -= 1;
                         daoInfo("inShmName = %s\n", inShmName);
                         daoInfo("servoShmName = %s\n", servoShmName);
                         daoInfo("offsetShmName = %s\n", offsetShmName);
