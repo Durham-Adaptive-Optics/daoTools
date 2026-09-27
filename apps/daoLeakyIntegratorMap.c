@@ -43,7 +43,7 @@ double tnowdouble;
 double tlastupdatedouble;
 
 char inShmName[DAO_SHM_NAME_LEN];
-int semNb = 0;
+int semNb = DAO_SEM_AUTO;   // -s: a fixed semaphore; default: one of its own
 char offsetShmName[DAO_SHM_NAME_LEN];
 char outShmName[DAO_SHM_NAME_LEN];
 char lpCmdShmName[DAO_SHM_NAME_LEN];
@@ -84,7 +84,7 @@ static void ShowHelp(void)
     daoInfo("                    lpCmdEnable.im.shm)\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage:\n");
-    daoInfo("   -S <in SHM> <offset SHM> <out SHM> <loopCmd SHM> <leak SHM> <gain SHM> -s <semNb> [-e <enableShm>] -m -L\n");
+    daoInfo("   -S <in SHM> <offset SHM> <out SHM> <loopCmd SHM> <leak SHM> <gain SHM> [-s <semNb>] [-e <enableShm>] -m -L\n");
     daoInfo("\n");
     daoInfo("   -e lets an external SHM enable/disable the integrator independently of\n");
     daoInfo("   the loopCmd open/close state: when the enable SHM reads 0, the output is\n");

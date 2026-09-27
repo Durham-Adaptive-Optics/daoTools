@@ -816,26 +816,15 @@ class daoShmViewer(QMainWindow):
         form.addRow("SHM 1 (start)", shm1Row)
         form.addRow("SHM 2 (end)", shm2Row)
 
-        # daoTimeDiff -S <shm1> <shm2> <sem1> <sem2> <measurement> -n <popSize>
-        # Default semaphore 5 on each, not 0: same convention as
-        # daoPlotLatency.py (get_data(..., semNb=5)) so a monitoring tap
-        # doesn't consume semaphore posts the real pipeline consumer needs.
+        # daoTimeDiff -S <shm1> <shm2> <measurement> -n <popSize>: it waits on a
+        # semaphore of its own, so it never takes frames from the pipeline's readers
         semRow = QHBoxLayout()
-        self.latencySem1Spin = QSpinBox()
-        self.latencySem1Spin.setRange(0, 15)
-        self.latencySem1Spin.setValue(5)
-        self.latencySem2Spin = QSpinBox()
-        self.latencySem2Spin.setRange(0, 15)
-        self.latencySem2Spin.setValue(5)
         self.latencyPopSizeSpin = QSpinBox()
         self.latencyPopSizeSpin.setRange(2, 100000)
         self.latencyPopSizeSpin.setValue(100)
-        semRow.addWidget(QLabel("sem1"))
-        semRow.addWidget(self.latencySem1Spin)
-        semRow.addWidget(QLabel("sem2"))
-        semRow.addWidget(self.latencySem2Spin)
         semRow.addWidget(QLabel("window (-n)"))
         semRow.addWidget(self.latencyPopSizeSpin)
+        semRow.addStretch()
         form.addRow("daoTimeDiff args", semRow)
 
         btnLayout = QHBoxLayout()
@@ -946,7 +935,7 @@ class daoShmViewer(QMainWindow):
         measName = f"/tmp/{self._latency_tmux_name(path1, path2)}.im.shm"
 
         cmd = (f"daoTimeDiff -S {path1} {path2} "
-               f"{self.latencySem1Spin.value()} {self.latencySem2Spin.value()} {measName} "
+               f"{measName} "
                f"-n {self.latencyPopSizeSpin.value()} -L")
         try:
             # Replace any stale session with the same (deterministic) name first.

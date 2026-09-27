@@ -98,7 +98,7 @@ static int realTimeLoop()
         // Wait for new image
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1; // 1 second timeout
-        if (daoShmWaitSemTimeout(inShm, 2, &timeout) != -1)
+        if (daoShmWaitSemTimeout(inShm, DAO_SEM_AUTO, &timeout) != -1)
         {
             // New image, insert something here
             clock_gettime(CLOCK_REALTIME, &t[1]);

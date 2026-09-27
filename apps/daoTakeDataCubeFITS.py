@@ -24,7 +24,7 @@ if __name__ == '__main__':
     for k in range(nFrame):
         sys.stdout.write(f"\racquiring... {k+1}/{nFrame}")
         sys.stdout.flush()
-        dataCube[k,:,:] = shm.get_data(check=True, semNb=3)
+        dataCube[k,:,:] = shm.get_data(check=True)
         shmp.set_data(shmp.get_data()*0+np.uint32(100*(k+1)/nFrame))
     print('\n')
 

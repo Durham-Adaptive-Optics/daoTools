@@ -51,7 +51,7 @@ char subApCentreShmName[DAO_SHM_NAME_LEN];
 int subaSize;
 int nbSuba;
 int searchRange;
-int semNb = 0;
+int semNb = DAO_SEM_AUTO;   // -s: a fixed semaphore; default: one of its own
 float refAlpha = 0.0f;   /* running-average reference update rate; 0 = disabled (default) */
 
 static int   		end     = 0;		           // termination flag
@@ -76,7 +76,7 @@ static void ShowHelp(void)
     daoInfo("   -a <alpha>       running-average reference update rate in (0,1], 0=disabled (default)\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage:\n");
-    daoInfo("   -S <in SHM> <centroid SHM> <subAp Centres SHM> <ref image SHM> <threshold SHM> <subaSize> <nbSuba> <searchRange> -s <semNb> [-a <alpha>] -L\n");
+    daoInfo("   -S <in SHM> <centroid SHM> <subAp Centres SHM> <ref image SHM> <threshold SHM> <subaSize> <nbSuba> <searchRange> [-s <semNb>] [-a <alpha>] -L\n");
     daoInfo("\n");
     daoInfo("   Correlation centroider: cross-correlates each subaperture spot against\n");
     daoInfo("   a reference spot image (instead of a center-of-gravity). The ref image\n");

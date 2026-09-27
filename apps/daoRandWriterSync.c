@@ -48,7 +48,7 @@ IMAGE *clockShm;
 
 char outShmName[DAO_SHM_NAME_LEN];
 char clockShmName[DAO_SHM_NAME_LEN];
-int semNb = 0;
+int semNb = DAO_SEM_AUTO;   // -s: a fixed semaphore; default: one of its own
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback

@@ -43,7 +43,7 @@ double tnowdouble;
 double tlastupdatedouble;
 
 char inShmName[DAO_SHM_NAME_LEN];
-int semNb = 0;
+int semNb = DAO_SEM_AUTO;   // -s: a fixed semaphore; default: one of its own
 char outShmName[DAO_SHM_NAME_LEN];
 char gainShmName[DAO_SHM_NAME_LEN];
 int modal=0; // modal integrator flag
@@ -70,7 +70,7 @@ static void ShowHelp(void)
     daoInfo("   -m               modal integrator, leaky and gain should be arrays\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage:\n");
-    daoInfo("   -S <in SHM> <gain SHM> <out SHM> -s <semNb> -m -L\n");
+    daoInfo("   -S <in SHM> <gain SHM> <out SHM> [-s <semNb>] -m -L\n");
     daoInfo("\n");
 }
 

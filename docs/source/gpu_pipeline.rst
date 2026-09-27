@@ -47,7 +47,7 @@ A YAML file lists the device, the trigger and the stages, in order:
 .. code-block:: yaml
 
     device: 0                               # CUDA device (GPU SHMs must be on it)
-    trigger: {shm: /tmp/wfsIm.im.shm, sem: 1}
+    trigger: {shm: /tmp/wfsIm.im.shm}    # waits on a semaphore of its own (sem: N forces one)
     hostAccess: map                         # host SHMs: map (zero copy, default) or copy
     stages:
       - calIntensityNorm: {in: /tmp/wfsIm.im.shm, ff: /tmp/wfsFf.im.shm, bg: /tmp/wfsBg.im.shm,

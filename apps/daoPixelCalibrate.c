@@ -46,7 +46,7 @@ double tlastupdatedouble;
 
 
 char inShmName[DAO_SHM_NAME_LEN];
-int semNb = 0;
+int semNb = DAO_SEM_AUTO;   // -s: a fixed semaphore; default: one of its own
 char ffShmName[DAO_SHM_NAME_LEN];
 char bgShmName[DAO_SHM_NAME_LEN];
 char calShmName[DAO_SHM_NAME_LEN];
@@ -93,7 +93,7 @@ static void ShowHelp(void)
     daoInfo("   -C <cpu>         pin the real-time thread to CPU core <cpu>\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage (options must precede -L):\n");
-    daoInfo("   -S <input SHM> <flatfield SHM> <background SHM> <output SHM> -s <semNb> [-C <cpu>] -L\n");
+    daoInfo("   -S <input SHM> <flatfield SHM> <background SHM> <output SHM> [-s <semNb>] [-C <cpu>] -L\n");
     daoInfo("\n");
 }
 

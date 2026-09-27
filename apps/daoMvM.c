@@ -48,7 +48,7 @@ double tlastupdatedouble;
 
 IMAGE *inputShm;
 char inputShmName[DAO_SHM_NAME_LEN];
-int semNb = 0;
+int semNb = DAO_SEM_AUTO;   // -s: a fixed semaphore; default: one of its own
 IMAGE *matrixShm;
 char matrixShmName[DAO_SHM_NAME_LEN];
 IMAGE *outputShm;
@@ -107,7 +107,7 @@ static void ShowHelp(void)
     daoInfo("   -N <n>           BLAS thread count (0 = library default)\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage (options must precede -L):\n");
-    daoInfo("    daoMvM -S <input SHM> <matrix SHM> <output SHM> -s <semNb> [-C <cpu>] [-N <n>] -L\n");
+    daoInfo("    daoMvM -S <input SHM> <matrix SHM> <output SHM> [-s <semNb>] [-C <cpu>] [-N <n>] -L\n");
     daoInfo("\n");
 }
 /*--------------------------------------------------------------------------*/

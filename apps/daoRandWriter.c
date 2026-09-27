@@ -45,7 +45,7 @@ double tlastupdatedouble;
 char outShmName[32];
 char clockShmName[32];
 
-int semNb = 0;
+int semNb = DAO_SEM_AUTO;   // -s: a fixed semaphore; default: one of its own
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
 static void endme(int _a)
@@ -67,7 +67,7 @@ static void ShowHelp(void)
     daoInfo("   -s               semaphore number\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage:\n");
-    daoInfo("   -S <out SHM> <clock SHM> -s <semNb> -L\n");
+    daoInfo("   -S <out SHM> <clock SHM> [-s <semNb>] -L\n");
     daoInfo("\n");
 }
 

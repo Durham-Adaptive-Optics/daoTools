@@ -1,9 +1,11 @@
 # apps/ — input/output reference
 
 Every process below reads/writes plain `dao.shm` shared memory (see daoBase);
-most follow the same shape: `-S <shm list> -s <semNb> -L` starts a real-time
-loop that blocks on the semaphore of the **first input** listed and republishes
-its output(s) each time new data arrives. Run any tool with `-h` for the
+most follow the same shape: `-S <shm list> -L` starts a real-time loop that
+blocks on the semaphore of the **first input** listed and republishes its
+output(s) each time new data arrives. Each process waits on a semaphore of its
+own, picked by daoBase (no two readers share one); `[-s <semNb>]` still forces a
+given semaphore, for older scripts. Run any tool with `-h` for the
 authoritative, up-to-date flag list — this file is the input/output map, not
 a substitute for `-h`.
 
@@ -31,8 +33,8 @@ not actually built/shipped) and the project-scaffolding tools
 
 | Tool | Inputs | Outputs | Notes |
 |---|---|---|---|
-| `daoMvM` | vector, matrix | vector | `y = M x`, CPU (BLAS, single call per frame). `-S <input> <matrix> <output> -s <semNb> [-C <cpu>] [-N <blasThreads>]` |
-| `daoMvMGPU` | vector, matrix | vector | Same, CUDA. GPU SHMs are used in place (no host copy; the loop runs on their GPU). `-S <input> <matrix> <output> -s <semNb> [-C <cpu>] [-G <gpu>]` |
+| `daoMvM` | vector, matrix | vector | `y = M x`, CPU (BLAS, single call per frame). `-S <input> <matrix> <output> [-s <semNb>] [-C <cpu>] [-N <blasThreads>]` |
+| `daoMvMGPU` | vector, matrix | vector | Same, CUDA. GPU SHMs are used in place (no host copy; the loop runs on their GPU). `-S <input> <matrix> <output> [-s <semNb>] [-C <cpu>] [-G <gpu>]` |
 | `daoMvM.py` | vector, matrix | vector | Python reference (NumPy or CuPy if available). `-m <matrix> -v <vector> -o <output> [-g]` |
 | `daoReconstructor.py` | vector, matrix | vector | Minimal Python MVM (nice +10, debug/offline use). `-i <input> -r <recon> -o <output>` |
 
@@ -46,7 +48,7 @@ not actually built/shipped) and the project-scaffolding tools
 
 | Tool | Inputs | Outputs | Notes |
 |---|---|---|---|
-| `daoPixelCalibrate` | raw image, flat-field, background | calibrated image | `cal = (raw - bg) * ff`, float or double (auto-selected from the output SHM's atype). `-S <in> <flatfield> <background> <output> -s <semNb> [-C <cpu>]` |
+| `daoPixelCalibrate` | raw image, flat-field, background | calibrated image | `cal = (raw - bg) * ff`, float or double (auto-selected from the output SHM's atype). `-S <in> <flatfield> <background> <output> [-s <semNb>] [-C <cpu>]` |
 | `daoPixelCalibratePws` | raw image, background, flat-field, mask | calibrated image, flux | Pyramid-WFS variant, also emits total flux. `-S <in> <background> <flatfield> <mask> <cal> <flux>` |
 | `daoCalIntensity` | raw image, flat-field, background, reference | reference (recomputed once), valid-pixel mask, illuminated-pixel mask, intensity | Calibrate + extract + normalize in one pass. `-S <raw> <ff> <bg> <ref> <validPix> <illumPix> <intensity>` |
 | `daoCalIntensityNorm` | same as `daoCalIntensity` | same as `daoCalIntensity` | Same, but the reference is normalized against its own illuminated sum. |
@@ -65,7 +67,7 @@ not actually built/shipped) and the project-scaffolding tools
 | `daoTakeDataCubeNPY.py` | SHM | `.npy` cube, `<base>Percent` (progress) | Records an ROI from N frames to `$DAODATA/data/<base>Cube<description>.npy`. Usage: `<shm> <nFrames> <description> <width> <cx> <cy>`. |
 | `daoSnapshot.py` | SHM | FITS or `.npy` file | Single-frame grab. |
 | `daoShmRate.py` | SHM | terminal only | Prints the live update rate. `<SHM> [--interval <s>]` |
-| `daoShmSlice` | SHM | SHM | Each time the input is published, copies its values `[offset, offset + n)` into the output (same data type; the input may be a GPU SHM) and publishes it, with the input's `cnt2`. `-S <in> <out> [-o <offset>] [-n <n>] -s <semNb>` (`n` defaults to the output's size) |
+| `daoShmSlice` | SHM | SHM | Each time the input is published, copies its values `[offset, offset + n)` into the output (same data type; the input may be a GPU SHM) and publishes it, with the input's `cnt2`. `-S <in> <out> [-o <offset>] [-n <n>] [-s <semNb>]` (`n` defaults to the output's size) |
 | `daoStrCmd.py` / `daoReadStr.py` / `daoWriteStr.py` | `<name>SCmd` (write) / `<name>SRsp` (read) | matching command/reply SHM | Generic string-over-SHM command helpers: pack a null-terminated string into a `uint8` SHM (`StrCmd`/`WriteStr`) or unpack one back to text (`ReadStr`). |
 
 ## SHM arithmetic
@@ -102,9 +104,9 @@ not actually built/shipped) and the project-scaffolding tools
 
 | Tool | Inputs | Outputs | Notes |
 |---|---|---|---|
-| `daoTimeDiff` | `SHM1`, `SHM2` (each with its own semaphore) | measurement | Latency between two SHM timestamps. `-S <SHM1> <SHM2> <sem1> <sem2> <measurement>` |
+| `daoTimeDiff` | `SHM1`, `SHM2` | measurement | Latency between two SHM timestamps. `-S <SHM1> <SHM2> [<sem1> <sem2>] <measurement>` (semaphores optional: fixed ones, for older command lines) |
 | `daoTimeDiffNCurse` | same | measurement + live `ncurses` display | Same tool, terminal UI. |
-| `daoTimeDiffStat` | a latency/time SHM | running-average SHM | Statistical summary (min/max/mean/std) over N samples. `-S <time> -s <semNb> -n <nbMeas>` |
+| `daoTimeDiffStat` | a latency/time SHM | running-average SHM | Statistical summary (min/max/mean/std) over N samples. `-S <time> [-s <semNb>] -n <nbMeas>` |
 | `daoSetLatency` | — | — | Not a SHM tool: writes a value to `/dev/cpu_dma_latency` (Linux PM QoS) to disable deep CPU idle states, then blocks forever holding it open. `<latency in us>` |
 | `daoPlotLatency.py` | a latency SHM | matplotlib window | Reads N samples and plots a histogram + trace. `<nData> <latencyShm>` |
 
@@ -112,7 +114,7 @@ not actually built/shipped) and the project-scaffolding tools
 
 | Tool | Inputs | Outputs | Notes |
 |---|---|---|---|
-| `daoRandImageU16Write` | clock | random `uint16` image | Test data generator, ticks on an external clock SHM. `-S <out> <clock> -s <semNb>` |
+| `daoRandImageU16Write` | clock | random `uint16` image | Test data generator, ticks on an external clock SHM. `-S <out> <clock> [-s <semNb>]` |
 | `daoRandWriterSync` | clock | random data | Same idea, simpler CLI. `-L <shm> <clockShm>` |
 | `daoDMSend` | SHM | UDP packet | One-shot: reads a DM command SHM and sends it over the network. `<SHM> <IP> <PORT>` |
 | `daoReadWrite` | input | output | Minimal passthrough copy, mostly a template/example. `-L <in> <out>` |

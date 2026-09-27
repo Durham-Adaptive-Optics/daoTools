@@ -57,8 +57,8 @@ char latencyShmName[DAO_SHM_NAME_LEN];
 char avgShmName[DAO_SHM_NAME_LEN];
 char rmsShmName[DAO_SHM_NAME_LEN];
 char arrayShmName[DAO_SHM_NAME_LEN];
-int sem0;
-int sem1;
+int sem0 = DAO_SEM_AUTO;    // <sem1> <sem2>: fixed semaphores; default: one of its own
+int sem1 = DAO_SEM_AUTO;
 int popSize = 100;   /* -n: sliding-window size for the AVG/RMS SHMs */
 int moreInfo = 0;    /* -m: also print frame IDs / diff / negTs counter */
 
@@ -84,7 +84,8 @@ static void ShowHelp(void)
     daoInfo("   -m               also print frame IDs / diff / negative-timestamp counter\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage:\n");
-    daoInfo("    daoTimeDiff -S <SHM1> <SHM2> <sem1> <sem2> <measurement SHM> [-n <popSize>] [-m] -L\n");
+    daoInfo("    daoTimeDiff -S <SHM1> <SHM2> [<sem1> <sem2>] <measurement SHM> [-n <popSize>] [-m] -L\n");
+    daoInfo("    (sem1 sem2: fixed semaphores; default: one of its own)\n");
     daoInfo("\n");
     daoInfo("   Latency (measurement SHM) is published every frame. This also\n");
     daoInfo("   automatically maintains a running AVG and RMS of the last <popSize>\n");
@@ -256,6 +257,16 @@ static int realTimeLoop()
 /**
  *	Parse the input arguments.
  */
+/* Is s a whole (signed) integer? */
+static int isInteger(const char *s)
+{
+    char *end;
+    if (!s || !*s)
+        return 0;
+    (void) strtol(s, &end, 10);
+    return *end == '\0';
+}
+
 static void DecodeArgs(int argc, char **argv)
 {
     char	*str;
@@ -294,8 +305,10 @@ static void DecodeArgs(int argc, char **argv)
                         daoInfo("Simple Camera Reader and Writer from SHM real time control\n");
                     	daoToolsArgName(shm0Name, sizeof shm0Name, *argv++); argc -= 1;
                     	daoToolsArgName(shm1Name, sizeof shm1Name, *argv++); argc -= 1;
-                    	(void)sscanf(*argv++,"%d",&sem0); argc -= 1;
-                    	(void)sscanf(*argv++,"%d",&sem1); argc -= 1;
+                        if (argc > 0 && isInteger(*argv)) {   /* older command lines: fixed semaphores */
+                            (void)sscanf(*argv++,"%d",&sem0); argc -= 1;
+                            (void)sscanf(*argv++,"%d",&sem1); argc -= 1;
+                        }
                     	daoToolsArgName(latencyShmName, sizeof latencyShmName, *argv++); argc -= 1;
                         if (daoToolsInsertShmNamePrefixN(latencyShmName, "Avg", avgShmName, sizeof avgShmName) != DAO_SUCCESS)
                             exit(EXIT_FAILURE);

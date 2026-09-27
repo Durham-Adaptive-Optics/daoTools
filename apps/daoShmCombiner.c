@@ -119,7 +119,7 @@ void * shmNRealTimeLoop(void *thread_data)
         // Wait for SHM semaphore
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec +=1;
-        if (daoShmWaitSemTimeout(shmIn[args->shmId], 0, &timeout) != -1)
+        if (daoShmWaitSemTimeout(shmIn[args->shmId], DAO_SEM_AUTO, &timeout) != -1)
         {
             clock_gettime(CLOCK_REALTIME, &t[0]);
             if (daoShmCombine(shmIn, shm, nbShm, nbVal) == DAO_ERROR)

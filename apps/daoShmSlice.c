@@ -17,7 +17,7 @@ static int sExit = 0;                           /* program exit code */
 
 char inShmName[DAO_SHM_NAME_LEN];
 char outShmName[DAO_SHM_NAME_LEN];
-int semNb = 0;
+int semNb = DAO_SEM_AUTO;   // -s: a fixed semaphore; default: one of its own
 long offset = 0;                                /* first input value copied (-o) */
 long count = -1;                                /* number of values (-n), -1: the output's size */
 
@@ -47,7 +47,7 @@ static void ShowHelp(void)
     daoInfo("   -n <n>           number of values (default: the size of <out SHM>)\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage (options must precede -L):\n");
-    daoInfo("   -S <in SHM> <out SHM> [-o <offset>] [-n <n>] -s <semNb> -L\n");
+    daoInfo("   -S <in SHM> <out SHM> [-o <offset>] [-n <n>] [-s <semNb>] -L\n");
     daoInfo("\n");
 }
 

@@ -34,7 +34,7 @@ def main():
     out = daoShm.shm(P("gplOut"), np.zeros((104, 1), np.float32))
     with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
         f.write(f"""device: 0
-trigger: {{shm: {P('gplIn')}, sem: 1}}
+trigger: {{shm: {P('gplIn')}}}
 plugins: [{os.path.join(BUILD, 'tests', 'libgpuPluginExample.so')}]
 stages:
   - slice: {{in: {P('gplIn')}, out: {P('gplSlice')}, offset: 50}}

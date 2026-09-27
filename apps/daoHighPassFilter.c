@@ -51,7 +51,7 @@ char outShmName[DAO_SHM_NAME_LEN];
 char fcShmName[DAO_SHM_NAME_LEN];
 char fpsShmName[DAO_SHM_NAME_LEN];
 char enaShmName[DAO_SHM_NAME_LEN];
-int semNb=0;
+int semNb = DAO_SEM_AUTO;   // -s: a fixed semaphore; default: one of its own
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -74,7 +74,7 @@ static void ShowHelp(void)
     daoInfo("   -s               semaphore number\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage:\n");
-    daoInfo("   daoHighPassFilter -S <in SHM> <out SHM> <fc SHM> <fps SHM> <ena SHM> -s <semNb> -L\n");
+    daoInfo("   daoHighPassFilter -S <in SHM> <out SHM> <fc SHM> <fps SHM> <ena SHM> [-s <semNb>] -L\n");
     printf("\n");
 }
 

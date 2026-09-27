@@ -45,7 +45,7 @@ double tlastupdatedouble;
 char ocamRawShmName[DAO_SHM_NAME_LEN];
 char ocamShmName[DAO_SHM_NAME_LEN];
 char lutShmName[DAO_SHM_NAME_LEN];
-int semNb = 0;
+int semNb = DAO_SEM_AUTO;   // -s: a fixed semaphore; default: one of its own
 int binning = 1; // binning factor, default is 1 (no binning)
 
 static int   		end     = 0;		           // termination flag
@@ -70,7 +70,7 @@ static void ShowHelp(void)
     daoInfo("   -b               binning\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage:\n");
-    daoInfo("   -S <ocamRaw SHM> <ocamShm SHM> <lut SHM> -s <semNb> -b <binning> -L\n");
+    daoInfo("   -S <ocamRaw SHM> <ocamShm SHM> <lut SHM> [-s <semNb>] -b <binning> -L\n");
     daoInfo("\n");
 }
 #define IMG_WIDTH 1056

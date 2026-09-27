@@ -63,7 +63,7 @@ int main(int argc, char **argv)
             struct timespec ts;
             clock_gettime(CLOCK_REALTIME, &ts);
             ts.tv_sec += 2;
-            if (daoShmWaitSemTimeout(&out, 2, &ts) != DAO_SUCCESS && out.md[0].cnt0 < target) {
+            if (daoShmWaitSemTimeout(&out, DAO_SEM_AUTO, &ts) != DAO_SUCCESS && out.md[0].cnt0 < target) {
                 printf("TIMEOUT at frame %d\n", k);
                 return 1;
             }

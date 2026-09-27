@@ -55,7 +55,7 @@ char thresholdShmName[DAO_SHM_NAME_LEN];
 char subApCentreShmName[DAO_SHM_NAME_LEN];
 int subaSize;
 int nbSuba;
-int semNb = 0;
+int semNb = DAO_SEM_AUTO;   // -s: a fixed semaphore; default: one of its own
 double refAlpha = 0.0;   /* running-average reference update rate; 0 = disabled (default) */
 
 static int   		end     = 0;		           // termination flag
@@ -80,7 +80,7 @@ static void ShowHelp(void)
     daoInfo("   -a <alpha>       running-average reference update rate in (0,1], 0=disabled (default)\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage:\n");
-    daoInfo("   -S <in SHM> <centroid SHM> <subAp Centres SHM> <ref image SHM> <threshold SHM> <subaSize> <nbSuba> -s <semNb> [-a <alpha>] -L\n");
+    daoInfo("   -S <in SHM> <centroid SHM> <subAp Centres SHM> <ref image SHM> <threshold SHM> <subaSize> <nbSuba> [-s <semNb>] [-a <alpha>] -L\n");
     daoInfo("\n");
     daoInfo("   FFT correlation centroider: same idea as daoComputeCentroidCorrelation,\n");
     daoInfo("   but computes the full periodic correlation surface for each subaperture\n");

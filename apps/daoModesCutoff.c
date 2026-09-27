@@ -48,7 +48,7 @@ double dt_update_lim = 3600.0; // if no command is received during this time, se
 
 char inShmName[DAO_SHM_NAME_LEN];
 char mcShmName[DAO_SHM_NAME_LEN];
-int semNb=0;
+int semNb = DAO_SEM_AUTO;   // -s: a fixed semaphore; default: one of its own
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -71,7 +71,7 @@ static void ShowHelp(void)
     daoInfo("   -s               semaphore number\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage:\n");
-    daoInfo("   daoModesCutOff -S <modes SHM> <modes cutoff SHM> -s <semNb> -L\n");
+    daoInfo("   daoModesCutOff -S <modes SHM> <modes cutoff SHM> [-s <semNb>] -L\n");
     printf("\n");
 }
 

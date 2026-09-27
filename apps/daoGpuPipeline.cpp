@@ -11,13 +11,13 @@
  * Usage: daoGpuPipeline -c <config.yaml> [-s <stage>] [-C <cpu>] [-d <level>] -L
  *
  * -s N runs only stage N (0 = first) of the configuration, as its own process,
- * triggered by that stage's input SHM (semaphore trigger.sem): one process per
+ * triggered by that stage's input SHM (on a semaphore of its own): one process per
  * stage, like the separate daoTools processes but on the GPU SHMs. Useful while
  * developing and tuning; the same configuration then runs as one pipeline.
  *
  * Configuration (YAML):
  *   device: 0                          # CUDA device (GPU SHMs must be on it)
- *   trigger: {shm: /tmp/pyrIm.im.shm, sem: 1}
+ *   trigger: {shm: /tmp/pyrIm.im.shm}  # waits on a semaphore of its own (sem: N forces one)
  *   hostAccess: map                    # host SHMs: map into the GPU (zero copy, default:
  *                                      # kernels fetch only what they use) or copy
  *   stages:                            # in order; each is the daoTools app of that name
@@ -81,7 +81,7 @@ static double nowUs()
 struct Pipeline {
     int device = 0;
     std::string triggerName;
-    int triggerSem = 1;
+    int triggerSem = DAO_SEM_AUTO;                            // trigger.sem: a fixed semaphore
     int mapHost = 1;                                          // hostAccess: map (default) | copy
     int onlyStage = -1;                                       // -s: run only this stage
     std::map<std::string, IMAGE *> shms;                     // every opened SHM
@@ -386,7 +386,7 @@ static int run(const char *configPath, int cpu, int onlyStage)
     p.onlyStage = onlyStage;
     p.device = cfg["device"] ? cfg["device"].as<int>() : 0;
     p.triggerName = need(cfg["trigger"], "shm", "trigger");
-    p.triggerSem = cfg["trigger"]["sem"] ? cfg["trigger"]["sem"].as<int>() : 1;
+    p.triggerSem = cfg["trigger"]["sem"] ? cfg["trigger"]["sem"].as<int>() : DAO_SEM_AUTO;
     if (cfg["hostAccess"]) {
         std::string mode = cfg["hostAccess"].as<std::string>();
         if (mode != "map" && mode != "copy")
@@ -449,8 +449,9 @@ static int run(const char *configPath, int cpu, int onlyStage)
         cudaGetLastError();
         daoWarning("CUDA graph unavailable, launching the stages one by one\n");
     }
-    daoInfo("%zu stages, %zu upload(s), triggered by %s (sem %d)%s\n", p.stages.size(), p.uploads.size(),
-            p.triggerName.c_str(), p.triggerSem, useGraph ? ", CUDA graph" : "");
+    daoInfo("%zu stages, %zu upload(s), triggered by %s (semaphore %d)%s\n", p.stages.size(), p.uploads.size(),
+            p.triggerName.c_str(),
+            p.triggerSem >= 0 ? p.triggerSem : daoShmClaimSem(trigger), useGraph ? ", CUDA graph" : "");
     if (p.onlyStage < 0)
         daoInfo("one process for the whole chain: MPS is only useful if other processes compute on GPU %d\n",
                 p.device);

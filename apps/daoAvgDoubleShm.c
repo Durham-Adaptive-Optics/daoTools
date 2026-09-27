@@ -52,7 +52,7 @@ IMAGE *shmAvg;
 char shmName[DAO_SHM_NAME_LEN];
 char shmNameAvg[DAO_SHM_NAME_LEN];
 int nbAvg=100;
-int semNb=0;
+int semNb = DAO_SEM_AUTO;   // -s: a fixed semaphore; default: one of its own
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -76,7 +76,7 @@ static void ShowHelp(void)
     daoInfo("   -n               number of frame to average\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage:\n");
-    daoInfo("   -S <SHM> -n <nb Average> -s <semNb> -L\n");
+    daoInfo("   -S <SHM> -n <nb Average> [-s <semNb>] -L\n");
     printf("\n");
 }
 

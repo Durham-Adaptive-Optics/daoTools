@@ -167,7 +167,7 @@ static void *shmThreadLoop(void *thread_data)
         clock_gettime(CLOCK_REALTIME, &timeout);
         timeout.tv_sec += 1;
 
-        if (daoShmWaitSemTimeout(gShmIn[shmId], 0, &timeout) == -1)
+        if (daoShmWaitSemTimeout(gShmIn[shmId], DAO_SEM_AUTO, &timeout) == -1)
             continue;
 
         clock_gettime(CLOCK_REALTIME, &t0);

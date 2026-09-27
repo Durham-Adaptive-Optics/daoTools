@@ -51,7 +51,7 @@ char pixIdShmName[DAO_SHM_NAME_LEN];
 char pixIdMapShmName[DAO_SHM_NAME_LEN];
 char fluxShmName[DAO_SHM_NAME_LEN];
 int nbPix;
-int semNb = 0;
+int semNb = DAO_SEM_AUTO;   // -s: a fixed semaphore; default: one of its own
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -74,7 +74,7 @@ static void ShowHelp(void)
     daoInfo("   -s               semaphore number\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage:\n");
-    daoInfo("   -S <input SHM> <ref SHM> <centroid SHM> <threshold SHM> <nbPix> -s <semNb> -L\n");
+    daoInfo("   -S <input SHM> <ref SHM> <centroid SHM> <threshold SHM> <nbPix> [-s <semNb>] -L\n");
     daoInfo("\n");
 }
 

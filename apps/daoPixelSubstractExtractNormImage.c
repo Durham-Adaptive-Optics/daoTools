@@ -44,7 +44,7 @@ double tnowdouble;
 double tlastupdatedouble;
 
 char inAShmName[DAO_SHM_NAME_LEN];
-int semNb = 0;
+int semNb = DAO_SEM_AUTO;   // -s: a fixed semaphore; default: one of its own
 char inBShmName[DAO_SHM_NAME_LEN];
 char maskShmName[DAO_SHM_NAME_LEN];
 char extractShmName[DAO_SHM_NAME_LEN];
@@ -71,7 +71,7 @@ static void ShowHelp(void)
     daoInfo("   -s               semaphore number\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage:\n");
-    daoInfo("   -S <input A SHM> <input B SHM> <mask SHM> <extract SHM> <norm SHM> -s <semNb> -L\n");
+    daoInfo("   -S <input A SHM> <input B SHM> <mask SHM> <extract SHM> <norm SHM> [-s <semNb>] -L\n");
     daoInfo("\n");
 }
 

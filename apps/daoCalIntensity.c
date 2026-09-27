@@ -16,7 +16,7 @@
     intensity : normalized intensity for each valid pixel (float)
 
   Usage:
-    daoRtcCalIntensity -S <raw> <ff> <bg> <validPix> <illumPix> <intensity> -s <semNb> -L
+    daoRtcCalIntensity -S <raw> <ff> <bg> <validPix> <illumPix> <intensity> [-s <semNb>] -L
  *****************************************************************************/
 
  #include <stdio.h>
@@ -57,7 +57,7 @@
  char validPixShmName[DAO_SHM_NAME_LEN];
  char illumPixShmName[DAO_SHM_NAME_LEN];
  char intensityShmName[DAO_SHM_NAME_LEN];
- int  semNb = 0;
+ int  semNb = DAO_SEM_AUTO;   // -s: a fixed semaphore; default: one of its own
  
  static int end = 0;
  static void endme(int _a) { (void)_a; end = 1; }
@@ -72,7 +72,7 @@
      daoInfo("   arguments:\n");
      daoInfo("   -h               display this message and exit\n");
      daoInfo("   -d <level>       debug level\n");
-     daoInfo("   -s <semNb>       semaphore number on raw SHM\n");
+     daoInfo("   [-s <semNb>]     semaphore on raw SHM (default: one of its own)\n");
      daoInfo("   -S <raw> <ff> <bg> <ref> <validPix> <illumPix> <intensity>\n");
      daoInfo("   -L               start real-time loop\n");
      daoInfo("\n");

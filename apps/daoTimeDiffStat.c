@@ -48,7 +48,7 @@ double dt_update_lim = 3600.0; // if no command is received during this time, se
 
 
 char shmName[DAO_SHM_NAME_LEN];
-int semNb = 0;
+int semNb = DAO_SEM_AUTO;   // -s: a fixed semaphore; default: one of its own
 char shmNameAvg[DAO_SHM_NAME_LEN];
 char shmNameRms[DAO_SHM_NAME_LEN];
 int popSize=100;
@@ -75,7 +75,7 @@ static void ShowHelp(void)
     daoInfo("   -s               number of frame to compute statistic\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage:\n");
-    daoInfo("   -S <time SHM> -s <semNb> -n <nbmease> -L\n");
+    daoInfo("   -S <time SHM> [-s <semNb>] -n <nbmease> -L\n");
     daoInfo("\n");
 }
 

@@ -44,7 +44,7 @@ double tnowdouble;
 double tlastupdatedouble;
 
 char inShmName[DAO_SHM_NAME_LEN];
-int semNb = 0;
+int semNb = DAO_SEM_AUTO;   // -s: a fixed semaphore; default: one of its own
 char refShmName[DAO_SHM_NAME_LEN];
 char centroidShmName[DAO_SHM_NAME_LEN];
 char thresholdShmName[DAO_SHM_NAME_LEN];
@@ -72,7 +72,7 @@ static void ShowHelp(void)
     daoInfo("   -s               semaphore number\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage:\n");
-    daoInfo("   -S <in SHM> <ref SHM> <threshold> <centroid SHM> <subaSize> <nbSuba> -s <semNb> -L\n");
+    daoInfo("   -S <in SHM> <ref SHM> <threshold> <centroid SHM> <subaSize> <nbSuba> [-s <semNb>] -L\n");
     daoInfo("\n");
 }
 

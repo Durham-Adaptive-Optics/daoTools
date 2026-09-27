@@ -54,7 +54,7 @@ char shmNameAvg[DAO_SHM_NAME_LEN];
 int nbAvg=100;
 double avgTime=0.0;        // > 0: average over this many seconds (-t) instead of nbAvg frames
 int maxFrames=100000;      // -m: the most frames kept for a time average (memory bound)
-int semNb=0;
+int semNb = DAO_SEM_AUTO;   // -s: a fixed semaphore; default: one of its own
 
 /* NaN or infinity, from the bits: daoTools builds with -ffast-math, where isnan()
  * is assumed false and compiled away */
@@ -90,8 +90,8 @@ static void ShowHelp(void)
     daoInfo("   -m               time average: the most frames kept (default 100000)\n");
     daoInfo("   -L               start real-time loop\n");
     daoInfo("   usage (options before -L):\n");
-    daoInfo("   -S <SHM> -n <nb Average> -s <semNb> -L\n");
-    daoInfo("   -S <SHM> -t <seconds> [-m <max frames>] -s <semNb> -L\n");
+    daoInfo("   -S <SHM> -n <nb Average> [-s <semNb>] -L\n");
+    daoInfo("   -S <SHM> -t <seconds> [-m <max frames>] [-s <semNb>] -L\n");
     daoInfo("   The output, <SHM>Avg, is the mean of the frames in the window: after a\n");
     daoInfo("   start, of those received so far.\n");
     printf("\n");
