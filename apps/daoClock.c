@@ -53,8 +53,8 @@ uid_t suid;
 struct timespec tnow;
 double tlastupdatedouble;
 
-char clockName[32];
-char freqName[32];
+char clockName[DAO_SHM_NAME_LEN];
+char freqName[DAO_SHM_NAME_LEN];
 float frequency;
 
 
@@ -211,8 +211,8 @@ static void DecodeArgs(int argc, char **argv)
                         break;
             case 'S':
                         daoInfo("Clock real time control\n");
-                        (void)sscanf(*argv++,"%s", clockName);
-                        (void)sscanf(*argv++,"%s", freqName);
+                        daoToolsArgName(clockName, sizeof clockName, *argv++);
+                        daoToolsArgName(freqName, sizeof freqName, *argv++);
                         (void)sscanf(*argv++,"%f", &frequency);
                         daoInfo("%s \n", clockName);
                         daoInfo("%s \n", freqName);

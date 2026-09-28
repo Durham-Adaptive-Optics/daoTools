@@ -1,0 +1,31 @@
+#! /usr/bin/env python
+import os
+import platform
+
+# GPU stages vs the CPU daoTools code (not installed): build/tests/testGpuStages
+if bld.env.CUDA_AVAILABLE and platform.system() != "Darwin":
+
+	# This program depends on daoCentroidSpotsCorrelationFFT (and thus FFTW)
+	if bld.env.FFTW_AVAILABLE:
+		bld.program(
+			source = 'testGpuStages.cpp',
+			target = 'testGpuStages',
+			includes = ['../include', os.getenv('DAOROOT')+'/include/'] + bld.env.INCLUDES_CUDA,
+			linkflags = ['-Lsrc', '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'] + ['-L' + p for p in bld.env.LIBPATH_CUDA],
+			ldflags = ['-ldao', '-lcudart', '-lpthread'],
+			use = ['daoTools', 'daoToolsGpu'],
+			cxxflags = ['-O2', '-Wall', '-pipe'],
+			install_path = None,
+			)
+
+	# example daoGpuPipeline plugin (stage type "scale"), used by test_gpu_plugin.py
+	bld.shlib(
+		features = 'cxx cxxshlib',
+		source = 'gpuPluginExample.cu',
+		target = 'gpuPluginExample',
+		includes = ['../include', os.getenv('DAOROOT')+'/include/'] + bld.env.INCLUDES_CUDA,
+		linkflags = ['-Lsrc', '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'] + ['-L' + p for p in bld.env.LIBPATH_CUDA],
+		ldflags = ['-ldao', '-lcudart'],
+		use = ['daoToolsGpu'],
+		install_path = None,
+		)

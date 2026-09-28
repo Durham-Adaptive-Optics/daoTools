@@ -46,8 +46,8 @@ double tlastupdatedouble;
 double dt_update; // time since last update
 double dt_update_lim = 3600.0; // if no command is received during this time, set DM to zero V [sec]
 
-char inShmName[32];
-char mcShmName[32];
+char inShmName[DAO_SHM_NAME_LEN];
+char mcShmName[DAO_SHM_NAME_LEN];
 int semNb=0;
 
 static int   		end     = 0;		           // termination flag
@@ -87,25 +87,27 @@ static int realTimeLoop()
     IMAGE *loShm;
     IMAGE *hoShm;
 
-    char loShmName[32];
-    char hoShmName[32];
+    char loShmName[DAO_SHM_NAME_LEN];
+    char hoShmName[DAO_SHM_NAME_LEN];
 
     inShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(inShmName, &inShm[0]);
+    daoToolsShmOpen(inShmName, &inShm[0]);
     mcShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(mcShmName, &mcShm[0]);
+    daoToolsShmOpen(mcShmName, &mcShm[0]);
 
     daoInfo("%dx%d\n", inShm[0].md[0].size[0], inShm[0].md[0].size[1]);
     // Create LO SHM
     loShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoToolsInsertShmNamePrefix(inShmName, "LO", loShmName);
+    if (daoToolsInsertShmNamePrefixN(inShmName, "LO", loShmName, sizeof loShmName) != DAO_SUCCESS)
+        exit(EXIT_FAILURE);
     size[0] = mcShm[0].array.UI32[0];
     size[1] = inShm[0].md[0].size[1];
     daoShmCreate(loShm, loShmName, 2, size, inShm[0].md[0].atype, 1, 0);
 
     // Create HO SHM
     hoShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoToolsInsertShmNamePrefix(inShmName, "HO", hoShmName);
+    if (daoToolsInsertShmNamePrefixN(inShmName, "HO", hoShmName, sizeof hoShmName) != DAO_SUCCESS)
+        exit(EXIT_FAILURE);
     size[0] = inShm[0].md[0].size[0]-mcShm[0].array.UI32[0];
     size[1] = inShm[0].md[0].size[1];
     daoShmCreate(hoShm, hoShmName, 2, size, inShm[0].md[0].atype, 1, 0);
@@ -205,8 +207,8 @@ static void DecodeArgs(int argc, char **argv)
                         (void)usleep(a1);
                         break;
             case 'S':
-                        (void)sscanf(*argv++,"%s", inShmName);
-                        (void)sscanf(*argv++,"%s", mcShmName);
+                        daoToolsArgName(inShmName, sizeof inShmName, *argv++);
+                        daoToolsArgName(mcShmName, sizeof mcShmName, *argv++);
                         daoInfo("inShmName          = %s\n", inShmName);
                         daoInfo("mcShmName          = %s\n", mcShmName);
                         break;

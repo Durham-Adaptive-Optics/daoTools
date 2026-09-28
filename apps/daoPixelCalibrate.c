@@ -45,11 +45,11 @@ double tnowdouble;
 double tlastupdatedouble;
 
 
-char inShmName[32];
+char inShmName[DAO_SHM_NAME_LEN];
 int semNb = 0;
-char ffShmName[32];
-char bgShmName[32];
-char calShmName[32];
+char ffShmName[DAO_SHM_NAME_LEN];
+char bgShmName[DAO_SHM_NAME_LEN];
+char calShmName[DAO_SHM_NAME_LEN];
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -115,10 +115,10 @@ static int realTimeLoop()
     ffShm = (IMAGE*) malloc(sizeof(IMAGE));
     bgShm = (IMAGE*) malloc(sizeof(IMAGE));
     calShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(inShmName, &inShm[0]);
-    daoShmOpen(ffShmName, &ffShm[0]);
-    daoShmOpen(bgShmName, &bgShm[0]);
-    daoShmOpen(calShmName, &calShm[0]);
+    daoToolsShmOpen(inShmName, &inShm[0]);
+    daoToolsShmOpen(ffShmName, &ffShm[0]);
+    daoToolsShmOpen(bgShmName, &bgShm[0]);
+    daoToolsShmOpen(calShmName, &calShm[0]);
 
     daoInfo("Starting loop, %s/%s \n",inShmName, calShmName);
     fflush(stdout);
@@ -236,10 +236,10 @@ static void DecodeArgs(int argc, char **argv)
                         break;
                         break;
             case 'S':
-                    	(void)sscanf(*argv++,"%s",inShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s",ffShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s",bgShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s",calShmName); argc -= 1;
+                    	daoToolsArgName(inShmName, sizeof inShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(ffShmName, sizeof ffShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(bgShmName, sizeof bgShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(calShmName, sizeof calShmName, *argv++); argc -= 1;
                         daoInfo("image in         : %s\n", inShmName);
                         daoInfo("flat field       : %s\n", ffShmName);
                         daoInfo("background       : %s\n", bgShmName);

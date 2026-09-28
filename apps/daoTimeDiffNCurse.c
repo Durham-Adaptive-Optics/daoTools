@@ -48,9 +48,9 @@ IMAGE *shm0;
 IMAGE *shm1;
 IMAGE *latencyShm;
 
-char shm0Name[32];
-char shm1Name[32];
-char latencyShmName[32];
+char shm0Name[DAO_SHM_NAME_LEN];
+char shm1Name[DAO_SHM_NAME_LEN];
+char latencyShmName[DAO_SHM_NAME_LEN];
 int sem0;
 int sem1;
 
@@ -89,8 +89,8 @@ static int realTimeLoop()
     shm0 = (IMAGE*) malloc(sizeof(IMAGE));
     shm1 = (IMAGE*) malloc(sizeof(IMAGE));
     latencyShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(shm0Name, &shm0[0]);
-    daoShmOpen(shm1Name, &shm1[0]);
+    daoToolsShmOpen(shm0Name, &shm0[0]);
+    daoToolsShmOpen(shm1Name, &shm1[0]);
     // Create size array, using 2D of 1x1... can be change to 1D
     uint32_t size[2];
     size[0] = 1;
@@ -212,11 +212,11 @@ static void DecodeArgs(int argc, char **argv)
                         break;
             case 'S':
                         daoInfo("Simple Camera Reader and Writer from SHM real time control\n");
-                    	(void)sscanf(*argv++,"%s",shm0Name); argc -= 1;
-                    	(void)sscanf(*argv++,"%s",shm1Name); argc -= 1;
+                    	daoToolsArgName(shm0Name, sizeof shm0Name, *argv++); argc -= 1;
+                    	daoToolsArgName(shm1Name, sizeof shm1Name, *argv++); argc -= 1;
                     	(void)sscanf(*argv++,"%d",&sem0); argc -= 1;
                     	(void)sscanf(*argv++,"%d",&sem1); argc -= 1;
-                    	(void)sscanf(*argv++,"%s",latencyShmName); argc -= 1;
+                    	daoToolsArgName(latencyShmName, sizeof latencyShmName, *argv++); argc -= 1;
                         break;
             case 'L':
                         realTimeLoop();

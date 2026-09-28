@@ -4,7 +4,7 @@ import platform
 if platform.system() == "Darwin":
 	my_ld_flags = ['']
 	my_cxx_flags = ['-std=c++14']
-	my_cflags = ['-O3', '-ffast-math']
+	my_cflags = ['-O3', '-ffast-math', '-fno-finite-math-only']
 	my_link_flags = ['-Lsrc', '-L'+os.getenv('DAOROOT')+'/lib/']
 	if os.path.exists('/opt/homebrew/lib'):
 		my_link_flags.append('-L/opt/homebrew/lib')
@@ -14,7 +14,9 @@ else:
 	my_ld_flags = ['-lrt']
 	my_cxx_flags = ['']
 	# built and run on the same host -> -march=native (AVX2 + FMA on the EPYC).
-	my_cflags = ['-Ofast', '-march=native', '-funroll-loops']
+	# -fno-finite-math-only: -Ofast / -ffast-math, but NaN and infinity kept -- without
+	# it isnan() is compiled away (the NaN guards on commands, the averages, the stats)
+	my_cflags = ['-Ofast', '-march=native', '-funroll-loops', '-fno-finite-math-only']
 	my_link_flags = ['-Lsrc', '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/']
 
 telemetry_extra_ldflags = []
@@ -429,6 +431,16 @@ daoApplyGain = bld.program(
 	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
+daoShmSlice = bld.program(
+	source = 'daoShmSlice.c',
+	target = 'daoShmSlice',
+	includes = '../include '+os.getenv('DAOROOT')+'/include/',
+	linkflags = my_link_flags,
+	ldflags = ['-ldao', '-lpthread', '-lm'] + my_ld_flags,
+	use= 'daoTools',
+	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
+	)
+
 downsample_missing = [
     label for available, label in (
         (bld.env.HAVE_CLI11, 'CLI11'),
@@ -475,6 +487,20 @@ if bld.env.CUDA_AVAILABLE:
 		)
 else:
     print("Skipping daoMvMGPU build (CUDA not available).")
+
+# One process running a chain of GPU stages (libdaoToolsGpu), configured in YAML
+if bld.env.CUDA_AVAILABLE and bld.env.YAMLCPP_AVAILABLE and platform.system() != "Darwin":
+	daoGpuPipeline = bld.program(
+		source = 'daoGpuPipeline.cpp',
+		target = 'daoGpuPipeline',
+		includes = ['../include', os.getenv('DAOROOT')+'/include/'] + bld.env.INCLUDES_CUDA,
+		linkflags = my_link_flags + ['-L' + p for p in bld.env.LIBPATH_CUDA],
+		ldflags = ['-ldao', '-lcudart', '-lpthread', '-ldl'] + my_ld_flags,
+		use = ['daoTools', 'daoToolsGpu', 'YAMLCPP'],
+		cxxflags = ['-O2', '-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
+		)
+else:
+	print("Skipping daoGpuPipeline build (needs CUDA and yaml-cpp).")
 
 daoShmConcatenate = bld.program(
 	source = 'daoShmConcatenate.c',

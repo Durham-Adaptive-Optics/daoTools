@@ -43,11 +43,11 @@ struct timespec tnow;
 double tnowdouble;
 double tlastupdatedouble;
 
-char imShmName[32];
-char intensityShmName[32];
-char pixIdShmName[32];
-char validPixShmName[32];
-char validSubPixShmName[32];
+char imShmName[DAO_SHM_NAME_LEN];
+char intensityShmName[DAO_SHM_NAME_LEN];
+char pixIdShmName[DAO_SHM_NAME_LEN];
+char validPixShmName[DAO_SHM_NAME_LEN];
+char validSubPixShmName[DAO_SHM_NAME_LEN];
 int semNb = 0;
 
 static int   		end     = 0;		           // termination flag
@@ -86,10 +86,10 @@ static int realTimeLoop()
     IMAGE *intensityShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *validPixShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *validSubPixShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(imShmName, &imShm[0]);
-    daoShmOpen(intensityShmName, &intensityShm[0]);
-    daoShmOpen(validPixShmName, &validPixShm[0]);
-    daoShmOpen(validSubPixShmName, &validSubPixShm[0]);
+    daoToolsShmOpen(imShmName, &imShm[0]);
+    daoToolsShmOpen(intensityShmName, &intensityShm[0]);
+    daoToolsShmOpen(validPixShmName, &validPixShm[0]);
+    daoToolsShmOpen(validSubPixShmName, &validSubPixShm[0]);
 
     int validPixSize = validPixShm[0].md[0].size[0] * validPixShm[0].md[0].size[1];
 
@@ -219,10 +219,10 @@ static void DecodeArgs(int argc, char **argv)
                         break;
             case 'S':
                         daoInfo("real time control\n");
-                    	(void)sscanf(*argv++,"%s", imShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", intensityShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", validPixShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", validSubPixShmName); argc -= 1;
+                    	daoToolsArgName(imShmName, sizeof imShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(intensityShmName, sizeof intensityShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(validPixShmName, sizeof validPixShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(validSubPixShmName, sizeof validSubPixShmName, *argv++); argc -= 1;
                         daoInfo("imShmName = %s\n", imShmName);
                         daoInfo("intensityShmName = %s\n", intensityShmName);
                         daoInfo("validPixShmName = %s\n", validPixShmName);

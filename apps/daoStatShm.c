@@ -47,9 +47,9 @@ double dt_update; // time since last update
 double dt_update_lim = 3600.0; // if no command is received during this time, set DM to zero V [sec]
 
 
-char shmName[32];
-char shmNameAvg[64];
-char shmNameRms[64];
+char shmName[DAO_SHM_NAME_LEN];
+char shmNameAvg[DAO_SHM_NAME_LEN];
+char shmNameRms[DAO_SHM_NAME_LEN];
 int popSize=100;
 int semNb = 0;
 
@@ -86,10 +86,12 @@ void * statRealTimeLoop(void *thread_data)
     IMAGE *shm = (IMAGE *)malloc(sizeof(IMAGE));
     IMAGE *shmAvg = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *shmRms = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(shmName, &shm[0]);
+    daoToolsShmOpen(shmName, &shm[0]);
 
-    daoToolsInsertShmNamePrefix(shmName, "Avg", shmNameAvg);
-    daoToolsInsertShmNamePrefix(shmName, "Rms", shmNameRms);
+    if (daoToolsInsertShmNamePrefixN(shmName, "Avg", shmNameAvg, sizeof shmNameAvg) != DAO_SUCCESS)
+        exit(EXIT_FAILURE);
+    if (daoToolsInsertShmNamePrefixN(shmName, "Rms", shmNameRms, sizeof shmNameRms) != DAO_SUCCESS)
+        exit(EXIT_FAILURE);
     // Create size array, using 2D of 1x1... can be change to 1D
     uint32_t size[2];
     size[0] = shm[0].md[0].size[0];
@@ -271,7 +273,7 @@ static void DecodeArgs(int argc, char **argv)
                         break;
             case 'S':
                         daoInfo("Average & RMS Telemetry real time control\n");
-                        (void)sscanf(*argv++,"%s", shmName); argc -= 1;
+                        daoToolsArgName(shmName, sizeof shmName, *argv++); argc -= 1;
                         break;
             case 'n':	
                         (void)sscanf(*argv++,"%d",&popSize); argc -= 1;	

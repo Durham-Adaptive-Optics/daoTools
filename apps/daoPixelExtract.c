@@ -44,10 +44,10 @@ double tnowdouble;
 double tlastupdatedouble;
 
 
-char inShmName[32];
+char inShmName[DAO_SHM_NAME_LEN];
 int semNb = 0;
-char maskShmName[32];
-char extractShmName[32];
+char maskShmName[DAO_SHM_NAME_LEN];
+char extractShmName[DAO_SHM_NAME_LEN];
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -86,9 +86,9 @@ static int realTimeLoop()
     inShm = (IMAGE*) malloc(sizeof(IMAGE));
     maskShm = (IMAGE*) malloc(sizeof(IMAGE));
     extractShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(inShmName, &inShm[0]);
-    daoShmOpen(maskShmName, &maskShm[0]);
-    daoShmOpen(extractShmName, &extractShm[0]);
+    daoToolsShmOpen(inShmName, &inShm[0]);
+    daoToolsShmOpen(maskShmName, &maskShm[0]);
+    daoToolsShmOpen(extractShmName, &extractShm[0]);
 
     daoInfo("Starting loop, %s/%s \n",inShmName, extractShmName);
     fflush(stdout);
@@ -175,9 +175,9 @@ static void DecodeArgs(int argc, char **argv)
                         break;
                         break;
             case 'S':
-                    	(void)sscanf(*argv++,"%s",inShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s",maskShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s",extractShmName); argc -= 1;
+                    	daoToolsArgName(inShmName, sizeof inShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(maskShmName, sizeof maskShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(extractShmName, sizeof extractShmName, *argv++); argc -= 1;
                         daoInfo("image in         : %s\n", inShmName);
                         daoInfo("mask             : %s\n", maskShmName);
                         daoInfo("extracted image  : %s\n", extractShmName);

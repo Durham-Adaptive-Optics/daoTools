@@ -47,10 +47,10 @@ double dt_update; // time since last update
 double dt_update_lim = 3600.0; // if no command is received during this time, set DM to zero V [sec]
 
 
-char shmName[32];
+char shmName[DAO_SHM_NAME_LEN];
 int semNb = 0;
-char shmNameAvg[64];
-char shmNameRms[64];
+char shmNameAvg[DAO_SHM_NAME_LEN];
+char shmNameRms[DAO_SHM_NAME_LEN];
 int popSize=100;
 
 static int   		end     = 0;		           // termination flag
@@ -86,7 +86,7 @@ void * statRealTimeLoop(void *thread_data)
     IMAGE *shm = (IMAGE *)malloc(sizeof(IMAGE));
     IMAGE *shmAvg = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *shmRms = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(shmName, &shm[0]);
+    daoToolsShmOpen(shmName, &shm[0]);
     //daoShmOpen(shmNameAvg, &shmAvg[0]);
     //daoShmOpen(shmNameRms, &shmRms[0]);
 
@@ -273,9 +273,11 @@ static void DecodeArgs(int argc, char **argv)
                         (void)usleep(a1);
                         break;
             case 'S':	
-                        (void)sscanf(*argv++,"%s",shmName); argc -= 1;
-                        daoToolsInsertShmNamePrefix(shmName, "Avg", shmNameAvg);
-                        daoToolsInsertShmNamePrefix(shmName, "Rms", shmNameRms);
+                        daoToolsArgName(shmName, sizeof shmName, *argv++); argc -= 1;
+                        if (daoToolsInsertShmNamePrefixN(shmName, "Avg", shmNameAvg, sizeof shmNameAvg) != DAO_SUCCESS)
+                            exit(EXIT_FAILURE);
+                        if (daoToolsInsertShmNamePrefixN(shmName, "Rms", shmNameRms, sizeof shmNameRms) != DAO_SUCCESS)
+                            exit(EXIT_FAILURE);
                         daoInfo("SHM = %s\n", shmName);
                         daoInfo("SHM Avg = %s\n", shmNameAvg);
                         daoInfo("SHM Rms = %s\n", shmNameRms);

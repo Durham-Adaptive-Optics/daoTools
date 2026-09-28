@@ -31,7 +31,22 @@ Extracts the local (basename) portion of a shared memory file path, stripping th
                                      const char* prefix,
                                      char* final_string);
 
-Inserts a prefix into an SHM name, preserving the directory path and extension. Useful for generating paired SHM files (e.g. ``camera.im.shm`` → ``refcamera.im.shm``).
+Inserts a prefix into an SHM name, preserving the directory path and extension. Useful for generating paired SHM files (e.g. ``camera.im.shm`` → ``refcamera.im.shm``). It writes at most 128 bytes; ``daoToolsInsertShmNamePrefixN`` takes the buffer size and returns ``DAO_ERROR`` if the name does not fit.
+
+.. code-block:: c
+
+    int  daoToolsInsertShmNamePrefixN(const char* base_string, const char* prefix,
+                                      char* final_string, size_t size);
+    void daoToolsArgName(char* dst, size_t size, const char* arg);
+    void daoToolsShmOpen(const char* name, IMAGE* image);
+
+SHM names are at most ``DAO_SHM_NAME_LEN - 1`` characters (``dao.h``; with an
+older ``dao.h``, the size of ``IMAGE.name``): name buffers are
+``char name[DAO_SHM_NAME_LEN]``. ``daoToolsArgName`` copies a name given on the
+command line and exits with an error if it does not fit, rather than
+overflowing the buffer. ``daoToolsShmOpen`` is ``daoShmOpen`` exiting with an
+error when the SHM cannot be opened, rather than letting a tool run on an
+unopened ``IMAGE``.
 
 
 Network Utilities

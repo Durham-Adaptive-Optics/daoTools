@@ -43,11 +43,11 @@ struct timespec tnow;
 double tnowdouble;
 double tlastupdatedouble;
 
-char inShmName[32];
-char refImageShmName[32];
-char centroidShmName[32];
-char thresholdShmName[32];
-char subApCentreShmName[32];
+char inShmName[DAO_SHM_NAME_LEN];
+char refImageShmName[DAO_SHM_NAME_LEN];
+char centroidShmName[DAO_SHM_NAME_LEN];
+char thresholdShmName[DAO_SHM_NAME_LEN];
+char subApCentreShmName[DAO_SHM_NAME_LEN];
 int subaSize;
 int nbSuba;
 int searchRange;
@@ -113,11 +113,11 @@ static int realTimeLoop()
     IMAGE *subApCentreShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *refImageShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *thresholdShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(inShmName, &inShm[0]);
-    daoShmOpen(centroidShmName, &centroidShm[0]);
-    daoShmOpen(subApCentreShmName, &subApCentreShm[0]);
-    daoShmOpen(refImageShmName, &refImageShm[0]);
-    daoShmOpen(thresholdShmName, &thresholdShm[0]);
+    daoToolsShmOpen(inShmName, &inShm[0]);
+    daoToolsShmOpen(centroidShmName, &centroidShm[0]);
+    daoToolsShmOpen(subApCentreShmName, &subApCentreShm[0]);
+    daoToolsShmOpen(refImageShmName, &refImageShm[0]);
+    daoToolsShmOpen(thresholdShmName, &thresholdShm[0]);
 
     int inSize = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
     struct timespec t[3];
@@ -245,11 +245,11 @@ static void DecodeArgs(int argc, char **argv)
                         break;
             case 'S':
                         daoInfo("Correlation centroider from SHM real time control\n");
-                    	(void)sscanf(*argv++,"%s", inShmName); argc -= 1;
-                        (void)sscanf(*argv++,"%s", centroidShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", subApCentreShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", refImageShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", thresholdShmName); argc -= 1;
+                    	daoToolsArgName(inShmName, sizeof inShmName, *argv++); argc -= 1;
+                        daoToolsArgName(centroidShmName, sizeof centroidShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(subApCentreShmName, sizeof subApCentreShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(refImageShmName, sizeof refImageShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(thresholdShmName, sizeof thresholdShmName, *argv++); argc -= 1;
                     	(void)sscanf(*argv++,"%d", &subaSize); argc -= 1;
                     	(void)sscanf(*argv++,"%d", &nbSuba); argc -= 1;
                     	(void)sscanf(*argv++,"%d", &searchRange); argc -= 1;

@@ -58,12 +58,12 @@ double tlastupdatedouble;
 #define CONCATENATE_MAX 16
 
 IMAGE *shmOut;
-char shmOutName[32];
+char shmOutName[DAO_SHM_NAME_LEN];
 int nbShm;
 int masterChannel=-1;
 // Max 16 different SHM to combine
 IMAGE *shmIn[CONCATENATE_MAX];
-char shmName[CONCATENATE_MAX][32];
+char shmName[CONCATENATE_MAX][DAO_SHM_NAME_LEN];
 int updateCnt[CONCATENATE_MAX];
 int shmPos[CONCATENATE_MAX];
 
@@ -196,14 +196,14 @@ static int prepRealTime()
     signal(SIGINT, endme);
 
     shmOut = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(shmOutName, &shmOut[0]);
+    daoToolsShmOpen(shmOutName, &shmOut[0]);
     daoInfo("%s shm created\n", shmOutName);
     
     // create shm (/tmp/<shmName><nameId>.im.shm)
     for (k=0; k<nbShm; k++)
     {
         shmIn[k] = (IMAGE *)malloc(sizeof(IMAGE));
-        daoShmOpen(shmName[k], &shmIn[k][0]);
+        daoToolsShmOpen(shmName[k], &shmIn[k][0]);
         daoInfo("%s shm created\n", shmName[k]);
         updateCnt[k] = 0;
         if (k==0)
@@ -303,13 +303,13 @@ static void DecodeArgs(int argc, char **argv)
                         argc -= 1;	
                         break;
             case 'O':
-                        (void)sscanf(*argv++,"%s", shmOutName);
+                        daoToolsArgName(shmOutName, sizeof shmOutName, *argv++);
                         daoInfo("shmOutName: %s \n", shmOutName);
                         break;
             case 'S':
                         for (k=0; k<nbShm; k++)
                         {
-                            (void)sscanf(*argv++,"%s", shmName[k]);
+                            daoToolsArgName(shmName[k], sizeof shmName[k], *argv++);
                             daoInfo("shm%dName: %s \n", k, shmName[k]);
                         }
                         break;

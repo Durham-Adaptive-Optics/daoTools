@@ -47,8 +47,8 @@ double tlastupdatedouble;
 IMAGE *inShm;
 
 
-char shmName[32];
-char outputPath[32];
+char shmName[DAO_SHM_NAME_LEN];
+char outputPath[DAO_SHM_NAME_LEN];
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -84,7 +84,7 @@ static int realTimeLoop()
     daoInfo("Ouput folder = %s", outputPath);
     fflush(stdout);
     inShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(shmName, &inShm[0]);
+    daoToolsShmOpen(shmName, &inShm[0]);
 
     //int nbInVal = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
     struct timespec t[3];
@@ -161,8 +161,8 @@ static void DecodeArgs(int argc, char **argv)
                         break;
             case 'L':
                         daoInfo("convert SHM to Fits file\n");
-                    	(void)sscanf(*argv++,"%s",shmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s",outputPath); argc -= 1;
+                    	daoToolsArgName(shmName, sizeof shmName, *argv++); argc -= 1;
+                    	daoToolsArgName(outputPath, sizeof outputPath, *argv++); argc -= 1;
                         realTimeLoop();
                         break;
             default:

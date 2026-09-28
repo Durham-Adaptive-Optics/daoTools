@@ -49,8 +49,8 @@ double dt_update_lim = 3600.0; // if no command is received during this time, se
 IMAGE *shm;
 IMAGE *shmAvg;
 
-char shmName[32];
-char shmNameAvg[32];
+char shmName[DAO_SHM_NAME_LEN];
+char shmNameAvg[DAO_SHM_NAME_LEN];
 int nbAvg=100;
 int semNb=0;
 
@@ -87,10 +87,11 @@ static int realTimeLoop()
     signal(SIGINT, endme);
 
     shm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(shmName, &shm[0]);
+    daoToolsShmOpen(shmName, &shm[0]);
     // Create receiving Avg SHM
     shmAvg = (IMAGE*) malloc(sizeof(IMAGE));
-    daoToolsInsertShmNamePrefix(shmName, "Avg", shmNameAvg);
+    if (daoToolsInsertShmNamePrefixN(shmName, "Avg", shmNameAvg, sizeof shmNameAvg) != DAO_SUCCESS)
+        exit(EXIT_FAILURE);
     uint32_t size[2];
     size[0] = shm[0].md[0].size[0];
     size[1] = shm[0].md[0].size[1];
@@ -213,7 +214,7 @@ static void DecodeArgs(int argc, char **argv)
                         break;
             case 'S':
                         printf("Average Telemetry real time control\n");
-                        (void)sscanf(*argv++,"%s", shmName);
+                        daoToolsArgName(shmName, sizeof shmName, *argv++);
                         daoInfo("shmName          = %s\n", shmName);
                         break;
             case 'n':	(void)sscanf(*argv++,"%d",&nbAvg); 

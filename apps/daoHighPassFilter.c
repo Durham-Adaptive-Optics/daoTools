@@ -46,11 +46,11 @@ double tlastupdatedouble;
 double dt_update; // time since last update
 double dt_update_lim = 3600.0; // if no command is received during this time, set DM to zero V [sec]
 
-char inShmName[32];
-char outShmName[32];
-char fcShmName[32];
-char fpsShmName[32];
-char enaShmName[32];
+char inShmName[DAO_SHM_NAME_LEN];
+char outShmName[DAO_SHM_NAME_LEN];
+char fcShmName[DAO_SHM_NAME_LEN];
+char fpsShmName[DAO_SHM_NAME_LEN];
+char enaShmName[DAO_SHM_NAME_LEN];
 int semNb=0;
 
 static int   		end     = 0;		           // termination flag
@@ -95,29 +95,31 @@ static int realTimeLoop()
     IMAGE *enaShm;
 
     fcShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(fcShmName, &fcShm[0]);
+    daoToolsShmOpen(fcShmName, &fcShm[0]);
     fpsShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(fpsShmName, &fpsShm[0]);
+    daoToolsShmOpen(fpsShmName, &fpsShm[0]);
     enaShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(enaShmName, &enaShm[0]);
+    daoToolsShmOpen(enaShmName, &enaShm[0]);
 
-    char inShmNamePrev[32];
-    char outShmNamePrev[32];
+    char inShmNamePrev[DAO_SHM_NAME_LEN];
+    char outShmNamePrev[DAO_SHM_NAME_LEN];
 
     inShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(inShmName, &inShm[0]);
+    daoToolsShmOpen(inShmName, &inShm[0]);
     // Create Prev SHM
     inShmPrev = (IMAGE*) malloc(sizeof(IMAGE));
-    daoToolsInsertShmNamePrefix(inShmName, "Prev", inShmNamePrev);
+    if (daoToolsInsertShmNamePrefixN(inShmName, "Prev", inShmNamePrev, sizeof inShmNamePrev) != DAO_SUCCESS)
+        exit(EXIT_FAILURE);
     size[0] = inShm[0].md[0].size[0];
     size[1] = inShm[0].md[0].size[1];
     daoShmCreate(inShmPrev, inShmNamePrev, 2, size, inShm[0].md[0].atype, 1, 0);
 
     outShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(outShmName, &outShm[0]);
+    daoToolsShmOpen(outShmName, &outShm[0]);
     // Create Prev SHM
     outShmPrev = (IMAGE*) malloc(sizeof(IMAGE));
-    daoToolsInsertShmNamePrefix(outShmName, "Prev", outShmNamePrev);
+    if (daoToolsInsertShmNamePrefixN(outShmName, "Prev", outShmNamePrev, sizeof outShmNamePrev) != DAO_SUCCESS)
+        exit(EXIT_FAILURE);
     size[0] = inShm[0].md[0].size[0];
     size[1] = inShm[0].md[0].size[1];
     daoShmCreate(outShmPrev, inShmNamePrev, 2, size, inShm[0].md[0].atype, 1, 0);
@@ -247,11 +249,11 @@ static void DecodeArgs(int argc, char **argv)
                         (void)usleep(a1);
                         break;
             case 'S':
-                        (void)sscanf(*argv++,"%s", inShmName);
-                        (void)sscanf(*argv++,"%s", outShmName);
-                        (void)sscanf(*argv++,"%s", fcShmName);
-                        (void)sscanf(*argv++,"%s", fpsShmName);
-                        (void)sscanf(*argv++,"%s", enaShmName);
+                        daoToolsArgName(inShmName, sizeof inShmName, *argv++);
+                        daoToolsArgName(outShmName, sizeof outShmName, *argv++);
+                        daoToolsArgName(fcShmName, sizeof fcShmName, *argv++);
+                        daoToolsArgName(fpsShmName, sizeof fpsShmName, *argv++);
+                        daoToolsArgName(enaShmName, sizeof enaShmName, *argv++);
                         daoInfo("inShmName          = %s\n", inShmName);
                         daoInfo("outShmName         = %s\n", outShmName);
                         daoInfo("fcShmName          = %s\n", fcShmName);

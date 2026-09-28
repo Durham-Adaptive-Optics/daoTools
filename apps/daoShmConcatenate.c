@@ -55,8 +55,8 @@ static volatile int gEnd = 0;
 static IMAGE *gShmOut = NULL;
 static IMAGE *gShmIn[NB_SHM] = { NULL, NULL };
 
-static char gShmOutName[256];
-static char gShmInName[NB_SHM][256];
+static char gShmOutName[DAO_SHM_NAME_LEN];
+static char gShmInName[NB_SHM][DAO_SHM_NAME_LEN];
 
 static int  gMasterChannel = -1;     /* -1 => finalize on any input update, 1 => shm1, 2 => shm2 */
 
@@ -227,13 +227,13 @@ static int prepRealTime(void)
         return DAO_ERROR;
     }
 
-    daoShmOpen(gShmOutName, &gShmOut[0]);
+    daoToolsShmOpen(gShmOutName, &gShmOut[0]);
     daoInfo("Connected OUT: %s\n", gShmOutName);
 
-    daoShmOpen(gShmInName[0], &gShmIn[0][0]);
+    daoToolsShmOpen(gShmInName[0], &gShmIn[0][0]);
     daoInfo("Connected IN1: %s\n", gShmInName[0]);
 
-    daoShmOpen(gShmInName[1], &gShmIn[1][0]);
+    daoToolsShmOpen(gShmInName[1], &gShmIn[1][0]);
     daoInfo("Connected IN2: %s\n", gShmInName[1]);
 
     if (validateSizesAndPositions() == DAO_ERROR)
@@ -302,9 +302,9 @@ static void DecodeArgs(int argc, char **argv)
                 break;
 
             case 'S':
-                (void)sscanf(*argv++, "%255s", gShmOutName);
-                (void)sscanf(*argv++, "%255s", gShmInName[0]);
-                (void)sscanf(*argv++, "%255s", gShmInName[1]);
+                daoToolsArgName(gShmOutName, sizeof gShmOutName, *argv++);
+                daoToolsArgName(gShmInName[0], sizeof gShmInName[0], *argv++);
+                daoToolsArgName(gShmInName[1], sizeof gShmInName[1], *argv++);
                 daoInfo("OUT : %s\n", gShmOutName);
                 daoInfo("IN1 : %s\n", gShmInName[0]);
                 daoInfo("IN2 : %s\n", gShmInName[1]);

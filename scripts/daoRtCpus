@@ -1,0 +1,98 @@
+#!/bin/bash
+#
+# daoRtCpus -- print the CPUs to pin real-time processes to, best first.
+#
+# First one logical CPU per physical core, then the other hardware threads of
+# those cores (the processes of a pipeline run one after the other in each
+# frame, so two of them on the two threads of a fast core is still better than
+# a slow core). The core of CPU 0 is left out (it handles most of the system's
+# interrupts and housekeeping). On hybrid Intel CPUs the performance cores come
+# before the efficiency cores (slower, and slower to wake up); on ARM with big
+# and little cores, the biggest cores first (the kernel's cpu_capacity).
+# Linux only: elsewhere (macOS...) it prints nothing, and the start scripts
+# then do not pin.
+#
+# Start scripts give each real-time process its own CPU from this list, in
+# order (taskset -c <cpu> ...), and reuse it from the start if there are more
+# processes than CPUs.
+#
+#   DAO_RT_CPUS="2 4 6"   use this list instead (spaces, commas and ranges accepted)
+#   DAO_RT_CPUS=none      print nothing: do not pin
+#
+# Usage: daoRtCpus          prints e.g. "2 4 6 8 10 3 5 7 9 11 12 13 14"
+
+expand() {                      # "0-3,8" -> "0 1 2 3 8"
+    local part out=""
+    for part in ${1//,/ }; do
+        if [[ "$part" =~ ^([0-9]+)-([0-9]+)$ ]]; then
+            out+=" $(seq -s ' ' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}")"
+        elif [[ "$part" =~ ^[0-9]+$ ]]; then
+            out+=" $part"
+        fi
+    done
+    echo $out
+}
+
+if [ -n "${DAO_RT_CPUS:-}" ]; then
+    [ "$DAO_RT_CPUS" = none ] && exit 0
+    expand "$DAO_RT_CPUS"
+    exit 0
+fi
+
+sys=/sys/devices/system/cpu
+# Linux only: CPU pinning (taskset) and this topology information do not exist elsewhere
+if [ "$(uname -s)" != Linux ] || [ ! -r $sys/online ]; then
+    exit 0
+fi
+online=$(expand "$(cat $sys/online)")
+if [ -r $sys/cpu0/cpu_capacity ] && [ ! -r /sys/devices/cpu_core/cpus ]; then
+    # ARM big.LITTLE / DynamIQ: biggest cores first (relative capacity, 1024 = biggest)
+    order=$(for c in $online; do
+                echo "$(cat $sys/cpu$c/cpu_capacity 2>/dev/null || echo 0) $c"
+            done | sort -k1,1nr -k2,2n | awk '{print $2}' | tr '\n' ' ')
+elif [ -r /sys/devices/cpu_core/cpus ]; then
+    # hybrid Intel CPUs: performance cores first
+    perf=$(expand "$(cat /sys/devices/cpu_core/cpus)")
+    order="$perf"
+    for c in $online; do
+        [[ " $perf " == *" $c "* ]] || order+=" $c"
+    done
+else
+    order="$online"
+fi
+
+core_of() {                     # physical core key of a logical CPU
+    echo "$(cat $sys/cpu$1/topology/physical_package_id 2>/dev/null):$(cat $sys/cpu$1/topology/core_id 2>/dev/null)"
+}
+skip=$(core_of 0)
+# by class (performance / efficiency / ...) in the order above: first threads,
+# then the other threads of the same cores
+class_of() {
+    if [ -r /sys/devices/cpu_core/cpus ]; then
+        [[ " $perf " == *" $1 "* ]] && echo 0 || echo 1
+    elif [ -r $sys/cpu$1/cpu_capacity ]; then
+        cat $sys/cpu$1/cpu_capacity
+    else
+        echo 0
+    fi
+}
+declare -A seen
+first=""; others=""; prev=""
+for c in $order; do
+    cls=$(class_of "$c")
+    if [ -n "$prev" ] && [ "$cls" != "$prev" ]; then     # end of a class: its other threads
+        first+="$others"; others=""
+    fi
+    prev=$cls
+    key=$(core_of "$c")
+    [ "$key" = "$skip" ] && continue
+    if [ -n "${seen[$key]:-}" ]; then
+        others+=" $c"
+    else
+        seen[$key]=1
+        first+=" $c"
+    fi
+done
+out="$first$others"
+[ -z "$out" ] && out=" $(echo $online | cut -d' ' -f1)"   # single-core machine
+echo $out

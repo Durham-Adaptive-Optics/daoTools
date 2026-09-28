@@ -42,9 +42,9 @@ struct timespec tnow;
 double tnowdouble;
 double tlastupdatedouble;
 
-char ocamRawShmName[32];
-char ocamShmName[32];
-char lutShmName[32];
+char ocamRawShmName[DAO_SHM_NAME_LEN];
+char ocamShmName[DAO_SHM_NAME_LEN];
+char lutShmName[DAO_SHM_NAME_LEN];
 int semNb = 0;
 int binning = 1; // binning factor, default is 1 (no binning)
 
@@ -89,9 +89,9 @@ static int realTimeLoop()
     IMAGE *ocamRawShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *ocamShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *lutShm = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(ocamRawShmName, &ocamRawShm[0]);
-    daoShmOpen(ocamShmName, &ocamShm[0]);
-    daoShmOpen(lutShmName, &lutShm[0]);
+    daoToolsShmOpen(ocamRawShmName, &ocamRawShm[0]);
+    daoToolsShmOpen(ocamShmName, &ocamShm[0]);
+    daoToolsShmOpen(lutShmName, &lutShm[0]);
 
     int imgWidth = ocamRawShm[0].md[0].size[0];
     int unscrambledSize = ocamShm[0].md[0].size[0] * ocamShm[0].md[0].size[1];
@@ -224,9 +224,9 @@ static void DecodeArgs(int argc, char **argv)
                         break;
             case 'S':
                         daoInfo("Simple filter from SHM real time control\n");
-                    	(void)sscanf(*argv++,"%s", ocamRawShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", ocamShmName); argc -= 1;
-                    	(void)sscanf(*argv++,"%s", lutShmName); argc -= 1;
+                    	daoToolsArgName(ocamRawShmName, sizeof ocamRawShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(ocamShmName, sizeof ocamShmName, *argv++); argc -= 1;
+                    	daoToolsArgName(lutShmName, sizeof lutShmName, *argv++); argc -= 1;
                         daoInfo("ocamRawShmName = %s\n", ocamRawShmName);
                         daoInfo("ocamShmName = %s\n", ocamShmName);
                         daoInfo("lutShmName = %s\n", lutShmName);

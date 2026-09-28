@@ -79,7 +79,12 @@ High-performance matrix-vector multiply reconstructor. Multiplies the control ma
     daoMvM -m <CM_shm> -v <slopes_shm> -o <dm_shm>
 
 - ``daoMvM.py`` — Python reference implementation (slower, for debugging)
-- ``daoMvMGPU.c`` — GPU-accelerated MVM via CUDA (requires CUDA build)
+- ``daoMvMGPU.c`` — GPU-accelerated MVM via CUDA (requires CUDA build). GPU SHMs
+  (daoBase ``daoShmCreateGpu``) are used in place, with no host copy; the loop
+  then runs on their GPU.
+
+To run several steps on the GPU as one process (calibration, centroiding, MVM,
+gain...), see :doc:`gpu_pipeline`.
 
 
 Pixel Calibration
@@ -157,6 +162,23 @@ Measures and prints the update rate of a SHM stream:
 .. code-block:: bash
 
     daoShmRate.py <shm_file>
+
+daoShmSlice
+~~~~~~~~~~~
+
+Each time the input SHM is published, copies a range of its values into the
+output SHM (from its first value) and publishes it, with the input's ``cnt2``.
+Both SHMs have the same data type; the input may be a GPU SHM (its host copy is
+read).
+
+.. code-block:: bash
+
+    daoShmSlice -S <in_shm> <out_shm> [-o <offset>] [-n <count>] -s <semNb> -L
+
+``-o`` is the first input value copied (default 0), ``-n`` the number of values
+(default: the size of the output SHM). For example, the first half of a
+centroid vector (the slopes) as a separate measurement vector:
+``daoShmSlice -S centroids.im.shm slopes.im.shm -s 2 -L``.
 
 SHM Arithmetic
 ~~~~~~~~~~~~~~

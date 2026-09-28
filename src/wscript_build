@@ -10,7 +10,7 @@ if platform.system() == "Darwin":
     if bld.env.FFTW_AVAILABLE:
         my_link_flags += ['-L' + p for p in bld.env.LIBPATH_FFTW3F + bld.env.LIBPATH_FFTW3]
     my_cxx_flags = ['-std=c++14']
-    my_cflags = ['-O3', '-ffast-math']
+    my_cflags = ['-O3', '-ffast-math', '-fno-finite-math-only']
 else:
     my_ld_flags = ['-lrt']
     my_link_flags = ['-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/']
@@ -18,7 +18,9 @@ else:
     # -march=native: this lib is built and run on the same host (AVX2 + FMA on
     # the EPYC). -Ofast keeps -ffast-math; FTZ/DAZ is set at runtime by
     # daoToolsEnableFTZ() so we do not rely on crtfastmath being linked.
-    my_cflags = ['-Ofast', '-march=native', '-funroll-loops']
+    # -fno-finite-math-only: -Ofast / -ffast-math, but NaN and infinity kept -- without
+    # it isnan() is compiled away (the NaN guards on commands, the averages, the stats)
+    my_cflags = ['-Ofast', '-march=native', '-funroll-loops', '-fno-finite-math-only']
     my_defines = []
 
 daoTools_sources = ['c/daoTools.c']
@@ -41,4 +43,27 @@ bld.shlib(
 	name   = 'daoTools',
 	vnum   = '0.0.1')
 
-
+# GPU stages (daoGpuStages.h), used by daoGpuPipeline: only with CUDA.
+# Built for the GPUs of this host (-arch=native, like -march=native above); when
+# none is visible (no driver loaded), for every current architecture instead,
+# as nvcc's native falls back to an old one.
+if bld.env.CUDA_AVAILABLE and platform.system() != "Darwin":
+	import subprocess
+	try:
+		gpus = subprocess.run(['nvidia-smi', '-L'], capture_output=True, text=True, timeout=10).stdout
+	except Exception:
+		gpus = ''
+	if 'GPU' not in gpus:
+		print("No GPU visible: building libdaoToolsGpu for all GPU architectures.")
+	bld.env.CUDAFLAGS = ['-O3', '-arch=native' if 'GPU' in gpus else '-arch=all-major', '-Xcompiler', '-fPIC']
+	bld.shlib(
+		features = 'cxx cxxshlib',
+		source = ['gpu/daoGpuStages.cu'],
+		includes = ['../include', os.getenv('DAOROOT')+'/include/'] + bld.env.INCLUDES_CUDA,
+		linkflags = my_link_flags + ['-L' + p for p in bld.env.LIBPATH_CUDA],
+		ldflags = ['-ldao', '-lcublas', '-lcudart'] + my_ld_flags,
+		target = 'daoToolsGpu',
+		name   = 'daoToolsGpu',
+		vnum   = '0.0.1')
+else:
+	print("Skipping libdaoToolsGpu build (CUDA not available).")

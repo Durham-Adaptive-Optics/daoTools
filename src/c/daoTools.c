@@ -129,18 +129,45 @@ unsigned daoToolsIp2Int(const char* ip) {
  */
 void daoToolsInsertShmNamePrefix(const char* base_string, const char* prefix, char* final_string) {
     daoTrace("\n");
+    daoToolsInsertShmNamePrefixN(base_string, prefix, final_string, 128);
+}
+
+int daoToolsInsertShmNamePrefixN(const char* base_string, const char* prefix,
+                                 char* final_string, size_t size) {
+    daoTrace("\n");
     const char* suffix = ".im.shm";
     size_t suffix_length = strlen(suffix);
     size_t base_string_length = strlen(base_string);
 
     if (base_string_length <= suffix_length) {
         printf("Invalid string format.\n");
-        return;
+        return DAO_ERROR;
     }
 
     size_t prefix_index = base_string_length - suffix_length;
 
-    snprintf(final_string, 128, "%.*s%s%s", (int)prefix_index, base_string, prefix, suffix);
+    int n = snprintf(final_string, size, "%.*s%s%s", (int)prefix_index, base_string, prefix, suffix);
+    if (n < 0 || (size_t)n >= size) {
+        daoError("SHM name %.*s%s%s is too long (max %zu characters)\n",
+                 (int)prefix_index, base_string, prefix, suffix, size - 1);
+        return DAO_ERROR;
+    }
+    return DAO_SUCCESS;
+}
+
+void daoToolsArgName(char* dst, size_t size, const char* arg) {
+    if (strlen(arg) >= size) {
+        daoError("Name %s is too long (max %zu characters)\n", arg, size - 1);
+        exit(EXIT_FAILURE);
+    }
+    strcpy(dst, arg);
+}
+
+void daoToolsShmOpen(const char* name, IMAGE* image) {
+    if (daoShmOpen(name, image) != DAO_SUCCESS) {
+        daoError("Cannot open SHM %s\n", name);
+        exit(EXIT_FAILURE);
+    }
 }
 
 /* sched_setscheduler(SCHED_FIFO, priority) silently does nothing if this
