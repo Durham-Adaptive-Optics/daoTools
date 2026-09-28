@@ -60,75 +60,62 @@ static char	*sArgv0=NULL;					/* name of executable */
 
 static void ShowHelp(void)
 {
-    daoInfo("%s of " __DATE__ " at " __TIME__ "\n",sArgv0);
-    daoInfo("   arguments:\n");
-    daoInfo("   -h               display this message and exit\n");
-    daoInfo("   -d               display program debug output\n");
-    daoInfo("   -S               list of SHM (full path separated by space)\n");
-    daoInfo("   -s               semaphore number\n");
-    daoInfo("   -L               start real-time loop\n");
-    daoInfo("   usage:\n");
-    daoInfo("   -S <out SHM> <clock SHM> [-s <semNb>] -L\n");
-    daoInfo("\n");
+    printf("%s of " __DATE__ " at " __TIME__ "\n", sArgv0);
+    printf("   arguments:\n");
+    printf("   -h               display this message and exit\n");
+    printf("   -d <level>       log level: 0 warnings and errors (default), 1 info, 2 debug, 3 trace\n");
+    printf("   -S               list of SHM (full path separated by space)\n");
+    printf("   -s <semNb>       a fixed semaphore to wait on (default: one of its own)\n");
+    printf("   -L               start the real-time loop (after the other options)\n");
+    printf("   usage:\n");
+    printf("   -S <out SHM> <clock SHM> [-s <semNb>] -L\n");
+    printf("\n");
 }
 
 /*--------------------------------------------------------------------------*/
 static int realTimeLoop()
 {
     // register interrupt signal to terminate the main loop
-    signal(SIGINT, endme);
-    IMAGE *outShm;
-    IMAGE *clockShm;
-
-
+    daoToolsOnExitSignals(endme);   // Ctrl+C, kill, tmux kill-session
     daoInfo("Starting loop, %s \n", outShmName);
-    fflush(stdout);
-    outShm = (IMAGE*) malloc(sizeof(IMAGE));
+    IMAGE *outShm = (IMAGE *)malloc(sizeof(IMAGE));
+    IMAGE *clockShm = (IMAGE *)malloc(sizeof(IMAGE));
     daoToolsShmOpen(outShmName, &outShm[0]);
-    clockShm = (IMAGE*) malloc(sizeof(IMAGE));
     daoToolsShmOpen(clockShmName, &clockShm[0]);
-
     int outSize = outShm[0].md[0].size[0]*outShm[0].md[0].size[1];
-    struct timespec t[4];
-    double elapsedTime;
-    clock_gettime(CLOCK_REALTIME, &t[1]);
+    daoToolsShmCheck(outShm, outShmName, _DATATYPE_UINT16, outSize);
+    uint16_t *outCmd = malloc((size_t)outSize * sizeof(uint16_t));
+    if (outCmd == NULL)
+    {
+        daoError("cannot allocate %d values\n", outSize);
+        exit(EXIT_FAILURE);
+    }
     int k;
-    uint16_t outCmd[outSize];
-    const uint16_t MAX14 = (1u << 14) - 1; // 16383    
-    // time out for semaphore wait
-    struct timespec timeout;
-    timeout.tv_sec = 1; // 1 second timeout
+    const uint16_t MAX14 = (1u << 14) - 1;  // uniform in [0, 16383]
+    daoToolsLoopStatus status;
+    daoToolsLoopStatusInit(&status);
     while (end ==0)
     {
-        // Wait for the clock frame using semaphore
-        if (daoShmWaitSemTimeout(clockShm, semNb, &timeout) != -1)
+        // one frame per frame of the clock SHM
+        if (daoToolsWait(clockShm, semNb, 1.0) == DAO_SUCCESS)
         {
-            t[0] = t[1];
+            daoToolsLoopStatusStart(&status);
             outShm[0].md[0].cnt2 = outShm[0].md[0].cnt2 + 1;
-            clock_gettime(CLOCK_REALTIME, &t[2]);
             for (k = 0; k < outSize; k++)
-            {
-                // Uniform in [0, MAX14]
                 outCmd[k] = (uint16_t)(rand() % (MAX14 + 1));
-            }
-
-            daoShmSetData(&outShm[0], (unsigned short *)outCmd, outSize);
-
-            clock_gettime(CLOCK_REALTIME, &t[1]);
-            elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
-            elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
-            printf("\rfps = %.3f Hz, out[%d, %d,...,%d]", 1e6 / (1000 * elapsedTime),
-                   outShm[0].array.UI16[0],
-                   outShm[0].array.UI16[1],
-                   outShm[0].array.UI16[outSize - 1]);
-            fflush(stdout);
+            daoShmSetData(&outShm[0], outCmd, outSize);
+            daoToolsLoopStatusEnd(&status, NULL);
+        }
+        else
+        {
+            daoToolsLoopStatusWait(&status);
         }
     }
-
-
+    free(outCmd);
+    printf("\n");
     daoInfo("EXITING MAIN LOOP\n");
-    fflush(stdout);
-
+    daoToolsShmRelease(&outShm);
+    daoToolsShmRelease(&clockShm);
     return 0;
 }
 
@@ -158,29 +145,31 @@ static void DecodeArgs(int argc, char **argv)
             case 'h':	
                         ShowHelp();
                         exit(0);
-            case 'd':	
-                        (void)sscanf(*argv++,"%d",&daoLogLevel); argc -= 1;
-                        break;
+            case 'd':
+                daoLogLevel = daoToolsArgInt(&argc, &argv, str);
+                break;
             case 'l':
-                        daoInfo("%s\n",*argv);
-                        argv += 1; argc -= 1;
-                        break;
+                daoInfo("%s\n", daoToolsArgValue(&argc, &argv, str));
+                break;
             case 'u':
-                        (void)sscanf(*argv++,"%d",&a1); argc -= 1;
-                        daoDebug("will sleep for %d usec\n",a1);
-                        (void)usleep(a1);
-                        break;
+                a1 = daoToolsArgInt(&argc, &argv, str);
+                daoDebug("will sleep for %d usec\n", a1);
+                (void)usleep(a1);
+                break;
             case 'S':
                         daoInfo("Simple writer from SHM real time control\n");
-                    	daoToolsArgName(outShmName, sizeof outShmName, *argv++); argc -= 1;
-                        daoToolsArgName(clockShmName, sizeof clockShmName, *argv++); argc -= 1;
+                        daoToolsArgNameNext(&argc, &argv, str, outShmName, sizeof outShmName);
+                        daoToolsArgNameNext(&argc, &argv, str, clockShmName, sizeof clockShmName);
                         break;
-            case 's':	
-                        (void)sscanf(*argv++,"%d", &semNb); argc -= 1;
-                        daoInfo("inputShm sem       = %d \n", semNb);
-                        break;
+            case 's':
+                semNb = daoToolsArgInt(&argc, &argv, str);
+                daoInfo("inputShm sem       = %d \n", semNb);
+                break;
             case 'L':
-                        realTimeLoop();
+                if (realTimeLoop() != 0)         /* could not start, or failed (see above) */
+                {
+                    exit(EXIT_FAILURE);
+                }
                         break;
             default:
                         daoError("Do not know arg '%s'\n",str);
@@ -203,6 +192,11 @@ int main(int argc, char **argv)
     // r = seteuid(euid_real);//Go back to normal privileges
 
     sArgv0 = *argv;
+    if (argc < 2)
+    {                    /* nothing to do: say how */
+        ShowHelp();
+        return 1;
+    }
 
     DecodeArgs(argc,argv);
 

@@ -72,8 +72,6 @@ float frequency;
 // Thread
 pthread_t controllerThread[CONCATENATE_MAX];
 int threadIdCtrl = 0;
-pthread_t finalCtrlThread;
-int threadIdFinalCtrl = 0;
 
 struct arg_struct {
     int shmId;
@@ -93,98 +91,69 @@ static char	*sArgv0=NULL;					/* name of executable */
 
 static void ShowHelp(void)
 {
-    daoInfo("%s of " __DATE__ " at " __TIME__ "\n",sArgv0);
-    daoInfo("   arguments:\n");
-    daoInfo("   -h               display this message and exit\n");
-    daoInfo("   -d               display program debug output\n");
-    daoInfo("   -n               number of SHM to concanenate\n");
-    daoInfo("   -O               name of output SHM\n");
-    daoInfo("   -S               list of SHM (full path separated by space)\n");
-    daoInfo("   -s               semaphore number\n");
-    daoInfo("   -L               start real-time loop\n");
-    daoInfo("   usage:\n");
-    daoInfo("      -n <nbShm> -O <SHM> -S <SHM1>..<SHMnbShm> -L\n");
-    daoInfo("\n");
+    printf("%s of " __DATE__ " at " __TIME__ "\n", sArgv0);
+    printf("   arguments:\n");
+    printf("   -h               display this message and exit\n");
+    printf("   -d <level>       log level: 0 warnings and errors (default), 1 info, 2 debug, 3 trace\n");
+    printf("   -n <nb>          number of SHMs to concatenate (1 to 16), before -S\n");
+    printf("   -O <SHM>         the output SHM (holds all the inputs, one after the other)\n");
+    printf("   -S               list of SHM (full path separated by space)\n");
+    printf("   -L               start the real-time loop (after the other options)\n");
+    printf("   usage:\n");
+    printf("      -n <nbShm> -O <SHM> -S <SHM1>..<SHMnbShm> -L\n");
+    printf("\n");
 }
 /*--------------------------------------------------------------------------*/
+// The inputs' updates, counted under a mutex: the output is published when each input
+// was updated once since the last publication (an input updated twice starts over).
+static pthread_mutex_t concatMutex = PTHREAD_MUTEX_INITIALIZER;
+static daoToolsLoopStatus loopStatus;
+
 void * shmNRealTimeLoop(void *thread_data)
 {
     struct arg_struct *args = (struct arg_struct *)thread_data;
-    daoInfo("ThreadId=%d ENTERING LOOP\n", args->shmId);
-
-    fflush(stdout);
-    struct timespec t[2];
-    clock_gettime(CLOCK_REALTIME, &t[1]);
-    int nbVal = shmIn[args->shmId][0].md[0].size[0] * shmIn[args->shmId][0].md[0].size[1];
-    struct timespec timeout;
-    clock_gettime(CLOCK_REALTIME, &t[0]);
-    while (end==0) 
-    {
-        // Wait for SHM semaphore
-        clock_gettime(CLOCK_REALTIME, &timeout);
-        timeout.tv_sec +=1;
-        if (daoShmWaitSemTimeout(shmIn[args->shmId], DAO_SEM_AUTO, &timeout) != -1)
-        {
-            daoShmCopyToPosition(shmIn[args->shmId], shmOut, nbVal, shmPos[args->shmId], 0);
-            clock_gettime(CLOCK_REALTIME, &t[0]);
-            updateCnt[args->shmId] ++;
-        }
-    }
-
-    daoInfo("EXITING MAIN LOOP\n");
-    fflush(stdout);
-
-    return DAO_SUCCESS;
-}
-    
-void * finalizeRealTimeLoop(void *thread_data)
-{
-    daoInfo("ThreadId=%p\n", thread_data);
-    fflush(stdout);
-    struct timespec tStart, tEnd;
-    clock_gettime(CLOCK_REALTIME, &tStart);
-    int sum = 0;
+    int id = args->shmId;
+    daoInfo("ThreadId=%d ENTERING LOOP\n", id);
+    int nbVal = shmIn[id][0].md[0].size[0] * shmIn[id][0].md[0].size[1];
     int k;
-    int cnt = 0; // Counter for the number of concatenations
-    double elapsedTimeMs, frequency;
-    while (end == 0) 
+    while (end == 0)
     {
-        sum = 0; // Reset sum at the start of each iteration
+        if (daoToolsWait(shmIn[id], DAO_SEM_AUTO, 1.0) != DAO_SUCCESS)
+        {
+            if (id == 0)                          /* one thread reports the waits */
+            {
+                pthread_mutex_lock(&concatMutex);
+                daoToolsLoopStatusWait(&loopStatus);
+                pthread_mutex_unlock(&concatMutex);
+            }
+            continue;
+        }
+        pthread_mutex_lock(&concatMutex);
+        daoToolsLoopStatusStart(&loopStatus);
+        daoShmCopyToPosition(shmIn[id], shmOut, nbVal, shmPos[id], 0);
+        if (++updateCnt[id] > 1)
+        {
+            daoWarning("overcount for shm%d (%d), resetting only this SHM\n", id + 1, updateCnt[id]);
+            updateCnt[id] = 0;
+        }
+        int all = 1;
         for (k = 0; k < nbShm; k++)
         {
-            if (updateCnt[k] == 1)
-            {
-                sum += 1; // Count SHMs that are updated
-            }
-            else if (updateCnt[k] > 1)
-            {
-                daoWarning("overcount for shm%d (%d), resetting only this SHM\n", k + 1, updateCnt[k]);
-                updateCnt[k] = 0; // Reset only the overcounted SHM
-            }
+            all &= (updateCnt[k] == 1);
         }
-        if (sum == nbShm) // Check if all SHMs are updated
+        if (all)
         {
             for (k = 0; k < nbShm; k++)
             {
-                updateCnt[k] = 0; // Reset counters after finalizing
+                updateCnt[k] = 0;
             }
             daoShmSetDataPartFinalize(&shmOut[0]);
-            cnt++; // Increment the counter
-
-            // Calculate time spent and frequency
-            clock_gettime(CLOCK_REALTIME, &tEnd);
-            elapsedTimeMs = ((tEnd.tv_sec - tStart.tv_sec) * 1000.0) + ((tEnd.tv_nsec - tStart.tv_nsec) / 1e6);
-            frequency = 1000.0 / elapsedTimeMs; // Frequency in Hz (1 / elapsed time in seconds)
-
-            printf("\r concatenate finalized: %d, time spent: %.3f ms, frequency: %.3f Hz", cnt, elapsedTimeMs, frequency);
-            fflush(stdout);
-
-            clock_gettime(CLOCK_REALTIME, &tStart); // Reset start time for the next iteration
+            daoToolsLoopStatusEnd(&loopStatus, ", %d inputs", nbShm);
         }
+        pthread_mutex_unlock(&concatMutex);
     }
-    daoInfo("EXITING Finalizer LOOP\n");
-    fflush(stdout);
-    return DAO_SUCCESS;
+    daoInfo("EXITING MAIN LOOP (thread %d)\n", id);
+    return NULL;
 }
 
 /*--------------------------------------------------------------------------*/
@@ -193,8 +162,13 @@ static int prepRealTime()
     int status;
     int k;
     // register interrupt signal to terminate the main loop
-    signal(SIGINT, endme);
+    daoToolsOnExitSignals(endme);   // Ctrl+C, kill, tmux kill-session
 
+    if (nbShm < 1 || nbShm > CONCATENATE_MAX)
+    {
+        daoError("-n: 1 to %d inputs\n", CONCATENATE_MAX);
+        exit(2);
+    }
     shmOut = (IMAGE*) malloc(sizeof(IMAGE));
     daoToolsShmOpen(shmOutName, &shmOut[0]);
     daoInfo("%s shm created\n", shmOutName);
@@ -216,6 +190,10 @@ static int prepRealTime()
         }
         daoInfo("SHM%d to position %d\n", k, shmPos[k]);
     }
+    // the output holds every input, one after the other
+    long total = shmPos[nbShm - 1] + (long)shmIn[nbShm - 1][0].md[0].size[0] * shmIn[nbShm - 1][0].md[0].size[1];
+    daoToolsShmCheck(shmOut, shmOutName, -1, total);
+    daoToolsLoopStatusInit(&loopStatus);
 
     clock_t launch, done;
     double diff;
@@ -245,15 +223,17 @@ static int prepRealTime()
             return DAO_ERROR;
         }
     }
-    // Create finalizer Thread
-    if (pthread_create(&finalCtrlThread, NULL, finalizeRealTimeLoop, (void *)&threadIdFinalCtrl) != 0)
+    for (k = 0; k < nbShm; k++)
     {
-        daoError("Cannot create finalizer controller thead\n");
-        return DAO_ERROR;
+        pthread_join(controllerThread[k], NULL);
     }
-    // join last thread
-    pthread_join(finalCtrlThread, NULL);
 
+    printf("\n");
+    daoToolsShmRelease(&shmOut);
+    for (k = 0; k < nbShm; k++)
+    {
+        daoToolsShmRelease(&shmIn[k]);
+    }
     return DAO_SUCCESS;
 }
 
@@ -284,38 +264,43 @@ static void DecodeArgs(int argc, char **argv)
             case 'h':	
                         ShowHelp(); 
                         exit(0);
-	        case 'd':	
-			            (void)sscanf(*argv++,"%d",&daoLogLevel); 
-                        argc -= 1;
-			            break;
+	        case 'd':
+                    daoLogLevel = daoToolsArgInt(&argc, &argv, str);
+                    break;
             case 'l':
-                        daoInfo("%s\n",*argv);
-                        argv += 1; argc -= 1;
-                        break;
+                daoInfo("%s\n", daoToolsArgValue(&argc, &argv, str));
+                break;
             case 'u':
-                        (void)sscanf(*argv++,"%d",&a1); argc -= 1;
-                        daoDebug("will sleep for %d usec\n",a1);
-                        (void)usleep(a1);
-                        break;
-            case 'n':	
-                        (void)sscanf(*argv++,"%d",&nbShm); 
-                        daoInfo("nbShm  : %d \n", nbShm);
-                        argc -= 1;	
-                        break;
+                a1 = daoToolsArgInt(&argc, &argv, str);
+                daoDebug("will sleep for %d usec\n", a1);
+                (void)usleep(a1);
+                break;
+            case 'n':
+                nbShm = daoToolsArgInt(&argc, &argv, str);
+                daoInfo("nbShm  : %d \n", nbShm);
+                break;
             case 'O':
-                        daoToolsArgName(shmOutName, sizeof shmOutName, *argv++);
-                        daoInfo("shmOutName: %s \n", shmOutName);
-                        break;
+                daoToolsArgNameNext(&argc, &argv, str, shmOutName, sizeof shmOutName);
+                daoInfo("shmOutName: %s \n", shmOutName);
+                break;
             case 'S':
+                if (nbShm < 1 || nbShm > CONCATENATE_MAX)
+                {
+                    daoError("-S: give -n <nb inputs> (1 to %d) first\n", CONCATENATE_MAX);
+                    exit(2);
+                }
                         for (k=0; k<nbShm; k++)
                         {
-                            daoToolsArgName(shmName[k], sizeof shmName[k], *argv++);
+                            daoToolsArgNameNext(&argc, &argv, str, shmName[k], sizeof shmName[k]);
                             daoInfo("shm%dName: %s \n", k, shmName[k]);
                         }
                         break;
             case 'L':
                         daoInfo("SHM Combiner real time control\n");
-                        prepRealTime();
+                        if (prepRealTime() != 0)         /* could not start, or failed (see above) */
+                        {
+                            exit(EXIT_FAILURE);
+                        }
                         break;
             default:
                         daoError("Do not know arg '%s'\n",str);
@@ -337,6 +322,11 @@ int main(int argc, char **argv)
     // r = seteuid(euid_real);//Go back to normal privileges
 
     sArgv0 = *argv;
+    if (argc < 2)
+    {                    /* nothing to do: say how */
+        ShowHelp();
+        return 1;
+    }
 
     DecodeArgs(argc,argv);
 

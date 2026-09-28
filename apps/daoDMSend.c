@@ -1,108 +1,108 @@
+/*****************************************************************************
+  DAO project
+  daoDMSend: send each new DM command of an SHM over UDP
+ *****************************************************************************/
 #include <stdio.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
-#include <signal.h>
 #include <time.h>
-#include <dao.h>
 
-// Forward declarations for functions that will replace dao/she library
-// You'll need to implement these based on your library
-// # void* initialize_shm(const char* filename);
-// # void* get_shm_data(void* shm, int check);
-// # int get_data_size(void* shm);
-// # // End of forward declarations
+#include "daoTools.h"
 
-int running = 1;
+static volatile int end = 0;               // termination flag
 
-void handle_sigint(int sig) {
-    printf("\nExiting\n");
-    running = 0;
+static void endme(int _a)
+{
+    (void)_a;
+    end = 1;
 }
 
-int main(int argc, char* argv[])
+static void ShowHelp(const char *argv0)
 {
+    printf("%s of " __DATE__ " at " __TIME__ "\n", argv0);
+    printf("   Sends each new frame of <SHM> (float), as one UDP datagram, to <IP>:<PORT>.\n");
+    printf("   usage:\n");
+    printf("   %s <SHM> <IP> <PORT>\n", argv0);
+    printf("   %s -h            display this message and exit\n", argv0);
+    printf("\n");
+}
 
-    if (argc != 4) 
+int main(int argc, char *argv[])
+{
+    if (argc == 2 && strcmp(argv[1], "-h") == 0)
     {
-        printf("Usage: %s <SHM> <IP> <PORT>\n", argv[0]);
-        return 1;
+        ShowHelp(argv[0]);
+        return 0;
     }
-
-    char* shm_filename = argv[1];
-    char* ip = argv[2];
-    int port = atoi(argv[3]);
-
-    printf("Reading file: %s\n", shm_filename);
-    
-
-    IMAGE *dmImg = (IMAGE*) malloc(sizeof(IMAGE));
-    daoShmOpen(inShmName, &dmImg[0]);
-    int nActs = dmImg[0].md[0].size[0]*inShm[0].md[0].size[0];
-    printf("nActs: %d\n", nActs);
-
-    printf("Sending on %s:%d\n", ip, port);
-
-    // Create UDP socket
-    int udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
-    if (udp_socket < 0) {
-        perror("socket creation failed");
-        return 1;
-    }
-
-    // Set up destination address
-    struct sockaddr_in dest_addr;
-    memset(&dest_addr, 0, sizeof(dest_addr));
-    dest_addr.sin_family = AF_INET;
-    dest_addr.sin_port = htons(port);
-    if (inet_pton(AF_INET, ip, &dest_addr.sin_addr) <= 0) {
-        perror("inet_pton failed");
-        close(udp_socket);
-        return 1;
-    }
-
-    // Set up signal handler for graceful exit
-    signal(SIGINT, handle_sigint);
-
-    // Timing variables
-    struct timespec timeout;
-    struct timespec t[3];
-    double elapsedTime;
-    clock_gettime(CLOCK_REALTIME, &t[1]);
-    int count = 0;
-    int tCount = 0;
-
-    // Main loop
-    size_t data_size = sizeof(float) * nActs;
-    while (running)
+    if (argc != 4)
     {
-        clock_gettime(CLOCK_REALTIME, &timeout);
-        timeout.tv_sec += 1; // 1 second timeout
-        // Get data
-        if (daoShmWaitSemTimeout(inShm, DAO_SEM_AUTO, &timeout) != -1)
-        {
-            // Send data
-            sendto(udp_socket, dmImg[0].array.F, data_size, 0, (struct sockaddr*)&dest_addr, sizeof(dest_addr));
-            clock_gettime(CLOCK_REALTIME, &t[1]);
-            elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
-            elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
-            printf("\r fps = %8.3f Hz, %d in=[%6.3f,%6.3f,...,%6.3f]", 1e6/(1000*elapsedTime), 
-                                                                                  nActs, dmImg[0].array.F[0],
-                                                                                  dmImg[0].array.F[1],
-                                                                                  dmImg[0].array.F[nActs-1]);
-        }
-        else
-        {
-            waitCounter += 1;
-            printf("\rWAIT %d", waitCounter);
-        }
-        fflush(stdout);
+        ShowHelp(argv[0]);
+        return 1;
+    }
+    const char *shmName = argv[1];
+    const char *ip = argv[2];
+    char *endPort;
+    long port = strtol(argv[3], &endPort, 10);
+    if (*argv[3] == '\0' || *endPort != '\0' || port < 1 || port > 65535)
+    {
+        daoError("<PORT>: '%s' is not a port (1 to 65535)\n", argv[3]);
+        return 2;
     }
 
-    // Clean up
-    close(udp_socket);
+    IMAGE *dmShm = (IMAGE *)malloc(sizeof(IMAGE));
+    daoToolsShmOpen(shmName, &dmShm[0]);
+    long nActs = daoToolsShmValues(dmShm);
+    daoToolsShmCheck(dmShm, shmName, _DATATYPE_FLOAT, nActs);
+    size_t dataSize = sizeof(float) * (size_t)nActs;
+    if (dataSize > 65507)
+    {
+        daoError("%s: %zu bytes, more than a UDP datagram holds (65507)\n", shmName, dataSize);
+        return 1;
+    }
+    daoInfo("Sending %s (%ld values) to %s:%ld\n", shmName, nActs, ip, port);
+
+    int udpSocket = socket(AF_INET, SOCK_DGRAM, 0);
+    if (udpSocket < 0)
+    {
+        daoError("cannot create the socket: %s\n", strerror(errno));
+        return 1;
+    }
+    struct sockaddr_in destAddr;
+    memset(&destAddr, 0, sizeof(destAddr));
+    destAddr.sin_family = AF_INET;
+    destAddr.sin_port = htons((uint16_t)port);
+    if (inet_pton(AF_INET, ip, &destAddr.sin_addr) <= 0)
+    {
+        daoError("<IP>: '%s' is not an IPv4 address\n", ip);
+        close(udpSocket);
+        return 2;
+    }
+
+    daoToolsOnExitSignals(endme);   // Ctrl+C, kill, tmux kill-session
+    daoToolsLoopStatus status;
+    daoToolsLoopStatusInit(&status);
+    long failed = 0;
+    while (end == 0)
+    {
+        if (daoToolsWait(dmShm, DAO_SEM_AUTO, 1.0) != DAO_SUCCESS)
+        {
+            daoToolsLoopStatusWait(&status);
+            continue;
+        }
+        daoToolsLoopStatusStart(&status);
+        if (sendto(udpSocket, dmShm[0].array.F, dataSize, 0, (struct sockaddr *)&destAddr, sizeof(destAddr)) < 0)
+        {
+            failed++;
+        }
+        daoToolsLoopStatusEnd(&status, failed ? ", %ld sends failed" : "", failed);
+    }
+    printf("\n");
+    close(udpSocket);
+    daoToolsShmRelease(&dmShm);
     return 0;
 }

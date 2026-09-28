@@ -66,17 +66,17 @@ static char	*sArgv0=NULL;					/* name of executable */
 
 static void ShowHelp(void)
 {
-    daoInfo("%s of " __DATE__ " at " __TIME__ "\n",sArgv0);
-    daoInfo("   arguments:\n");
-    daoInfo("   -h               display this message and exit\n");
-    daoInfo("   -d               display program debug output\n");
-    daoInfo("   -S               list of SHM (full path separated by space)\n");
-    daoInfo("   -s               semaphore number\n");
-    daoInfo("   -s               number of frame to compute statistic\n");
-    daoInfo("   -L               start real-time loop\n");
-    daoInfo("   usage:\n");
-    daoInfo("   -S <time SHM> [-s <semNb>] -n <nbmease> -L\n");
-    daoInfo("\n");
+    printf("%s of " __DATE__ " at " __TIME__ "\n", sArgv0);
+    printf("   arguments:\n");
+    printf("   -h               display this message and exit\n");
+    printf("   -d <level>       log level: 0 warnings and errors (default), 1 info, 2 debug, 3 trace\n");
+    printf("   -S               list of SHM (full path separated by space)\n");
+    printf("   -s <semNb>       a fixed semaphore to wait on (default: one of its own)\n");
+    printf("   -n <nb>          number of measurements for the statistics\n");
+    printf("   -L               start the real-time loop (after the other options)\n");
+    printf("   usage:\n");
+    printf("   -S <time SHM> [-s <semNb>] -n <nbmease> -L\n");
+    printf("\n");
 }
 
 /*--------------------------------------------------------------------------*/
@@ -87,119 +87,117 @@ void * statRealTimeLoop(void *thread_data)
     IMAGE *shmAvg = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *shmRms = (IMAGE*) malloc(sizeof(IMAGE));
     daoToolsShmOpen(shmName, &shm[0]);
-    //daoShmOpen(shmNameAvg, &shmAvg[0]);
-    //daoShmOpen(shmNameRms, &shmRms[0]);
-
-    // Create size array, using 2D of 1x1... can be change to 1D
-    uint32_t size[2];
-    size[0] = 1;
-    size[1] = 1;
-    daoShmCreate(shmAvg, shmNameAvg, 2, size, _DATATYPE_FLOAT, 1, 0);
-    daoShmCreate(shmRms, shmNameRms, 2, size, _DATATYPE_FLOAT, 1, 0);
-    daoInfo("Starting loop, %s -> %s, popSize=%d\n",shmName, shmNameAvg, popSize );
-    daoInfo("               %s -> %s, popSize=%d\n",shmName, shmNameRms, popSize );
-    fflush(stdout);
-
-    int nbValue = shm[0].md[0].size[0]*shm[0].md[0].size[1];
-    float *avgValue = malloc(nbValue*sizeof(float));
-    float *rmsValue = malloc(nbValue*sizeof(float));
-    float valueCircBufAvg[nbValue][popSize+1];
-    float valueCircBuf[nbValue][popSize+1];
-    int k, l;
-    // reset buffer
-    for (k=0; k<nbValue; k++)
+    if (shm[0].md[0].atype != _DATATYPE_FLOAT)
     {
-        for (l=0; l<(popSize + 1); l++)
-        {
-            valueCircBufAvg[k][l] = 0.0;
-            valueCircBuf[k][l] = 0.0;
-        }
-        avgValue[k] = 0.0;
-        rmsValue[k] = 0.0;
+        daoError("%s is not float: %s computes float statistics\n", shmName, sArgv0);
+        exit(EXIT_FAILURE);
     }
-    int tail=0;
-    int head=0;
-    int c=0;
-    int cnt=0;
-    daoInfo("Avg/Rms telemetry running for %s -> %s/%s, popSize=%d\n",shmName, shmNameAvg, shmNameRms, popSize );
+    if (popSize < 1)
+    {
+        daoError("-n: at least 1 frame\n");
+        exit(EXIT_FAILURE);
+    }
 
-    struct timespec timeout;
+    if (daoToolsInsertShmNamePrefixN(shmName, "Avg", shmNameAvg, sizeof shmNameAvg) != DAO_SUCCESS)
+    {
+        exit(EXIT_FAILURE);
+    }
+    if (daoToolsInsertShmNamePrefixN(shmName, "Rms", shmNameRms, sizeof shmNameRms) != DAO_SUCCESS)
+    {
+        exit(EXIT_FAILURE);
+    }
+    uint32_t size[2];
+    size[0] = shm[0].md[0].size[0];
+    size[1] = shm[0].md[0].size[1];
+    daoShmCreate(shmAvg, shmNameAvg, 2, size, shm[0].md[0].atype, 1, 0);
+    daoShmCreate(shmRms, shmNameRms, 2, size, shm[0].md[0].atype, 1, 0);
+    daoInfo("Avg/Rms telemetry running for %s -> %s/%s, popSize=%d\n", shmName, shmNameAvg, shmNameRms, popSize);
 
+    // The last popSize frames (a NaN counts as 0), in a ring buffer on the heap, and
+    // their running sums in double: the mean, and the RMS about the mean, of the
+    // frames in the window. The sums are recomputed exactly once per window, so
+    // rounding errors do not build up.
+    int nbValue = shm[0].md[0].size[0]*shm[0].md[0].size[1];
+    float *buf = malloc((size_t)popSize * nbValue * sizeof(float));
+    double *sum = calloc(nbValue, sizeof(double));
+    double *sumSq = calloc(nbValue, sizeof(double));
+    if (buf == NULL || sum == NULL || sumSq == NULL)
+    {
+        daoError("cannot allocate the statistics buffers (%d values x %d frames)\n", nbValue, popSize);
+        exit(EXIT_FAILURE);
+    }
+    long count = 0, slot = 0, sinceExact = 0;
+    int k;
+    daoToolsLoopStatus status;
+    daoToolsLoopStatusInit(&status);
     while (end ==0)
     {
-        clock_gettime(CLOCK_REALTIME, &timeout);
-        timeout.tv_sec += 1; // 1 second timeout
-        // Wait for new image
-        if (daoShmWaitSemTimeout(shm, semNb, &timeout) != -1)
+        if (daoToolsWait(shm, semNb, 1.0) != DAO_SUCCESS)
         {
-            // if new image, add it in the cir buf.
-            for (k = 0; k < nbValue; k++)
-            {
-                valueCircBufAvg[k][tail] = shm[0].array.F[k] / popSize;
-                valueCircBuf[k][tail] = shm[0].array.F[k];
-                if (isnan(valueCircBufAvg[k][tail]))
-                {
-                    valueCircBufAvg[k][tail] = 0.0;
-                    valueCircBuf[k][tail] = 0.0;
-                }
-            }
-            tail = (tail + 1) % (popSize + 1);
-            for (k = 0; k < nbValue; k++)
-            {
-                if (!isnan(valueCircBufAvg[k][head]))
-                {
-                    // add value in the head
-                    avgValue[k] += valueCircBufAvg[k][head];
-                }
-                else
-                {
-                    // add value in the head
-                    avgValue[k] += 0.0;
-                }
-                // remove the tail value
-                avgValue[k] -= valueCircBufAvg[k][tail];
-            }
-            for (k = 0; k < nbValue; k++)
-            {
-                for (c = 0; c < popSize; c++)
-                {
-                    if (!isnan(valueCircBuf[k][c]))
-                    {
-                        // add value in the c
-                        rmsValue[k] += pow(valueCircBuf[k][c] - avgValue[k], 2);
-                    }
-                    else
-                    {
-                        // add value in the head
-                        rmsValue[k] += 0.0;
-                    }
-                }
-                rmsValue[k] = sqrt(rmsValue[k] / popSize);
-            }
-            head = (head + 1) % (popSize + 1);
-
-            daoShmSetData(&shmAvg[0], avgValue, nbValue);
-            daoShmSetData(&shmRms[0], rmsValue, nbValue);
-            printf("\r(%8.3f,%8.3f) -> AVG(%8.3f,%8.3f), RMS(%8.3f,%8.3f)",
-                   shm[0].array.F[0], shm[0].array.F[1],
-                   shmAvg[0].array.F[0], shmAvg[0].array.F[1],
-                   shmRms[0].array.F[0], shmRms[0].array.F[1]);
-            fflush(stdout);
+            daoToolsLoopStatusWait(&status);
+            continue;
         }
-        else
+        daoToolsLoopStatusStart(&status);
+        float *cur = buf + (size_t)slot * nbValue;
+        for (k = 0; k < nbValue; k++)
         {
-            printf("\rtimeout waiting for semaphore, waiting %d", cnt++);
-            fflush(stdout);
+            float v = shm[0].array.F[k];
+            if (isnan(v))
+            {
+                v = 0;
+            }
+            if (count == popSize)              // the oldest frame leaves the window
+            {
+                sum[k] -= cur[k];
+                sumSq[k] -= (double)cur[k] * cur[k];
+            }
+            cur[k] = v;
+            sum[k] += v;
+            sumSq[k] += (double)v * v;
         }
+        if (count < popSize)
+        {
+            count++;
+        }
+        slot = (slot + 1) % popSize;
+        if (++sinceExact >= popSize)           // exact sums again, from the window
+        {
+            sinceExact = 0;
+            for (k = 0; k < nbValue; k++)
+            {
+                sum[k] = sumSq[k] = 0.0;
+            }
+            for (long f = 0; f < count; f++)
+            {
+                float *fr = buf + (size_t)f * nbValue;
+                for (k = 0; k < nbValue; k++)
+                {
+                    sum[k] += fr[k];
+                    sumSq[k] += (double)fr[k] * fr[k];
+                }
+            }
+        }
+        for (k = 0; k < nbValue; k++)
+        {
+            double mean = sum[k] / count;
+            double var = sumSq[k] / count - mean * mean;
+            shmAvg[0].array.F[k] = (float)mean;
+            shmRms[0].array.F[k] = (float)sqrt(var > 0.0 ? var : 0.0);
+        }
+        shmAvg[0].md[0].cnt2 = shmRms[0].md[0].cnt2 = shm[0].md[0].cnt2;
+        daoShmSetDataPartFinalize(&shmAvg[0]);
+        daoShmSetDataPartFinalize(&shmRms[0]);
+        daoToolsLoopStatusEnd(&status, ", %ld frames", count);
     }
-
+    printf("\n");
     daoInfo("EXITING MAIN LOOP\n");
-    fflush(stdout);
-    free(avgValue);
-    free(rmsValue);
-
-
-    return DAO_SUCCESS;
+    free(buf);
+    free(sum);
+    free(sumSq);
+    daoToolsShmRelease(&shm);
+    daoToolsShmRelease(&shmAvg);
+    daoToolsShmRelease(&shmRms);
+    return NULL;
 }
 
 /*--------------------------------------------------------------------------*/
@@ -207,7 +205,7 @@ static int realTimeLoop()
 {
     int status;
     // register interrupt signal to terminate the main loop
-    signal(SIGINT, endme);
+    daoToolsOnExitSignals(endme);   // Ctrl+C, kill, tmux kill-session
 
     clock_t launch, done;
     double diff;
@@ -260,38 +258,44 @@ static void DecodeArgs(int argc, char **argv)
             case 'h':	
                         ShowHelp(); 
                         exit(0);
-            case 'd':	
-                        (void)sscanf(*argv++,"%d",&daoLogLevel); argc -= 1;
-                        break;
+            case 'd':
+                daoLogLevel = daoToolsArgInt(&argc, &argv, str);
+                break;
             case 'l':
-                        daoInfo("%s\n",*argv);
-                        argv += 1; argc -= 1;
-                        break;
+                daoInfo("%s\n", daoToolsArgValue(&argc, &argv, str));
+                break;
             case 'u':
-                        (void)sscanf(*argv++,"%d",&a1); argc -= 1;
-                        daoDebug("will sleep for %d usec\n",a1);
-                        (void)usleep(a1);
-                        break;
-            case 'S':	
-                        daoToolsArgName(shmName, sizeof shmName, *argv++); argc -= 1;
-                        if (daoToolsInsertShmNamePrefixN(shmName, "Avg", shmNameAvg, sizeof shmNameAvg) != DAO_SUCCESS)
-                            exit(EXIT_FAILURE);
-                        if (daoToolsInsertShmNamePrefixN(shmName, "Rms", shmNameRms, sizeof shmNameRms) != DAO_SUCCESS)
-                            exit(EXIT_FAILURE);
-                        daoInfo("SHM = %s\n", shmName);
-                        daoInfo("SHM Avg = %s\n", shmNameAvg);
-                        daoInfo("SHM Rms = %s\n", shmNameRms);
-                        break;
-            case 's':	
-                        (void)sscanf(*argv++,"%d", &semNb);
-                        daoInfo("inputShm sem     : %d \n", semNb);
-                        break;            
-            case 'n':	
-                        (void)sscanf(*argv++,"%d",&popSize); argc -= 1;	
-                        break;
+                a1 = daoToolsArgInt(&argc, &argv, str);
+                daoDebug("will sleep for %d usec\n", a1);
+                (void)usleep(a1);
+                break;
+            case 'S':
+                daoToolsArgNameNext(&argc, &argv, str, shmName, sizeof shmName);
+                if (daoToolsInsertShmNamePrefixN(shmName, "Avg", shmNameAvg, sizeof shmNameAvg) != DAO_SUCCESS)
+                {
+                    exit(EXIT_FAILURE);
+                }
+                if (daoToolsInsertShmNamePrefixN(shmName, "Rms", shmNameRms, sizeof shmNameRms) != DAO_SUCCESS)
+                {
+                    exit(EXIT_FAILURE);
+                }
+                daoInfo("SHM = %s\n", shmName);
+                daoInfo("SHM Avg = %s\n", shmNameAvg);
+                daoInfo("SHM Rms = %s\n", shmNameRms);
+                break;
+            case 's':
+                semNb = daoToolsArgInt(&argc, &argv, str);
+                daoInfo("inputShm sem     : %d \n", semNb);
+                break;            
+            case 'n':
+                popSize = daoToolsArgInt(&argc, &argv, str);
+                break;
             case 'L':
                         daoInfo("Average Telemetry real time control\n");
-                        realTimeLoop();
+                        if (realTimeLoop() != 0)         /* could not start, or failed (see above) */
+                        {
+                            exit(EXIT_FAILURE);
+                        }
                         break;
             default:
                         daoError("Do not know arg '%s'\n",str);
@@ -314,6 +318,11 @@ int main(int argc, char **argv)
     // r = seteuid(euid_real);//Go back to normal privileges
 
     sArgv0 = *argv;
+    if (argc < 2)
+    {                    /* nothing to do: say how */
+        ShowHelp();
+        return 1;
+    }
 
     DecodeArgs(argc,argv);
 

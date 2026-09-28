@@ -51,6 +51,7 @@ static char *sArgv0 = NULL;       /* name of executable */
 static volatile int gEnd = 0;
 
 static IMAGE *gShmOut = NULL;
+static daoToolsLoopStatus gStatus;   /* one status line for both threads (under gOutMutex) */
 static IMAGE *gShmIn[NB_SHM] = { NULL, NULL };
 
 static char gShmOutName[DAO_SHM_NAME_LEN];
@@ -76,19 +77,19 @@ static void endme(int signum)
 /*==========================================================================*/
 static void ShowHelp(void)
 {
-    daoInfo("%s of " __DATE__ " at " __TIME__ "\n", sArgv0);
-    daoInfo("arguments:\n");
-    daoInfo("  -h               display this message and exit\n");
-    daoInfo("  -d <lvl>         set daoLogLevel\n");
-    daoInfo("  -m <1|2>         master channel: finalize only when shm1 or shm2 updates\n");
-    daoInfo("                   if not provided: finalize on ANY input update\n");
-    daoInfo("  -S <out> <in1> <in2>\n");
-    daoInfo("  -L               start real-time loop\n");
-    daoInfo("\n");
-    daoInfo("examples:\n");
-    daoInfo("  %s -S /tmp/out.im.shm /tmp/in1.im.shm /tmp/in2.im.shm -L\n", sArgv0);
-    daoInfo("  %s -m 1 -S /tmp/out.im.shm /tmp/in1.im.shm /tmp/in2.im.shm -L\n", sArgv0);
-    daoInfo("  %s -m 2 -S /tmp/out.im.shm /tmp/in1.im.shm /tmp/in2.im.shm -L\n", sArgv0);
+    printf("%s of " __DATE__ " at " __TIME__ "\n", sArgv0);
+    printf("arguments:\n");
+    printf("   -h               display this message and exit\n");
+    printf("   -d <level>       log level: 0 warnings and errors (default), 1 info, 2 debug, 3 trace\n");
+    printf("  -m <1|2>         master channel: finalize only when shm1 or shm2 updates\n");
+    printf("                   if not provided: finalize on ANY input update\n");
+    printf("  -S <out> <in1> <in2>\n");
+    printf("   -L               start the real-time loop (after the other options)\n");
+    printf("\n");
+    printf("examples:\n");
+    printf("  %s -S /tmp/out.im.shm /tmp/in1.im.shm /tmp/in2.im.shm -L\n", sArgv0);
+    printf("  %s -m 1 -S /tmp/out.im.shm /tmp/in1.im.shm /tmp/in2.im.shm -L\n", sArgv0);
+    printf("  %s -m 2 -S /tmp/out.im.shm /tmp/in1.im.shm /tmp/in2.im.shm -L\n", sArgv0);
 }
 
 /*==========================================================================*/
@@ -129,15 +130,12 @@ static int validateSizesAndTypes(void)
 
     gNbVal = nb1;
 
-    /* This implementation sums float buffers (like your existing combiner fallback).
-       If you need UI16/UI32/etc, tell me and I’ll add atype dispatch. */
-    if (gShmIn[0][0].md[0].atype != gShmIn[1][0].md[0].atype)
-        daoWarning("Inputs have different atype (in1=%d in2=%d). This is probably wrong.\n",
-                   gShmIn[0][0].md[0].atype, gShmIn[1][0].md[0].atype);
-
-    if (gShmOut[0].md[0].atype != gShmIn[0][0].md[0].atype)
-        daoWarning("Output atype differs from in1 (out=%d in1=%d). This is probably wrong.\n",
-                   gShmOut[0].md[0].atype, gShmIn[0][0].md[0].atype);
+    /* sums float buffers */
+    if (gShmIn[0][0].md[0].atype != _DATATYPE_FLOAT || gShmIn[1][0].md[0].atype != _DATATYPE_FLOAT || gShmOut[0].md[0].atype != _DATATYPE_FLOAT)
+    {
+        daoError("the 3 SHMs must be float\n");
+        return DAO_ERROR;
+    }
 
     return DAO_SUCCESS;
 }
@@ -156,24 +154,23 @@ static void *shmThreadLoop(void *thread_data)
     struct arg_struct *args = (struct arg_struct *)thread_data;
     int shmId = args->shmId; /* 0 or 1 */
 
-    struct timespec timeout;
-    struct timespec t0, t1;
-    double elapsedUs;
-
     daoInfo("Thread shm%d ENTERING LOOP\n", shmId + 1);
-    fflush(stdout);
 
     while (!gEnd)
     {
-        clock_gettime(CLOCK_REALTIME, &timeout);
-        timeout.tv_sec += 1;
-
-        if (daoShmWaitSemTimeout(gShmIn[shmId], DAO_SEM_AUTO, &timeout) == -1)
+        if (daoToolsWait(gShmIn[shmId], DAO_SEM_AUTO, 1.0) != DAO_SUCCESS)
+        {
+            if (shmId == (gMasterChannel == 2 ? 1 : 0))   /* one thread reports the waits */
+            {
+                pthread_mutex_lock(&gOutMutex);
+                daoToolsLoopStatusWait(&gStatus);
+                pthread_mutex_unlock(&gOutMutex);
+            }
             continue;
-
-        clock_gettime(CLOCK_REALTIME, &t0);
+        }
 
         pthread_mutex_lock(&gOutMutex);
+        daoToolsLoopStatusStart(&gStatus);
 
         /* Recompute out using latest in1 and in2 */
         addFloatBuffers((const float *)gShmIn[0][0].array.F,
@@ -187,22 +184,12 @@ static void *shmThreadLoop(void *thread_data)
         if (shouldFinalize(shmId))
             daoShmSetDataPartFinalize(&gShmOut[0]);
 
+        daoToolsLoopStatusEnd(&gStatus, NULL);
         pthread_mutex_unlock(&gOutMutex);
-
-        clock_gettime(CLOCK_REALTIME, &t1);
-        elapsedUs = (t1.tv_sec - t0.tv_sec) * 1e6 + (t1.tv_nsec - t0.tv_nsec) / 1e3;
-
-        printf("\r update shm%d | add+%s time = %.1f us | master=%d     ",
-               shmId + 1,
-               shouldFinalize(shmId) ? "finalize" : "compute-only",
-               elapsedUs,
-               gMasterChannel);
-        fflush(stdout);
     }
 
     daoInfo("Thread shm%d EXITING LOOP\n", shmId + 1);
-    fflush(stdout);
-    return (void *)DAO_SUCCESS;
+    return NULL;
 }
 
 /*==========================================================================*/
@@ -212,7 +199,7 @@ static int prepRealTime(void)
     int threadVal[NB_SHM];
     struct arg_struct args[NB_SHM];
 
-    signal(SIGINT, endme);
+    daoToolsOnExitSignals(endme);   // Ctrl+C, kill, tmux kill-session
 
     gShmOut   = (IMAGE *)malloc(sizeof(IMAGE));
     gShmIn[0] = (IMAGE *)malloc(sizeof(IMAGE));
@@ -236,10 +223,15 @@ static int prepRealTime(void)
         return DAO_ERROR;
 
     daoInfo("Finalize policy: %s\n",
-            (gMasterChannel == -1) ? "ANY input update" :
-            (gMasterChannel == 1)  ? "ONLY shm1 updates" :
-            (gMasterChannel == 2)  ? "ONLY shm2 updates" :
-                                     "INVALID (but continuing)");
+        (gMasterChannel == -1) ? "ANY input update" : (gMasterChannel == 1) ? "ONLY shm1 updates"
+            : (gMasterChannel == 2)                                         ? "ONLY shm2 updates"
+                                                                            : "invalid");
+    if (gMasterChannel != -1 && gMasterChannel != 1 && gMasterChannel != 2)
+    {
+        daoError("-m: 1, 2 or -1 (any input)\n");
+        return DAO_ERROR;
+    }
+    daoToolsLoopStatusInit(&gStatus);
 
     for (i = 0; i < NB_SHM; i++)
     {
@@ -255,6 +247,10 @@ static int prepRealTime(void)
     pthread_join(gThread[0], NULL);
     pthread_join(gThread[1], NULL);
 
+    printf("\n");
+    daoToolsShmRelease(&gShmOut);
+    daoToolsShmRelease(&gShmIn[0]);
+    daoToolsShmRelease(&gShmIn[1]);
     return DAO_SUCCESS;
 }
 
@@ -282,13 +278,11 @@ static void DecodeArgs(int argc, char **argv)
                 exit(0);
 
             case 'd':
-                (void)sscanf(*argv++, "%d", &daoLogLevel);
-                argc -= 1;
+                daoLogLevel = daoToolsArgInt(&argc, &argv, str);
                 break;
 
             case 'm':
-                (void)sscanf(*argv++, "%d", &gMasterChannel);
-                argc -= 1;
+                gMasterChannel = daoToolsArgInt(&argc, &argv, str);
                 if (!(gMasterChannel == -1 || gMasterChannel == 1 || gMasterChannel == 2))
                 {
                     daoWarning("Invalid -m %d (expected 1 or 2). Using default (-1).\n", gMasterChannel);
@@ -297,13 +291,12 @@ static void DecodeArgs(int argc, char **argv)
                 break;
 
             case 'S':
-                daoToolsArgName(gShmOutName, sizeof gShmOutName, *argv++);
-                daoToolsArgName(gShmInName[0], sizeof gShmInName[0], *argv++);
-                daoToolsArgName(gShmInName[1], sizeof gShmInName[1], *argv++);
+                daoToolsArgNameNext(&argc, &argv, str, gShmOutName, sizeof gShmOutName);
+                daoToolsArgNameNext(&argc, &argv, str, gShmInName[0], sizeof gShmInName[0]);
+                daoToolsArgNameNext(&argc, &argv, str, gShmInName[1], sizeof gShmInName[1]);
                 daoInfo("OUT : %s\n", gShmOutName);
                 daoInfo("IN1 : %s\n", gShmInName[0]);
                 daoInfo("IN2 : %s\n", gShmInName[1]);
-                argc -= 3;
                 break;
 
             case 'L':
@@ -327,6 +320,11 @@ int main(int argc, char **argv)
     daoToolsSetRtPriority(93);
 
     sArgv0 = *argv;
+    if (argc < 2)
+    {                    /* nothing to do: say how */
+        ShowHelp();
+        return 1;
+    }
     DecodeArgs(argc, argv);
 
     return sExit;

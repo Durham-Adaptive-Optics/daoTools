@@ -61,7 +61,6 @@ static void endme(int _a)
 
 /*--------------------------------------------------------------------------*/
 /* Real-time tuning knobs - same pattern already used/validated in daoMvM.c */
-#define CAL_PRINT_EVERY 2000     /* throttle telemetry: print once every N iterations */
 static int rtCpu = -1;           /* CPU core to pin the RT thread to (-1 = do not pin) */
 
 static void calSetRtAffinity(int cpu)
@@ -84,24 +83,24 @@ static char	*sArgv0=NULL;					/* name of executable */
 
 static void ShowHelp(void)
 {
-    daoInfo("%s of " __DATE__ " at " __TIME__ "\n",sArgv0);
-    daoInfo("   arguments:\n");
-    daoInfo("   -h               display this message and exit\n");
-    daoInfo("   -d               display program debug output\n");
-    daoInfo("   -S               list of SHM (full path separated by space)\n");
-    daoInfo("   -s               semaphore number\n");
-    daoInfo("   -C <cpu>         pin the real-time thread to CPU core <cpu>\n");
-    daoInfo("   -L               start real-time loop\n");
-    daoInfo("   usage (options must precede -L):\n");
-    daoInfo("   -S <input SHM> <flatfield SHM> <background SHM> <output SHM> [-s <semNb>] [-C <cpu>] -L\n");
-    daoInfo("\n");
+    printf("%s of " __DATE__ " at " __TIME__ "\n", sArgv0);
+    printf("   arguments:\n");
+    printf("   -h               display this message and exit\n");
+    printf("   -d <level>       log level: 0 warnings and errors (default), 1 info, 2 debug, 3 trace\n");
+    printf("   -S               list of SHM (full path separated by space)\n");
+    printf("   -s <semNb>       a fixed semaphore to wait on (default: one of its own)\n");
+    printf("   -C <cpu>         pin the real-time thread to CPU core <cpu>\n");
+    printf("   -L               start the real-time loop (after the other options)\n");
+    printf("   usage (options must precede -L):\n");
+    printf("   -S <input SHM> <flatfield SHM> <background SHM> <output SHM> [-s <semNb>] [-C <cpu>] -L\n");
+    printf("\n");
 }
 
 /*--------------------------------------------------------------------------*/
 static int realTimeLoop()
 {
     // register interrupt signal to terminate the main loop
-    signal(SIGINT, endme);
+    daoToolsOnExitSignals(endme);   // Ctrl+C, kill, tmux kill-session
 
     if (rtCpu >= 0)
         calSetRtAffinity(rtCpu);
@@ -122,12 +121,6 @@ static int realTimeLoop()
 
     daoInfo("Starting loop, %s/%s \n",inShmName, calShmName);
     fflush(stdout);
-    int inSize = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
-    struct timespec t[3];
-    struct timespec timeout;
-    double elapsedTime;
-    double calTime;
-    int waitCounter = 0;
     usleep(2000000);
 
     // Fault in the in/ff/bg/cal buffers and run the calibration once so the
@@ -138,18 +131,14 @@ static int realTimeLoop()
     else
         daoToolsShmCalibrate64(inShm, ffShm, bgShm, calShm);
 
-    unsigned long iter = 0;
-    double calAccum = 0.0, fpsAccum = 0.0;
 
-    clock_gettime(CLOCK_MONOTONIC, &t[1]);
+    daoToolsLoopStatus status;
+    daoToolsLoopStatusInit(&status);
     while (end ==0)
     {
-        t[0] = t[1];
-        clock_gettime(CLOCK_REALTIME, &timeout);   // sem_timedwait deadline is CLOCK_REALTIME
-        timeout.tv_sec += 1; // 1 second timeout
-        if (daoShmWaitSemTimeout(inShm, semNb, &timeout) != DAO_TIMEOUT)
+        if (daoToolsWait(inShm, semNb, 1.0) == DAO_SUCCESS)
         {
-            clock_gettime(CLOCK_MONOTONIC, &t[2]);
+            daoToolsLoopStatusStart(&status);
             if (calShm[0].md[0].atype == _DATATYPE_FLOAT)
             {
                 daoToolsShmCalibrate(inShm, ffShm, bgShm, calShm);
@@ -159,43 +148,23 @@ static int realTimeLoop()
                 daoToolsShmCalibrate64(inShm, ffShm, bgShm, calShm);
             }
 
-            clock_gettime(CLOCK_MONOTONIC, &t[1]);
-            elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
-            elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
-            calTime = (t[1].tv_sec - t[2].tv_sec) * 1e3;
-            calTime += (t[1].tv_nsec - t[2].tv_nsec) / 1e6;
-
-            // Accumulate telemetry and print only once every CAL_PRINT_EVERY
-            // frames: a per-iteration write() syscall was the main source of
-            // jitter/latency when the same pattern was fixed in daoMvM.
-            calAccum += calTime;
-            fpsAccum += (elapsedTime > 0.0) ? 1e3 / elapsedTime : 0.0;
-            if (++iter % CAL_PRINT_EVERY == 0)
-            {
-                printf("\rcal time = %8.3f us, fps = %8.3f Hz (avg/%d), %d   ",
-                       1000 * calAccum / CAL_PRINT_EVERY,
-                       fpsAccum / CAL_PRINT_EVERY,
-                       CAL_PRINT_EVERY,
-                       inSize);
-                fflush(stdout);
-                calAccum = 0.0;
-                fpsAccum = 0.0;
-            }
+            daoToolsLoopStatusEnd(&status, NULL);
         }
         else
         {
-            waitCounter += 1;
-            printf("\rWAIT %d", waitCounter);
-            fflush(stdout);
+            daoToolsLoopStatusWait(&status);
         }
     }
+    printf("\n");
 
 
     daoInfo("EXITING MAIN LOOP\n");
-    fflush(stdout);
 
 
-
+    daoToolsShmRelease(&inShm);
+    daoToolsShmRelease(&ffShm);
+    daoToolsShmRelease(&bgShm);
+    daoToolsShmRelease(&calShm);
     return 0;
 }
 
@@ -222,40 +191,42 @@ static void DecodeArgs(int argc, char **argv)
             case 'h':	
                         ShowHelp(); 
                         exit(0);
-            case 'd':	
-                        (void)sscanf(*argv++,"%d",&daoLogLevel); argc -= 1;
-                        break;
+            case 'd':
+                daoLogLevel = daoToolsArgInt(&argc, &argv, str);
+                break;
             case 'l':
-                        daoInfo("%s\n",*argv);
-                        argv += 1; argc -= 1;
-                        break;
+                daoInfo("%s\n", daoToolsArgValue(&argc, &argv, str));
+                break;
             case 'u':
-                        (void)sscanf(*argv++,"%d",&a1); argc -= 1;
-                        daoDebug("will sleep for %d usec\n",a1);
-                        (void)usleep(a1);
-                        break;
-                        break;
+                a1 = daoToolsArgInt(&argc, &argv, str);
+                daoDebug("will sleep for %d usec\n", a1);
+                (void)usleep(a1);
+                break;
+                break;
             case 'S':
-                    	daoToolsArgName(inShmName, sizeof inShmName, *argv++); argc -= 1;
-                    	daoToolsArgName(ffShmName, sizeof ffShmName, *argv++); argc -= 1;
-                    	daoToolsArgName(bgShmName, sizeof bgShmName, *argv++); argc -= 1;
-                    	daoToolsArgName(calShmName, sizeof calShmName, *argv++); argc -= 1;
-                        daoInfo("image in         : %s\n", inShmName);
-                        daoInfo("flat field       : %s\n", ffShmName);
-                        daoInfo("background       : %s\n", bgShmName);
-                        daoInfo("calibrated image : %s\n", calShmName);
-                        break;
+                daoToolsArgNameNext(&argc, &argv, str, inShmName, sizeof inShmName);
+                daoToolsArgNameNext(&argc, &argv, str, ffShmName, sizeof ffShmName);
+                daoToolsArgNameNext(&argc, &argv, str, bgShmName, sizeof bgShmName);
+                daoToolsArgNameNext(&argc, &argv, str, calShmName, sizeof calShmName);
+                daoInfo("image in         : %s\n", inShmName);
+                daoInfo("flat field       : %s\n", ffShmName);
+                daoInfo("background       : %s\n", bgShmName);
+                daoInfo("calibrated image : %s\n", calShmName);
+                break;
             case 's':
-                        (void)sscanf(*argv++,"%d", &semNb); argc -= 1;
-                        daoInfo("inputShm sem     : %d \n", semNb);
-                        break;
+                semNb = daoToolsArgInt(&argc, &argv, str);
+                daoInfo("inputShm sem     : %d \n", semNb);
+                break;
             case 'C':
-                        (void)sscanf(*argv++,"%d", &rtCpu); argc -= 1;
-                        daoInfo("RT thread CPU    : %d \n", rtCpu);
-                        break;
+                rtCpu = daoToolsArgInt(&argc, &argv, str);
+                daoInfo("RT thread CPU    : %d \n", rtCpu);
+                break;
             case 'L':
                         daoInfo("Apply Falt and Background from SHM real time control\n");
-                        realTimeLoop();
+                        if (realTimeLoop() != 0)         /* could not start, or failed (see above) */
+                        {
+                            exit(EXIT_FAILURE);
+                        }
                         break;
             default:
                         daoError("Do not know arg '%s'\n",str);
@@ -282,6 +253,11 @@ int main(int argc, char **argv)
         daoWarning("mlockall failed: run scripts/daoToolSetCap to grant RT capabilities. Continuing, but not optimized for real-time.\n");
 
     sArgv0 = *argv;
+    if (argc < 2)
+    {                    /* nothing to do: say how */
+        ShowHelp();
+        return 1;
+    }
 
     DecodeArgs(argc,argv);
 

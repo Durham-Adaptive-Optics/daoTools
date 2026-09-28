@@ -79,22 +79,48 @@ static char	*sArgv0=NULL;					/* name of executable */
 
 static void ShowHelp(void)
 {
-    daoInfo("%s of " __DATE__ " at " __TIME__ "\n",sArgv0);
-    daoInfo("   arguments:\n");
-    daoInfo("   -h               display this message and exit\n");
-    daoInfo("   -d               display program debug output\n");
-    daoInfo("   -l str           display str in output\n");
-    /*
-     **	Post init tests
-     */
-    daoInfo("   -L Nb            real time control loop: example daoShmMonitoring -L shm 25\n");
-    /*
-     **	Timing tests
-     */
-    daoInfo("   -t nloops        test timing for i/o\n");
-    daoInfo("\n");
+    printf("%s of " __DATE__ " at " __TIME__ "\n", sArgv0);
+    printf("   arguments:\n");
+    printf("   -h               display this message and exit\n");
+    printf("   -d <level>       log level: 0 warnings and errors (default), 1 info, 2 debug, 3 trace\n");
+    printf("   -l str           display str in output\n");
+    printf("   -L <nb> <SHM1> ... <SHMnb> <Hz>  display the metadata and first value of the nb SHMs\n");
+    printf("                    (1 to 10), <Hz> times per second\n");
+    printf("   usage:\n");
+    printf("   -L 2 /tmp/a.im.shm /tmp/b.im.shm 25\n");
+    printf("\n");
 }
 /*--------------------------------------------------------------------------*/
+/* the first value of an SHM, whatever its data type */
+static double firstValue(IMAGE *img)
+{
+    switch (img->md[0].atype)
+    {
+        case _DATATYPE_UINT8:
+            return img->array.UI8[0];
+        case _DATATYPE_INT8:
+            return img->array.SI8[0];
+        case _DATATYPE_UINT16:
+            return img->array.UI16[0];
+        case _DATATYPE_INT16:
+            return img->array.SI16[0];
+        case _DATATYPE_UINT32:
+            return img->array.UI32[0];
+        case _DATATYPE_INT32:
+            return img->array.SI32[0];
+        case _DATATYPE_UINT64:
+            return (double)img->array.UI64[0];
+        case _DATATYPE_INT64:
+            return (double)img->array.SI64[0];
+        case _DATATYPE_FLOAT:
+            return img->array.F[0];
+        case _DATATYPE_DOUBLE:
+            return img->array.D[0];
+        default:
+            return NAN;
+    }
+}
+
 void * displayRealTimeLoop(void *thread_data)
 {
     daoInfo("ThreadId=%p\n", thread_data);
@@ -103,8 +129,8 @@ void * displayRealTimeLoop(void *thread_data)
     fflush(stdout);
     struct timespec t[2];
     clock_gettime(CLOCK_REALTIME, &t[1]);
-    float pauseTime;
-    pauseTime = 1e6/frequency-50;
+    // the display rate (-L); the ~50 us left for drawing
+    useconds_t pauseTime = (useconds_t)(1e6 / frequency > 50.0 ? 1e6 / frequency - 50.0 : 0.0);
     int shmCnt=0;
     // timing emulation there is a small offset of about 50 us...
     // probalby due to the usleep function... not very accurate.
@@ -129,10 +155,10 @@ void * displayRealTimeLoop(void *thread_data)
             printw("nelement    %ld\n", shm[shmCnt].md[0].nelement); 
             printw("atype       %d\n", shm[shmCnt].md[0].atype); 
             printw("cnt1        %ld\n", shm[shmCnt].md[0].cnt1); 
-            printw("cnt2        %ld\n", shm[shmCnt].md[0].cnt2); 
-            printw("timestamp   %ld\n", shm[shmCnt].md[0].atime.tsfixed.secondlong); 
-            printw("\n"); 
-            printw("VALUE =     %10.3f\n", shm[shmCnt].array.F[0]); 
+            printw("cnt2        %ld\n", shm[shmCnt].md[0].cnt2);
+            printw("timestamp   %ld.%09ld\n", (long)shm[shmCnt].md[0].atime.ts.tv_sec, (long)shm[shmCnt].md[0].atime.ts.tv_nsec);
+            printw("\n");
+            printw("VALUE =     %10.3f\n", firstValue(&shm[shmCnt]));
             printw("-------------------------------------------------------------------\n"); 
             printw("\n"); 
         }
@@ -153,7 +179,7 @@ static int realTimeLoop()
 {
     int status;
     // register interrupt signal to terminate the main loop
-    signal(SIGINT, endme);
+    daoToolsOnExitSignals(endme);   // Ctrl+C, kill, tmux kill-session
     int shmCnt=0l;
 
     for (shmCnt = 0; shmCnt < nbShm; shmCnt++)
@@ -181,6 +207,10 @@ static int realTimeLoop()
         return DAO_ERROR;
     }
     pthread_join(controllerThread, NULL);
+    for (shmCnt = 0; shmCnt < nbShm; shmCnt++)
+    {
+        daoShmClose(&shm[shmCnt]);
+    }
     return DAO_SUCCESS;
 }
 
@@ -205,32 +235,46 @@ static void DecodeArgs(int argc, char **argv)
 
         switch (str[1]) {
             case 'h':	ShowHelp(); exit(0);
-	    case 'd':	
-			(void)sscanf(*argv++,"%d",&daoLogLevel); argc -= 1;
-			break;
+	    case 'd':
+                daoLogLevel = daoToolsArgInt(&argc, &argv, str);
+                break;
             case 'l':
-                        daoInfo("%s\n",*argv);
-                        argv += 1; argc -= 1;
-                        break;
+                daoInfo("%s\n", daoToolsArgValue(&argc, &argv, str));
+                break;
 
-            case 'b':	(void)sscanf(*argv++,"%d",&sNdx); argc -= 1;	break;
+            case 'b':
+                sNdx = daoToolsArgInt(&argc, &argv, str);
+                break;
             case 'u':
-                        (void)sscanf(*argv++,"%d",&a1); argc -= 1;
-                        daoDebug("will sleep for %d usec\n",a1);
-                        (void)usleep(a1);
-                        break;
+                a1 = daoToolsArgInt(&argc, &argv, str);
+                daoDebug("will sleep for %d usec\n", a1);
+                (void)usleep(a1);
+                break;
             case 'L':
                         daoInfo("shm real time control\n");
-                        (void)sscanf(*argv++,"%d", &nbShm);
+                        nbShm = daoToolsArgInt(&argc, &argv, str);
+                        if (nbShm < 1 || nbShm > NB_MAX_SHM)
+                        {
+                            daoError("-L: 1 to %d SHMs\n", NB_MAX_SHM);
+                            exit(2);
+                        }
                         daoInfo("Nb SHM = %d\n", nbShm);
                         for (int shmCnt=0; shmCnt<nbShm; shmCnt++)
                         {
-                            daoToolsArgName(shmName[shmCnt], sizeof shmName[shmCnt], *argv++);
+                            daoToolsArgNameNext(&argc, &argv, str, shmName[shmCnt], sizeof shmName[shmCnt]);
                             daoInfo("SHM %d = %s \n", shmCnt, shmName[shmCnt]);
                         }
-                        (void)sscanf(*argv++,"%f", &frequency);
+                        frequency = daoToolsArgDouble(&argc, &argv, str);
+                        if (frequency <= 0.0)
+                        {
+                            daoError("-L: the display rate must be positive\n");
+                            exit(2);
+                        }
                         daoInfo("%f \n", frequency);
-                        realTimeLoop();
+                        if (realTimeLoop() != 0)         /* could not start, or failed (see above) */
+                        {
+                            exit(EXIT_FAILURE);
+                        }
                         break;
             default:
                         daoError("Do not know arg '%s'\n",str);
@@ -252,6 +296,11 @@ int main(int argc, char **argv)
     // r = seteuid(euid_real);//Go back to normal privileges
 
     sArgv0 = *argv;
+    if (argc < 2)
+    {                    /* nothing to do: say how */
+        ShowHelp();
+        return 1;
+    }
 
     DecodeArgs(argc,argv);
 

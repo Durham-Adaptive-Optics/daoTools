@@ -78,22 +78,22 @@ static char	*sArgv0=NULL;					/* name of executable */
 
 static void ShowHelp(void)
 {
-    daoInfo("%s of " __DATE__ " at " __TIME__ "\n",sArgv0);
-    daoInfo("   arguments:\n");
-    daoInfo("   -h               display this message and exit\n");
-    daoInfo("   -d               display program debug output\n");
-    daoInfo("   -S               list of SHM (full path separated by space)\n");
-    daoInfo("   -s               semaphore number\n");
-    daoInfo("   -n               number of frames to average (default 100)\n");
-    daoInfo("   -t               average over this time instead, in seconds: the frames\n");
-    daoInfo("                    received in the last t s, however many (the loop rate)\n");
-    daoInfo("   -m               time average: the most frames kept (default 100000)\n");
-    daoInfo("   -L               start real-time loop\n");
-    daoInfo("   usage (options before -L):\n");
-    daoInfo("   -S <SHM> -n <nb Average> [-s <semNb>] -L\n");
-    daoInfo("   -S <SHM> -t <seconds> [-m <max frames>] [-s <semNb>] -L\n");
-    daoInfo("   The output, <SHM>Avg, is the mean of the frames in the window: after a\n");
-    daoInfo("   start, of those received so far.\n");
+    printf("%s of " __DATE__ " at " __TIME__ "\n", sArgv0);
+    printf("   arguments:\n");
+    printf("   -h               display this message and exit\n");
+    printf("   -d <level>       log level: 0 warnings and errors (default), 1 info, 2 debug, 3 trace\n");
+    printf("   -S               list of SHM (full path separated by space)\n");
+    printf("   -s <semNb>       a fixed semaphore to wait on (default: one of its own)\n");
+    printf("   -n               number of frames to average (default 100)\n");
+    printf("   -t               average over this time instead, in seconds: the frames\n");
+    printf("                    received in the last t s, however many (the loop rate)\n");
+    printf("   -m               time average: the most frames kept (default 100000)\n");
+    printf("   -L               start the real-time loop (after the other options)\n");
+    printf("   usage (options before -L):\n");
+    printf("   -S <SHM> -n <nb Average> [-s <semNb>] -L\n");
+    printf("   -S <SHM> -t <seconds> [-m <max frames>] [-s <semNb>] -L\n");
+    printf("   The output, <SHM>Avg, is the mean of the frames in the window: after a\n");
+    printf("   start, of those received so far.\n");
     printf("\n");
 }
 
@@ -101,7 +101,7 @@ static void ShowHelp(void)
 static int realTimeLoop()
 {
     // register interrupt signal to terminate the main loop
-    signal(SIGINT, endme);
+    daoToolsOnExitSignals(endme);   // Ctrl+C, kill, tmux kill-session
 
     shm = (IMAGE*) malloc(sizeof(IMAGE));
     daoToolsShmOpen(shmName, &shm[0]);
@@ -150,16 +150,15 @@ static int realTimeLoop()
         printf("Average telemetry running for %s -> %s, over %g s\n", shmName, shmNameAvg, avgTime);
     else
         printf("Average telemetry running for %s -> %s, nAvg=%d\n", shmName, shmNameAvg, nbAvg);
-    struct timespec timeout, tNow;
-    int cnt=0;
+    struct timespec tNow;
     int warnedFull = 0;
+    daoToolsLoopStatus status;
+    daoToolsLoopStatusInit(&status);
     while (end ==0)
     {
-        clock_gettime(CLOCK_REALTIME, &timeout);
-        timeout.tv_sec += 1; // 1 second timeout
-        // Wait for new image
-        if (daoShmWaitSemTimeout(shm, semNb, &timeout) != DAO_TIMEOUT)
+        if (daoToolsWait(shm, semNb, 1.0) == DAO_SUCCESS)
         {
+            daoToolsLoopStatusStart(&status);
             clock_gettime(CLOCK_MONOTONIC, &tNow);
             double now = tNow.tv_sec + 1e-9 * tNow.tv_nsec;
             // the oldest frames leave: by time, those out of the window; by frames, one
@@ -220,25 +219,19 @@ static int realTimeLoop()
             for (k=0; k<nbValue; k++)
                 avgValue[k] = (float)(sum[k] / count);
             daoShmSetDataPartFinalize(&shmAvg[0]);
-            printf("\r(%f,%f) -> (%.3f,%.3f)  n=%ld   ",
-                    shm[0].array.F[0], shm[0].array.F[1],
-                    shmAvg[0].array.F[0], shmAvg[0].array.F[1], count);
+            daoToolsLoopStatusEnd(&status, ", %ld frames averaged", count);
         }
         else
         {
-            printf("\r WAIT %d", cnt);
-            fflush(stdout);
-            cnt++;
+            daoToolsLoopStatusWait(&status);
         }
-        fflush(stdout);
     }
     free(buf); free(stamp); free(sum);
 
-    printf("EXITING MAIN LOOP\n");
-    fflush(stdout);
-
-
-
+    printf("\n");
+    daoInfo("EXITING MAIN LOOP\n");
+    daoToolsShmRelease(&shm);
+    daoToolsShmRelease(&shmAvg);
     return 0;
 }
 
@@ -263,42 +256,43 @@ static void DecodeArgs(int argc, char **argv)
 
         switch (str[1]) {
             case 'h':	ShowHelp(); exit(0);
-            case 'd':	
-                        (void)sscanf(*argv++,"%d",&daoLogLevel); argc -= 1;
-                        break;
+            case 'd':
+                daoLogLevel = daoToolsArgInt(&argc, &argv, str);
+                break;
             case 'l':
-                        daoInfo("%s\n",*argv);
-                        argv += 1; 
-                        argc -= 1;
-                        break;
+                daoInfo("%s\n", daoToolsArgValue(&argc, &argv, str));
+                break;
             case 'u':
-                        (void)sscanf(*argv++,"%d",&a1); argc -= 1;
-                        daoDebug("will sleep for %d usec\n",a1);
-                        (void)usleep(a1);
-                        break;
+                a1 = daoToolsArgInt(&argc, &argv, str);
+                daoDebug("will sleep for %d usec\n", a1);
+                (void)usleep(a1);
+                break;
             case 'S':
                         printf("Average Telemetry real time control\n");
-                        daoToolsArgName(shmName, sizeof shmName, *argv++);
+                        daoToolsArgNameNext(&argc, &argv, str, shmName, sizeof shmName);
                         daoInfo("shmName          = %s\n", shmName);
                         break;
-            case 'n':	(void)sscanf(*argv++,"%d",&nbAvg); 
-                        daoInfo("nb Average       = %d \n", nbAvg);
-                        argc -= 1;	
-                        break;
-            case 't':	(void)sscanf(*argv++,"%lf",&avgTime);
-                        daoInfo("average over     = %g s\n", avgTime);
-                        argc -= 1;
-                        break;
-            case 'm':	(void)sscanf(*argv++,"%d",&maxFrames);
-                        daoInfo("max frames       = %d\n", maxFrames);
-                        argc -= 1;
-                        break;
-            case 's':	
-                        (void)sscanf(*argv++,"%d", &semNb); argc -= 1;
-                        daoInfo("inputShm sem       = %d \n", semNb);
-                        break;
+            case 'n':
+                nbAvg = daoToolsArgInt(&argc, &argv, str);
+                daoInfo("nb Average       = %d \n", nbAvg);
+                break;
+            case 't':
+                avgTime = daoToolsArgDouble(&argc, &argv, str);
+                daoInfo("average over     = %g s\n", avgTime);
+                break;
+            case 'm':
+                maxFrames = daoToolsArgInt(&argc, &argv, str);
+                daoInfo("max frames       = %d\n", maxFrames);
+                break;
+            case 's':
+                semNb = daoToolsArgInt(&argc, &argv, str);
+                daoInfo("inputShm sem       = %d \n", semNb);
+                break;
             case 'L':
-                        realTimeLoop();
+                if (realTimeLoop() != 0)         /* could not start, or failed (see above) */
+                {
+                    exit(EXIT_FAILURE);
+                }
                         break;
             default:
                         daoError("Do not know arg '%s'\n",str);
@@ -321,6 +315,14 @@ int main(int argc, char **argv)
     // r = seteuid(euid_real);//Go back to normal privileges
 
     sArgv0 = *argv;
+
+    if (argc < 2)
+    {                    /* nothing to do: say how */
+
+        ShowHelp();
+
+        return 1;
+    }
 
     DecodeArgs(argc,argv);
 

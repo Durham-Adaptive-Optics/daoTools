@@ -72,15 +72,15 @@ static char	*sArgv0=NULL;					/* name of executable */
 
 static void ShowHelp(void)
 {
-    daoInfo("%s of " __DATE__ " at " __TIME__ "\n",sArgv0);
-    daoInfo("   arguments:\n");
-    daoInfo("   -h               display this message and exit\n");
-    daoInfo("   -d               display program debug output\n");
-    daoInfo("   -S               list of SHM (full path separated by space)\n");
-    daoInfo("   -L               start real-time loop\n");
-    daoInfo("   usage:\n");
-    daoInfo("   -S <clock SHM> <freq SHM> <frequency> -L\n");
-    daoInfo("\n");
+    printf("%s of " __DATE__ " at " __TIME__ "\n", sArgv0);
+    printf("   arguments:\n");
+    printf("   -h               display this message and exit\n");
+    printf("   -d <level>       log level: 0 warnings and errors (default), 1 info, 2 debug, 3 trace\n");
+    printf("   -S               list of SHM (full path separated by space)\n");
+    printf("   -L               start the real-time loop (after the other options)\n");
+    printf("   usage:\n");
+    printf("   -S <clock SHM> <freq SHM> <frequency> -L\n");
+    printf("\n");
 }
 /*--------------------------------------------------------------------------*/
 void * clockRealTimeLoop(void *thread_data)
@@ -98,24 +98,21 @@ void * clockRealTimeLoop(void *thread_data)
     shmFreq[0].array.F[0] = frequency;
     // MAIN LOOP
     daoInfo("ENTERING LOOP\n");
-    fflush(stdout);
-    struct timespec t[3];
-    double elapsedTime;
-    //double shmElapsedTime=0;
-    unsigned int clock[1]; 
-    clock_gettime(CLOCK_REALTIME, &t[1]);
-    float pauseTime;
-    pauseTime = 1e6/shmFreq[0].array.F[0];
-    daoInfo("clock @ %.3f Hz, pauseTime of %f\n", shmFreq[0].array.F[0], pauseTime);
-    // timing emulation there is a small offset of about 50 us...
-    // probalby due to the usleep function... not very accurate.
+    unsigned int clock[1] = {0};
+    daoInfo("clock @ %.3f Hz\n", shmFreq[0].array.F[0]);
+    // the next tick, on an absolute schedule (no drift from the time spent in between)
     struct timespec tc;
     clock_gettime(CLOCK_MONOTONIC, &tc);
-
+    float freq = frequency;
+    daoToolsLoopStatus status;
+    daoToolsLoopStatusInit(&status);
     while (end==0) 
     {
-        pauseTime = 1e9 / shmFreq[0].array.F[0];
-
+        if (shmFreq[0].array.F[0] > 0.0f)       // the frequency SHM can change it; ignore 0 or less
+        {
+            freq = shmFreq[0].array.F[0];
+        }
+        float pauseTime = 1e9 / freq;          // as before: in float
         tc.tv_nsec += pauseTime;
         if (tc.tv_nsec >= 1000000000L) 
         {
@@ -124,22 +121,18 @@ void * clockRealTimeLoop(void *thread_data)
         }
         // Delay until the next timestamp
         clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &tc, NULL);
-        clock_gettime(CLOCK_REALTIME, &t[2]);
-        clock[0]++;// = clock[0] + 1;
+        daoToolsLoopStatusStart(&status);
+        clock[0]++;
         shm[0].md[0].cnt2++; 
         daoShmSetData(&shm[0], (unsigned int*)clock, 1);
-        t[0]=t[1];
-        clock_gettime(CLOCK_REALTIME, &t[1]);
-        elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;    // sec to ms
-        elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6; // us to ms
-        printf("\rfps = %.3f Hz, elapsed time = %.3lf ms", 1e6/(1000*elapsedTime), elapsedTime);
-        fflush(stdout);
+        daoToolsLoopStatusEnd(&status, ", target %.1f Hz", freq);
     }
 
+    printf("\n");
     daoInfo("EXITING MAIN LOOP\n");
-    fflush(stdout);
-
-    return DAO_SUCCESS;
+    daoToolsShmRelease(&shm);
+    daoToolsShmRelease(&shmFreq);
+    return NULL;
 }
     
 /*--------------------------------------------------------------------------*/
@@ -147,9 +140,9 @@ static int realTimeLoop()
 {
     int status;
     // register interrupt signal to terminate the main loop
-    signal(SIGINT, endme);
+    daoToolsOnExitSignals(endme);   // Ctrl+C, kill, tmux kill-session
 
-    
+
     clock_t launch, done;
     double diff;
     launch=clock();
@@ -196,30 +189,37 @@ static void DecodeArgs(int argc, char **argv)
 
         switch (str[1]) {
             case 'h':	ShowHelp(); exit(0);
-	    case 'd':	
-			(void)sscanf(*argv++,"%d",&daoLogLevel); argc -= 1;
-			break;
+	    case 'd':
+                daoLogLevel = daoToolsArgInt(&argc, &argv, str);
+                break;
             case 'l':
-                        daoInfo("%s\n",*argv);
-                        argv += 1; argc -= 1;
-                        break;
+                daoInfo("%s\n", daoToolsArgValue(&argc, &argv, str));
+                break;
 
             case 'u':
-                        (void)sscanf(*argv++,"%d",&a1); argc -= 1;
-                        daoDebug("will sleep for %d usec\n",a1);
-                        (void)usleep(a1);
-                        break;
+                a1 = daoToolsArgInt(&argc, &argv, str);
+                daoDebug("will sleep for %d usec\n", a1);
+                (void)usleep(a1);
+                break;
             case 'S':
                         daoInfo("Clock real time control\n");
-                        daoToolsArgName(clockName, sizeof clockName, *argv++);
-                        daoToolsArgName(freqName, sizeof freqName, *argv++);
-                        (void)sscanf(*argv++,"%f", &frequency);
+                        daoToolsArgNameNext(&argc, &argv, str, clockName, sizeof clockName);
+                        daoToolsArgNameNext(&argc, &argv, str, freqName, sizeof freqName);
+                        frequency = daoToolsArgDouble(&argc, &argv, str);
+                        if (frequency <= 0.0f)
+                        {
+                            daoError("%s: the frequency must be positive\n", str);
+                            exit(2);
+                        }
                         daoInfo("%s \n", clockName);
                         daoInfo("%s \n", freqName);
                         daoInfo("%f \n", frequency);
                         break;
             case 'L':
-                        realTimeLoop();
+                if (realTimeLoop() != 0)         /* could not start, or failed (see above) */
+                {
+                    exit(EXIT_FAILURE);
+                }
                         break;
             default:
                         daoError("Do not know arg '%s'\n",str);
@@ -241,6 +241,11 @@ int main(int argc, char **argv)
     // r = seteuid(euid_real);//Go back to normal privileges
 
     sArgv0 = *argv;
+    if (argc < 2)
+    {                    /* nothing to do: say how */
+        ShowHelp();
+        return 1;
+    }
 
     DecodeArgs(argc,argv);
 

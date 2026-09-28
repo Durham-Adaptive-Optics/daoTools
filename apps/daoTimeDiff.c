@@ -75,34 +75,34 @@ static char	*sArgv0=NULL;					/* name of executable */
 
 static void ShowHelp(void)
 {
-    daoInfo("%s of " __DATE__ " at " __TIME__ "\n",sArgv0);
-    daoInfo("   arguments:\n");
-    daoInfo("   -h               display this message and exit\n");
-    daoInfo("   -d               display program debug output\n");
-    daoInfo("   -S               list of SHM (full path separated by space)\n");
-    daoInfo("   -n <popSize>     sliding-window size for the AVG/RMS SHMs (default 100)\n");
-    daoInfo("   -m               also print frame IDs / diff / negative-timestamp counter\n");
-    daoInfo("   -L               start real-time loop\n");
-    daoInfo("   usage:\n");
-    daoInfo("    daoTimeDiff -S <SHM1> <SHM2> [<sem1> <sem2>] <measurement SHM> [-n <popSize>] [-m] -L\n");
-    daoInfo("    (sem1 sem2: fixed semaphores; default: one of its own)\n");
-    daoInfo("\n");
-    daoInfo("   Latency (measurement SHM) is published every frame. This also\n");
-    daoInfo("   automatically maintains a running AVG and RMS of the last <popSize>\n");
-    daoInfo("   samples, published to <measurement SHM>Avg/Rms - no separate\n");
-    daoInfo("   daoTimeDiffStat process needed (that tool is still available for\n");
-    daoInfo("   computing AVG/RMS on any other scalar SHM). The same window, in\n");
-    daoInfo("   chronological (oldest-to-newest) order, is also published as a\n");
-    daoInfo("   <popSize>-element array to <measurement SHM>Array, for a GUI/plot\n");
-    daoInfo("   to read and display directly with no client-side buffering.\n");
-    daoInfo("\n");
+    printf("%s of " __DATE__ " at " __TIME__ "\n", sArgv0);
+    printf("   arguments:\n");
+    printf("   -h               display this message and exit\n");
+    printf("   -d <level>       log level: 0 warnings and errors (default), 1 info, 2 debug, 3 trace\n");
+    printf("   -S               list of SHM (full path separated by space)\n");
+    printf("   -n <popSize>     sliding-window size for the AVG/RMS SHMs (default 100)\n");
+    printf("   -m               also print frame IDs / diff / negative-timestamp counter\n");
+    printf("   -L               start the real-time loop (after the other options)\n");
+    printf("   usage:\n");
+    printf("    daoTimeDiff -S <SHM1> <SHM2> [<sem1> <sem2>] <measurement SHM> [-n <popSize>] [-m] -L\n");
+    printf("    (sem1 sem2: fixed semaphores; default: one of its own)\n");
+    printf("\n");
+    printf("   Latency (measurement SHM) is published every frame. This also\n");
+    printf("   automatically maintains a running AVG and RMS of the last <popSize>\n");
+    printf("   samples, published to <measurement SHM>Avg/Rms - no separate\n");
+    printf("   daoTimeDiffStat process needed (that tool is still available for\n");
+    printf("   computing AVG/RMS on any other scalar SHM). The same window, in\n");
+    printf("   chronological (oldest-to-newest) order, is also published as a\n");
+    printf("   <popSize>-element array to <measurement SHM>Array, for a GUI/plot\n");
+    printf("   to read and display directly with no client-side buffering.\n");
+    printf("\n");
 }
 
 /*--------------------------------------------------------------------------*/
 static int realTimeLoop()
 {
     // register interrupt signal to terminate the main loop
-    signal(SIGINT, endme);
+    daoToolsOnExitSignals(endme);   // Ctrl+C, kill, tmux kill-session
 
     daoInfo("Starting loop, %s/%s \n",shm0Name, shm1Name);
     fflush(stdout);
@@ -114,6 +114,11 @@ static int realTimeLoop()
     arrayShm = (IMAGE*) malloc(sizeof(IMAGE));
     daoToolsShmOpen(shm0Name, &shm0[0]);
     daoToolsShmOpen(shm1Name, &shm1[0]);
+    if (popSize < 1)
+    {
+        daoError("-n: a window of at least 1 measurement\n");
+        exit(EXIT_FAILURE);
+    }
     // Create size array, using 2D of 1x1... can be change to 1D
     uint32_t size[2];
     size[0] = 1;
@@ -145,23 +150,15 @@ static int realTimeLoop()
     float latency[1] = {0};
     float avgOut[1]  = {0};
     float rmsOut[1]  = {0};
-    struct timespec timeout;
     int nbNegTs=0;
-    int cnt=0;
-
-    // Throttle stdout to ~1 Hz: a write()/fflush() every frame is a syscall
-    // on a path that can run at any rate, and nobody reads a terminal that
-    // fast anyway (the SHMs above are already updated every frame).
-    struct timespec lastPrint;
-    clock_gettime(CLOCK_MONOTONIC, &lastPrint);
-
+    daoToolsLoopStatus status;
+    daoToolsLoopStatusInit(&status);
     while (end ==0)
     {
-        clock_gettime(CLOCK_REALTIME, &timeout);
-        timeout.tv_sec += 1; // 1 second timeout
         // wait for 2nd shm
-        if (daoShmWaitSemTimeout(shm1, sem1, &timeout) != DAO_TIMEOUT)
+        if (daoToolsWait(shm1, sem1, 1.0) == DAO_SUCCESS)
         {
+            daoToolsLoopStatusStart(&status);
             // Full sec+nsec timestamp: tsfixed.secondlong alone is only the
             // nsec-within-second component (tsfixed and ts are a union over
             // the same two int64s), so a diff across a second boundary would
@@ -222,35 +219,32 @@ static int realTimeLoop()
                 daoShmSetData(&arrayShm[0], orderedBuf, (uint32_t)circCount);
             }
 
-            struct timespec now;
-            clock_gettime(CLOCK_MONOTONIC, &now);
-            double sincePrint = (double)(now.tv_sec - lastPrint.tv_sec)
-                              + (double)(now.tv_nsec - lastPrint.tv_nsec) / 1e9;
-            if (sincePrint >= 1.0)
+            if (moreInfo)
             {
-                if (moreInfo)
-                    printf("\rf1ID = %" PRId64 ", f2ID = %" PRId64 ", diff = %" PRId64 ", negTs = %d, "
-                           "latency = %13.3f us, AVG = %13.3f us, RMS = %13.3f us",
-                           frameId0, frameId1, frameIdDiff, nbNegTs,
-                           latency[0], avgOut[0], rmsOut[0]);
-                else
-                    printf("\rlatency = %13.3f us, AVG = %13.3f us, RMS = %13.3f us",
-                           latency[0], avgOut[0], rmsOut[0]);
-                fflush(stdout);
-                lastPrint = now;
+                daoToolsLoopStatusEnd(&status, " | f1ID = %" PRId64 ", f2ID = %" PRId64 ", diff = %" PRId64 ", negTs = %d, latency = %.3f us, AVG = %.3f us, RMS = %.3f us",
+                    frameId0, frameId1, frameIdDiff, nbNegTs, latency[0], avgOut[0], rmsOut[0]);
+            }
+            else
+            {
+                daoToolsLoopStatusEnd(&status, " | latency = %.3f us, AVG = %.3f us, RMS = %.3f us",
+                    latency[0], avgOut[0], rmsOut[0]);
             }
         }
         else
         {
-            printf("\rTimeout %d: shm1", cnt);
-            fflush(stdout);
-            cnt++;
+            daoToolsLoopStatusWait(&status);
         }
     }
+    printf("\n");
     daoInfo("EXITING MAIN LOOP\n");
     free(circBuf);
     free(orderedBuf);
-
+    daoToolsShmRelease(&shm0);
+    daoToolsShmRelease(&shm1);
+    daoToolsShmRelease(&latencyShm);
+    daoToolsShmRelease(&avgShm);
+    daoToolsShmRelease(&rmsShm);
+    daoToolsShmRelease(&arrayShm);
     return 0;
 }
 
@@ -289,27 +283,28 @@ static void DecodeArgs(int argc, char **argv)
             case 'h':	
                         ShowHelp();
                          exit(0);
-            case 'd':	
-                        (void)sscanf(*argv++,"%d",&daoLogLevel); argc -= 1;
-                        break;
+            case 'd':
+                daoLogLevel = daoToolsArgInt(&argc, &argv, str);
+                break;
             case 'l':
-                        daoInfo("%s\n",*argv);
-                        argv += 1; argc -= 1;
-                        break;
+                daoInfo("%s\n", daoToolsArgValue(&argc, &argv, str));
+                break;
             case 'u':
-                        (void)sscanf(*argv++,"%d",&a1); argc -= 1;
-                        daoDebug("will sleep for %d usec\n",a1);
-                        (void)usleep(a1);
-                        break;
+                a1 = daoToolsArgInt(&argc, &argv, str);
+                daoDebug("will sleep for %d usec\n", a1);
+                (void)usleep(a1);
+                break;
             case 'S':
                         daoInfo("Simple Camera Reader and Writer from SHM real time control\n");
-                    	daoToolsArgName(shm0Name, sizeof shm0Name, *argv++); argc -= 1;
-                    	daoToolsArgName(shm1Name, sizeof shm1Name, *argv++); argc -= 1;
+                        daoToolsArgNameNext(&argc, &argv, str, shm0Name, sizeof shm0Name);
+                        daoToolsArgNameNext(&argc, &argv, str, shm1Name, sizeof shm1Name);
                         if (argc > 0 && isInteger(*argv)) {   /* older command lines: fixed semaphores */
-                            (void)sscanf(*argv++,"%d",&sem0); argc -= 1;
-                            (void)sscanf(*argv++,"%d",&sem1); argc -= 1;
+                        {
+                            sem0 = daoToolsArgInt(&argc, &argv, str);
                         }
-                    	daoToolsArgName(latencyShmName, sizeof latencyShmName, *argv++); argc -= 1;
+                            sem1 = daoToolsArgInt(&argc, &argv, str);
+                        }
+                        daoToolsArgNameNext(&argc, &argv, str, latencyShmName, sizeof latencyShmName);
                         if (daoToolsInsertShmNamePrefixN(latencyShmName, "Avg", avgShmName, sizeof avgShmName) != DAO_SUCCESS)
                             exit(EXIT_FAILURE);
                         if (daoToolsInsertShmNamePrefixN(latencyShmName, "Rms", rmsShmName, sizeof rmsShmName) != DAO_SUCCESS)
@@ -322,15 +317,18 @@ static void DecodeArgs(int argc, char **argv)
                         daoInfo("ARRAY SHM       = %s\n", arrayShmName);
                         break;
             case 'n':
-                        (void)sscanf(*argv++,"%d",&popSize); argc -= 1;
-                        daoInfo("AVG/RMS window (popSize) = %d\n", popSize);
-                        break;
+                popSize = daoToolsArgInt(&argc, &argv, str);
+                daoInfo("AVG/RMS window (popSize) = %d\n", popSize);
+                break;
             case 'm':
                         moreInfo = 1;
                         daoInfo("verbose (frame IDs / diff / negTs) display enabled\n");
                         break;
             case 'L':
-                        realTimeLoop();
+                if (realTimeLoop() != 0)         /* could not start, or failed (see above) */
+                {
+                    exit(EXIT_FAILURE);
+                }
                         break;
             default:
                         daoError("Do not know arg '%s'\n",str);
@@ -353,6 +351,11 @@ int main(int argc, char **argv)
     // r = seteuid(euid_real);//Go back to normal privileges
 
     sArgv0 = *argv;
+    if (argc < 2)
+    {                    /* nothing to do: say how */
+        ShowHelp();
+        return 1;
+    }
 
     DecodeArgs(argc,argv);
 

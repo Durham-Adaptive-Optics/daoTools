@@ -13,6 +13,7 @@
 #include <cstring>
 #include <string>
 #include <dao.h>
+#include <daoTools.h>
 
 DAO_PROFILE(
     downsampleProfile, 
@@ -27,11 +28,12 @@ struct CliArguments
     bool summationMode = false;
 };
 
+// the loop ends at Ctrl+C, kill or tmux kill-session (a handler only sets the flag)
+static volatile sig_atomic_t stop = 0;
+
 void handleInterruptSignal([[maybe_unused]] int signal)
 {
-    DAO_PROFILE_EXPORT(downsampleProfile);
-    printf("exiting..\n");
-    exit(0);
+    stop = 1;
 }
 
 void
@@ -71,7 +73,7 @@ downsample(
 int main(int argc, char *argv[]) 
 {
     // Register our signal handler with the OS
-    signal(SIGINT, handleInterruptSignal);
+    daoToolsOnExitSignals(handleInterruptSignal);   // Ctrl+C, kill, tmux kill-session
 
     // Parse CLI
     CliArguments args;
@@ -146,9 +148,13 @@ int main(int argc, char *argv[])
     // Fetch source image, downsample, and output result.
     volatile IMAGE_METADATA *sourceMetadata = (volatile IMAGE_METADATA*)sourceShm.md;
     uint64_t cnt0 = sourceMetadata->cnt0;
-    while(true) {
+    daoToolsLoopStatus status;
+    daoToolsLoopStatusInit(&status);
+    while (!stop)
+    {
         uint64_t cnt0_ = sourceMetadata->cnt0;
         if(cnt0_ > cnt0) {
+            daoToolsLoopStatusStart(&status);
             DAO_PROFILE_NEW_FRAME(downsampleProfile);
             cnt0 = cnt0_;
 
@@ -166,6 +172,13 @@ int main(int argc, char *argv[])
             DAO_PROFILE_STOP(downsampleProfile, "Downsample");
 
             daoShmSetData(&outShm, outImage, outShm.md->size[0] * outShm.md->size[1]);
+            daoToolsLoopStatusEnd(&status, nullptr);
         }
     }
+    printf("\nexiting..\n");
+    DAO_PROFILE_EXPORT(downsampleProfile);
+    free(outImage);
+    daoShmClose(&sourceShm);
+    daoShmClose(&outShm);
+    return EXIT_SUCCESS;
 }

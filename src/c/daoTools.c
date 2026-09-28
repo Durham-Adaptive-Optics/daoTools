@@ -20,6 +20,7 @@
 #include <time.h>
 #include <sys/stat.h>
 #include <pthread.h>
+#include <signal.h>
 #if defined(__x86_64__) || defined(__i386__)
 #include <xmmintrin.h>
 #include <pmmintrin.h>
@@ -164,10 +165,182 @@ void daoToolsArgName(char* dst, size_t size, const char* arg) {
 }
 
 void daoToolsShmOpen(const char* name, IMAGE* image) {
+    if (name == NULL || name[0] == '\0')
+    {
+        daoError("no SHM given (see -S and -h)\n");
+        exit(EXIT_FAILURE);
+    }
     if (daoShmOpen(name, image) != DAO_SUCCESS) {
         daoError("Cannot open SHM %s\n", name);
         exit(EXIT_FAILURE);
     }
+}
+
+const char* daoToolsArgValue(int* argc, char*** argv, const char* opt)
+{
+    if (*argc <= 0 || **argv == NULL)
+    {
+        daoError("%s needs a value (see -h)\n", opt);
+        exit(2);
+    }
+    const char* value = **argv;
+    (*argv)++;
+    (*argc)--;
+    return value;
+}
+
+long daoToolsArgInt(int* argc, char*** argv, const char* opt)
+{
+    const char* value = daoToolsArgValue(argc, argv, opt);
+    char* end;
+    errno = 0;
+    long x = strtol(value, &end, 10);
+    if (end == value || *end != '\0' || errno != 0)
+    {
+        daoError("%s: '%s' is not a whole number\n", opt, value);
+        exit(2);
+    }
+    return x;
+}
+
+double daoToolsArgDouble(int* argc, char*** argv, const char* opt)
+{
+    const char* value = daoToolsArgValue(argc, argv, opt);
+    char* end;
+    errno = 0;
+    double x = strtod(value, &end);
+    if (end == value || *end != '\0' || errno != 0)
+    {
+        daoError("%s: '%s' is not a number\n", opt, value);
+        exit(2);
+    }
+    return x;
+}
+
+void daoToolsArgNameNext(int* argc, char*** argv, const char* opt, char* dst, size_t size)
+{
+    daoToolsArgName(dst, size, daoToolsArgValue(argc, argv, opt));
+}
+
+void daoToolsOnExitSignals(void (*handler)(int))
+{
+    struct sigaction sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sa_handler = handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;          /* as signal(): the waits of the loop still return */
+    sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
+    sigaction(SIGHUP, &sa, NULL);
+}
+
+void daoToolsShmRelease(IMAGE** image)
+{
+    if (image == NULL || *image == NULL)
+    {
+        return;
+    }
+    daoShmClose(*image);
+    free(*image);
+    *image = NULL;
+}
+
+static double daoToolsElapsed(const struct timespec* from, const struct timespec* to)
+{
+    return (double)(to->tv_sec - from->tv_sec) + (double)(to->tv_nsec - from->tv_nsec) * 1e-9;
+}
+
+int daoToolsWait(IMAGE* shm, int semNb, double seconds)
+{
+    struct timespec until;
+    clock_gettime(CLOCK_REALTIME, &until);
+    long ns = until.tv_nsec + (long)((seconds - (long)seconds) * 1e9);
+    until.tv_sec += (time_t)seconds + ns / 1000000000L;
+    until.tv_nsec = ns % 1000000000L;
+    int r = daoShmWaitSemTimeout(shm, semNb, &until);
+    if (r == DAO_SUCCESS || r == DAO_TIMEOUT)
+    {
+        return r;
+    }
+    daoError("cannot wait for the frames of %s (see above)\n", shm->md ? shm->md[0].name : "?");
+    exit(EXIT_FAILURE);
+}
+
+long daoToolsShmValues(IMAGE* shm)
+{
+    return (long)shm->md[0].nelement;
+}
+
+void daoToolsShmCheck(IMAGE* shm, const char* name, int atype, long minValues)
+{
+    if (atype >= 0 && shm->md[0].atype != atype)
+    {
+        daoError("%s: data type %d, %d expected\n", name, shm->md[0].atype, atype);
+        exit(EXIT_FAILURE);
+    }
+    if (daoToolsShmValues(shm) < minValues)
+    {
+        daoError("%s: %ld values, at least %ld needed\n", name, daoToolsShmValues(shm), minValues);
+        exit(EXIT_FAILURE);
+    }
+}
+
+void daoToolsLoopStatusInit(daoToolsLoopStatus* st)
+{
+    memset(st, 0, sizeof *st);
+    clock_gettime(CLOCK_MONOTONIC, &st->tPrint);
+}
+
+void daoToolsLoopStatusStart(daoToolsLoopStatus* st)
+{
+    clock_gettime(CLOCK_MONOTONIC, &st->tStart);
+    if (st->waits > 0)
+    {                 /* the frames come back: count from here */
+        st->waits = 0;
+        st->tPrint = st->tStart;
+    }
+}
+
+void daoToolsLoopStatusEnd(daoToolsLoopStatus* st, const char* fmt, ...)
+{
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    double us = daoToolsElapsed(&st->tStart, &now) * 1e6;
+    st->sumUs += us;
+    if (us > st->maxUs)
+    {
+        st->maxUs = us;
+    }
+    st->frames++;
+    double since = daoToolsElapsed(&st->tPrint, &now);
+    if (since < 1.0)
+    {
+        return;
+    }
+    char extra[256] = "";
+    if (fmt != NULL)
+    {
+        va_list args;
+        va_start(args, fmt);
+        vsnprintf(extra, sizeof extra, fmt, args);
+        va_end(args);
+    }
+    printf("\rcomp %8.2f us (max %8.2f us), %9.1f Hz%s    ",
+        st->sumUs / st->frames, st->maxUs, st->frames / since, extra);
+    fflush(stdout);
+    st->sumUs = st->maxUs = 0.0;
+    st->frames = 0;
+    st->tPrint = now;
+}
+
+void daoToolsLoopStatusWait(daoToolsLoopStatus* st)
+{
+    st->waits++;
+    printf("\rwaiting for data (%ld s)                                                  ", st->waits);
+    fflush(stdout);
+    st->sumUs = st->maxUs = 0.0;
+    st->frames = 0;
+    clock_gettime(CLOCK_MONOTONIC, &st->tPrint);
 }
 
 /* sched_setscheduler(SCHED_FIFO, priority) silently does nothing if this
