@@ -283,7 +283,12 @@ def test_ManualSessionControl(tmp_directory, client, tool_inst, request):
     client.daq_session_begin()
     client.daq_session_finish()
 
-    time.sleep(1) # required due to limitation of timestamp naming resolution.
+    first_session = os.listdir(tmp_directory)[0]
+    deadline = time.monotonic() + DEFAULT_TIMEOUT
+    while time.strftime("%Y-%m-%d_%H-%M-%S") == first_session:
+        if time.monotonic() >= deadline:
+            raise RuntimeError("session timestamp did not advance")
+        time.sleep(0.01)
     
     client.daq_session_begin()
     client.daq_session_finish()

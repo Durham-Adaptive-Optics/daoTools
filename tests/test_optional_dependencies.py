@@ -4,6 +4,8 @@ from contextlib import redirect_stdout
 import io
 import os
 from pathlib import Path
+import sys
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -79,7 +81,10 @@ class OptionalDependencyTests(unittest.TestCase):
         module = ast.parse((ROOT / 'wscript').read_text())
         configure = next(node for node in module.body
                          if isinstance(node, ast.FunctionDef) and node.name == 'configure')
-        namespace = {'os': os}
+        namespace = {
+            'os': os,
+            'Utils': SimpleNamespace(unversioned_sys_platform=lambda: sys.platform),
+        }
         exec(compile(ast.Module(body=[configure], type_ignores=[]), 'wscript', 'exec'), namespace)
         scenarios = [set(), *[{package} for package in PACKAGES], set(PACKAGES), {'cfitsio-incompatible'}]
         for missing in scenarios:
