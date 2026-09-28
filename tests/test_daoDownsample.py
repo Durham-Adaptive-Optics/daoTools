@@ -70,13 +70,21 @@ def test_Downsample(grid, sumMode, src = (6,6)):
     # launch daoDownsample.
     summationFlag = ["-s"] if sumMode else []
     daoDownsample = subprocess.Popen(["daoDownsample", SRCIMG_SHM, OUTIMG_SHM] + summationFlag)
-    time.sleep(1)
-    
-    # write frame into source shm and await downsampled frame.
     cnt0 = outShm.get_counter()
-    srcShm.set_data(frame)
-    while outShm.get_counter() == cnt0: pass
-    daoDownsample.kill()
+    deadline = time.monotonic() + 5
+    try:
+        # Republish until the consumer is ready, rather than sleeping a fixed second.
+        while outShm.get_counter() == cnt0:
+            if daoDownsample.poll() is not None:
+                pytest.fail(f"daoDownsample exited unexpectedly ({daoDownsample.returncode})")
+            if time.monotonic() >= deadline:
+                pytest.fail("timed out waiting for downsampled frame")
+            srcShm.set_data(frame)
+            time.sleep(0.01)
+    finally:
+        if daoDownsample.poll() is None:
+            daoDownsample.kill()
+        daoDownsample.wait()
 
     # verify downsampled frame against reference algorithm.
     reference = np.reshape(
