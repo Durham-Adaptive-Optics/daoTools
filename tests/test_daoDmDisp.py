@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
 
+os.environ.setdefault('PYQTGRAPH_QT_LIB', 'PyQt5')
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
 import numpy as np
