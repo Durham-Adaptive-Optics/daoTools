@@ -273,8 +273,9 @@ Measures the latency between two SHM timestamps and now computes the running ave
 
 .. code-block:: bash
 
-    daoTimeDiff -S <SHM1> <SHM2> [<sem1> <sem2>] <measurement_shm> [-n <popSize>] [-m] -L
+    daoTimeDiff -S <SHM1> <SHM2> <measurement_shm> [-n <popSize>] [-m] -L
 
+- waits on a semaphore of its own, so it never takes frames from the pipeline's readers (semaphore numbers after the two SHMs, from older command lines, are ignored with a warning)
 - ``-n <popSize>`` — sliding-window size for the AVG/RMS computation (default 100)
 - ``-m`` — verbose mode: also print each pair's frame IDs and raw diff (off by default; without it the print is a fixed-width, ~1 Hz-throttled line so per-iteration ``fflush`` stays off the critical path)
 - Publishes ``<measurement>Avg`` and ``<measurement>Rms`` scalar SHMs plus a ``<measurement>Array`` SHM holding the sliding window in chronological order, for GUIs (e.g. ``daoShmViewer``'s "SHM Latency" tab) to plot directly without re-measuring anything themselves.

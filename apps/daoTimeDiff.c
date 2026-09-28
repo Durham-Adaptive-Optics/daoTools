@@ -57,8 +57,6 @@ char latencyShmName[DAO_SHM_NAME_LEN];
 char avgShmName[DAO_SHM_NAME_LEN];
 char rmsShmName[DAO_SHM_NAME_LEN];
 char arrayShmName[DAO_SHM_NAME_LEN];
-int sem0 = DAO_SEM_AUTO;    // <sem1> <sem2>: fixed semaphores; default: one of its own
-int sem1 = DAO_SEM_AUTO;
 int popSize = 100;   /* -n: sliding-window size for the AVG/RMS SHMs */
 int moreInfo = 0;    /* -m: also print frame IDs / diff / negTs counter */
 
@@ -84,8 +82,8 @@ static void ShowHelp(void)
     printf("   -m               also print frame IDs / diff / negative-timestamp counter\n");
     printf("   -L               start the real-time loop (after the other options)\n");
     printf("   usage:\n");
-    printf("    daoTimeDiff -S <SHM1> <SHM2> [<sem1> <sem2>] <measurement SHM> [-n <popSize>] [-m] -L\n");
-    printf("    (sem1 sem2: fixed semaphores; default: one of its own)\n");
+    printf("    daoTimeDiff -S <SHM1> <SHM2> <measurement SHM> [-n <popSize>] [-m] -L\n");
+    printf("    (waits on a semaphore of its own: never takes frames from other readers)\n");
     printf("\n");
     printf("   Latency (measurement SHM) is published every frame. This also\n");
     printf("   automatically maintains a running AVG and RMS of the last <popSize>\n");
@@ -156,7 +154,7 @@ static int realTimeLoop()
     while (end ==0)
     {
         // wait for 2nd shm
-        if (daoToolsWait(shm1, sem1, 1.0) == DAO_SUCCESS)
+        if (daoToolsWait(shm1, DAO_SEM_AUTO, 1.0) == DAO_SUCCESS)
         {
             daoToolsLoopStatusStart(&status);
             // Full sec+nsec timestamp: tsfixed.secondlong alone is only the
@@ -298,11 +296,11 @@ static void DecodeArgs(int argc, char **argv)
                         daoInfo("Simple Camera Reader and Writer from SHM real time control\n");
                         daoToolsArgNameNext(&argc, &argv, str, shm0Name, sizeof shm0Name);
                         daoToolsArgNameNext(&argc, &argv, str, shm1Name, sizeof shm1Name);
-                        if (argc > 0 && isInteger(*argv)) {   /* older command lines: fixed semaphores */
+                        if (argc > 1 && isInteger(argv[0]) && isInteger(argv[1]))   /* older command lines: <sem1> <sem2> */
                         {
-                            sem0 = daoToolsArgInt(&argc, &argv, str);
-                        }
-                            sem1 = daoToolsArgInt(&argc, &argv, str);
+                            daoWarning("semaphore numbers %s %s ignored: daoTimeDiff waits on a semaphore of its own\n", argv[0], argv[1]);
+                            argv += 2;
+                            argc -= 2;
                         }
                         daoToolsArgNameNext(&argc, &argv, str, latencyShmName, sizeof latencyShmName);
                         if (daoToolsInsertShmNamePrefixN(latencyShmName, "Avg", avgShmName, sizeof avgShmName) != DAO_SUCCESS)

@@ -56,30 +56,6 @@
       </property>
       <layout class="QHBoxLayout" name="argsLayout">
        <item>
-        <widget class="QLabel" name="sem1Title">
-         <property name="text"><string>sem1</string></property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QSpinBox" name="sem1Spin">
-         <property name="minimum"><number>0</number></property>
-         <property name="maximum"><number>15</number></property>
-         <property name="value"><number>5</number></property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLabel" name="sem2Title">
-         <property name="text"><string>sem2</string></property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QSpinBox" name="sem2Spin">
-         <property name="minimum"><number>0</number></property>
-         <property name="maximum"><number>15</number></property>
-         <property name="value"><number>5</number></property>
-        </widget>
-       </item>
-       <item>
         <widget class="QLabel" name="popSizeTitle">
          <property name="text"><string>window (-n)</string></property>
         </widget>

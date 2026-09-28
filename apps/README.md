@@ -104,7 +104,7 @@ not actually built/shipped) and the project-scaffolding tools
 
 | Tool | Inputs | Outputs | Notes |
 |---|---|---|---|
-| `daoTimeDiff` | `SHM1`, `SHM2` | measurement | Latency between two SHM timestamps. `-S <SHM1> <SHM2> [<sem1> <sem2>] <measurement>` (semaphores optional: fixed ones, for older command lines) |
+| `daoTimeDiff` | `SHM1`, `SHM2` | measurement | Latency between two SHM timestamps. `-S <SHM1> <SHM2> <measurement>` (waits on a semaphore of its own) |
 | `daoTimeDiffNCurse` | same | measurement + live `ncurses` display | Same tool, terminal UI. |
 | `daoTimeDiffStat` | a latency/time SHM | running-average SHM | Statistical summary (min/max/mean/std) over N samples. `-S <time> [-s <semNb>] -n <nbMeas>` |
 | `daoSetLatency` | — | — | Not a SHM tool: writes a value to `/dev/cpu_dma_latency` (Linux PM QoS) to disable deep CPU idle states, then blocks forever holding it open. `<latency in us>` |

@@ -51,8 +51,6 @@ IMAGE *latencyShm;
 char shm0Name[DAO_SHM_NAME_LEN];
 char shm1Name[DAO_SHM_NAME_LEN];
 char latencyShmName[DAO_SHM_NAME_LEN];
-int sem0 = DAO_SEM_AUTO;    // <sem1> <sem2>: fixed semaphores; default: one of its own
-int sem1 = DAO_SEM_AUTO;
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -74,8 +72,8 @@ static void ShowHelp(void)
     printf("   -S               list of SHM (full path separated by space)\n");
     printf("   -L               start the real-time loop (after the other options)\n");
     printf("   usage:\n");
-    printf("    daoTimeDiff -S <SHM1> <SHM2> [<sem1> <sem2>] <measurement SHM> -L\n");
-    printf("    (sem1 sem2: fixed semaphores; default: one of its own)\n");
+    printf("    daoTimeDiff -S <SHM1> <SHM2> <measurement SHM> -L\n");
+    printf("    (waits on a semaphore of its own: never takes frames from other readers)\n");
     printf("\n");
 }
 
@@ -118,7 +116,7 @@ static int realTimeLoop()
     while (end ==0)
     {
         // wait for 2nd shm
-        timedOut = (daoToolsWait(shm1, sem1, 1.0) != DAO_SUCCESS);
+        timedOut = (daoToolsWait(shm1, DAO_SEM_AUTO, 1.0) != DAO_SUCCESS);
         if (!timedOut)
         {
             // the full timestamps (seconds and nanoseconds): a difference across
@@ -227,11 +225,11 @@ static void DecodeArgs(int argc, char **argv)
                         daoInfo("Simple Camera Reader and Writer from SHM real time control\n");
                         daoToolsArgNameNext(&argc, &argv, str, shm0Name, sizeof shm0Name);
                         daoToolsArgNameNext(&argc, &argv, str, shm1Name, sizeof shm1Name);
-                        if (argc > 0 && isInteger(*argv)) {   /* older command lines: fixed semaphores */
+                        if (argc > 1 && isInteger(argv[0]) && isInteger(argv[1]))   /* older command lines: <sem1> <sem2> */
                         {
-                            sem0 = daoToolsArgInt(&argc, &argv, str);
-                        }
-                            sem1 = daoToolsArgInt(&argc, &argv, str);
+                            daoWarning("semaphore numbers %s %s ignored: daoTimeDiff waits on a semaphore of its own\n", argv[0], argv[1]);
+                            argv += 2;
+                            argc -= 2;
                         }
                         daoToolsArgNameNext(&argc, &argv, str, latencyShmName, sizeof latencyShmName);
                         break;
