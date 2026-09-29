@@ -10,3 +10,4 @@ screeninfo
 pytest
 pyqtgraph
 PyQt5
+psutil

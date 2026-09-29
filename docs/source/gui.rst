@@ -30,6 +30,24 @@ SHM Latency tab
 Pick any two SHMs from the existing file list, then Start: this launches the real ``daoTimeDiff`` binary in its own named ``tmux`` session (semaphore numbers default to 5/5, matching ``daoPlotLatency.py``'s convention so as not to steal semaphore posts from real consumers). The tab does not re-measure anything itself — it purely reads ``daoTimeDiff``'s own ``Array``/``Avg``/``Rms`` SHMs and renders a small scatter plot (with AVG/RMS reference lines) plus a histogram. Stop kills the tmux session.
 
 
+SHM Pipeline and Process Monitor
+--------------------------------
+
+``daoShmPipeline.py`` draws the active local SHM graph. Each process is shown once, with directed connections through the SHMs it reads and writes. Click a process or SHM node for its command line, connections, data type, shape, update rate, and semaphore details. Orphaned SHMs and the viewer process itself are omitted.
+
+``daoShmProcess.py`` shows only processes currently connected to discovered SHMs. The terminal view refreshes continuously by default; ``--once`` prints one snapshot, while ``--qt`` opens a process table. CPU cores are reported as CPU percent divided by 100, and the thread column reports each process's current thread count.
+
+Run from the workspace root:
+
+.. code-block:: bash
+
+    python daoTools/gui/daoShmPipeline.py
+    python daoTools/gui/daoShmProcess.py
+    python daoTools/gui/daoShmProcess.py --qt
+    python daoTools/gui/daoShmProcess.py --once
+
+Both tools accept ``--directory`` to override the SHM directory. The default is ``/tmp`` on Linux and the current directory on Windows. The process tools use ``psutil`` for cross-platform process metadata; install it through ``daoTools/pyrequirements.txt``.
+
 daoImDisp / daoImgDisp
 -----------------------
 
