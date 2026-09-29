@@ -14,8 +14,6 @@ Usage: daoTimeDiffDisp.py <SHM1> <SHM2> [options]
   SHM2   end of the interval   (e.g. the DM command SHM)
 
 Options:
-  --sem1 N      semaphore to wait on in SHM1 (default: 5)
-  --sem2 N      semaphore to wait on in SHM2 (default: 5)
   -n, --window N
                 sliding-window size for AVG/RMS, daoTimeDiff's -n (default: 100)
   -m, --more    pass -m to daoTimeDiff (frame IDs / diff / negTs in its tmux
@@ -26,9 +24,8 @@ Options:
                 closing the window kills the session, like pressing Stop)
   --light       light mode (default: dark)
 
-Semaphores default to 5 rather than 0 on purpose: same convention as
-daoPlotLatency.py, so a monitoring tap does not consume the semaphore posts
-the real pipeline consumer needs.
+daoTimeDiff waits on a semaphore of its own, so a monitoring tap never
+takes the frames the real pipeline consumer needs.
 
 The two SHM paths stay editable while the GUI runs - Stop, change them, Start
 again to measure a different pair.
@@ -36,7 +33,7 @@ again to measure a different pair.
 Examples:
   daoTimeDiffDisp.py /tmp/wfsIm.im.shm /tmp/dmCmd.im.shm
   daoTimeDiffDisp.py /tmp/wfsIm.im.shm /tmp/dmCmd.im.shm -n 500
-  daoTimeDiffDisp.py /tmp/wfsIm.im.shm /tmp/dmCmd.im.shm --sem1 6 --sem2 6 --light
+  daoTimeDiffDisp.py /tmp/wfsIm.im.shm /tmp/dmCmd.im.shm --light
 """
 
 import os
@@ -122,14 +119,12 @@ def sibling_shm_name(measName, prefix):
 
 
 class Main(QMainWindow, Ui_MainWindow):
-    def __init__(self, shm1, shm2, sem1, sem2, window, moreInfo, measName, keepOnExit):
+    def __init__(self, shm1, shm2, window, moreInfo, measName, keepOnExit):
         super(Main, self).__init__()
         self.setupUi(self)
 
         self.shm1Edit.setText(shm1 or "")
         self.shm2Edit.setText(shm2 or "")
-        self.sem1Spin.setValue(sem1)
-        self.sem2Spin.setValue(sem2)
         self.popSizeSpin.setValue(window)
         self.moreInfoCheck.setChecked(moreInfo)
 
@@ -214,7 +209,7 @@ class Main(QMainWindow, Ui_MainWindow):
         measName = self.measNameOverride or f"/tmp/{session}.im.shm"
 
         cmd = (f"daoTimeDiff -S {path1} {path2} "
-               f"{self.sem1Spin.value()} {self.sem2Spin.value()} {measName} "
+               f"{measName} "
                f"-n {self.popSizeSpin.value()}"
                f"{' -m' if self.moreInfoCheck.isChecked() else ''} -L")
         try:
@@ -271,7 +266,7 @@ class Main(QMainWindow, Ui_MainWindow):
         """The args are baked into daoTimeDiff's command line at launch, so
         editing them while it runs would just be misleading."""
         for w in (self.shm1Edit, self.shm2Edit, self.shm1BrowseButton, self.shm2BrowseButton,
-                  self.sem1Spin, self.sem2Spin, self.popSizeSpin, self.moreInfoCheck):
+                  self.popSizeSpin, self.moreInfoCheck):
             w.setEnabled(on)
 
     # ------------------------------------------------------------------
@@ -348,8 +343,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
     parser.add_argument("shm1", nargs="?", default="", help="start-of-interval SHM")
     parser.add_argument("shm2", nargs="?", default="", help="end-of-interval SHM")
-    parser.add_argument("--sem1", type=int, default=5, help="semaphore to wait on in SHM1 (default: 5)")
-    parser.add_argument("--sem2", type=int, default=5, help="semaphore to wait on in SHM2 (default: 5)")
+    # older command lines: daoTimeDiff now waits on a semaphore of its own
+    parser.add_argument("--sem1", type=int, help=argparse.SUPPRESS)
+    parser.add_argument("--sem2", type=int, help=argparse.SUPPRESS)
     parser.add_argument("-n", "--window", type=int, default=100,
                         help="AVG/RMS sliding-window size, daoTimeDiff's -n (default: 100)")
     parser.add_argument("-m", "--more", action="store_true", help="pass -m to daoTimeDiff")
@@ -369,7 +365,7 @@ def main():
     app = QApplication(sys.argv)
     app.setStyleSheet(make_stylesheet(args.light))
 
-    win = Main(args.shm1, args.shm2, args.sem1, args.sem2,
+    win = Main(args.shm1, args.shm2,
                args.window, args.more, args.meas, args.keep)
     if args.shm1 and args.shm2:
         win.setWindowTitle("SHM Latency  [%s -> %s]"

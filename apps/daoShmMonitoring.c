@@ -77,20 +77,15 @@ static char	*sArgv0=NULL;					/* name of executable */
 
 static void ShowHelp(void)
 {
-    daoInfo("%s of " __DATE__ " at " __TIME__ "\n",sArgv0);
-    daoInfo("   arguments:\n");
-    daoInfo("   -h               display this message and exit\n");
-    daoInfo("   -d               display program debug output\n");
-    daoInfo("   -l str           display str in output\n");
-    /*
-     **	Post init tests
-     */
-    daoInfo("   -L Nb            real time control loop: example daoShmMonitoring -L shm 25\n");
-    /*
-     **	Timing tests
-     */
-    daoInfo("   -t nloops        test timing for i/o\n");
-    daoInfo("\n");
+    printf("%s of " __DATE__ " at " __TIME__ "\n", sArgv0);
+    printf("   arguments:\n");
+    printf("   -h               display this message and exit\n");
+    printf("   -d <level>       log level: 0 warnings and errors (default), 1 info, 2 debug, 3 trace\n");
+    printf("   -l str           display str in output\n");
+    printf("   -L <SHM> <Hz>    display the metadata of <SHM>, <Hz> times per second\n");
+    printf("   usage:\n");
+    printf("   -L /tmp/cam.im.shm 25\n");
+    printf("\n");
 }
 /*--------------------------------------------------------------------------*/
 void * displayRealTimeLoop(void *thread_data)
@@ -101,8 +96,8 @@ void * displayRealTimeLoop(void *thread_data)
     fflush(stdout);
     struct timespec t[2];
     clock_gettime(CLOCK_REALTIME, &t[1]);
-    float pauseTime;
-    pauseTime = 1e6/frequency-50;
+    // the display rate (-L); the ~50 us left for drawing
+    useconds_t pauseTime = (useconds_t)(1e6 / frequency > 50.0 ? 1e6 / frequency - 50.0 : 0.0);
     // timing emulation there is a small offset of about 50 us...
     // probalby due to the usleep function... not very accurate.
     WINDOW * mainwin;
@@ -125,8 +120,8 @@ void * displayRealTimeLoop(void *thread_data)
         printw("atype       %d\n", shm[0].md[0].atype); 
         printw("cnt0        %ld\n", shm[0].md[0].cnt0); 
         printw("cnt1        %ld\n", shm[0].md[0].cnt1); 
-        printw("cnt2        %ld\n", shm[0].md[0].cnt2); 
-        printw("timestamp   %ld\n", shm[0].md[0].atime.tsfixed.secondlong); 
+        printw("cnt2        %ld\n", shm[0].md[0].cnt2);
+        printw("timestamp   %ld.%09ld\n", (long)shm[0].md[0].atime.ts.tv_sec, (long)shm[0].md[0].atime.ts.tv_nsec);
         printw("-------------------------------------------------------------------\n"); 
         refresh();
     }
@@ -143,7 +138,7 @@ static int realTimeLoop()
 {
     int status;
     // register interrupt signal to terminate the main loop
-    signal(SIGINT, endme);
+    daoToolsOnExitSignals(endme);   // Ctrl+C, kill, tmux kill-session
 
     shm = (IMAGE*) malloc(sizeof(IMAGE));
     daoToolsShmOpen(shmName, &shm[0]);
@@ -167,6 +162,7 @@ static int realTimeLoop()
         return DAO_ERROR;
     }
     pthread_join(controllerThread, NULL);
+    daoToolsShmRelease(&shm);
     return DAO_SUCCESS;
 }
 
@@ -191,27 +187,36 @@ static void DecodeArgs(int argc, char **argv)
 
         switch (str[1]) {
             case 'h':	ShowHelp(); exit(0);
-	    case 'd':	
-			(void)sscanf(*argv++,"%d",&daoLogLevel); argc -= 1;
-			break;
+	    case 'd':
+                daoLogLevel = daoToolsArgInt(&argc, &argv, str);
+                break;
             case 'l':
-                        daoInfo("%s\n",*argv);
-                        argv += 1; argc -= 1;
-                        break;
+                daoInfo("%s\n", daoToolsArgValue(&argc, &argv, str));
+                break;
 
-            case 'b':	(void)sscanf(*argv++,"%d",&sNdx); argc -= 1;	break;
+            case 'b':
+                sNdx = daoToolsArgInt(&argc, &argv, str);
+                break;
             case 'u':
-                        (void)sscanf(*argv++,"%d",&a1); argc -= 1;
-                        daoDebug("will sleep for %d usec\n",a1);
-                        (void)usleep(a1);
-                        break;
+                a1 = daoToolsArgInt(&argc, &argv, str);
+                daoDebug("will sleep for %d usec\n", a1);
+                (void)usleep(a1);
+                break;
             case 'L':
                         daoInfo("CAM real time control\n");
-                        daoToolsArgName(shmName, sizeof shmName, *argv++);
-                        (void)sscanf(*argv++,"%f", &frequency);
+                        daoToolsArgNameNext(&argc, &argv, str, shmName, sizeof shmName);
+                        frequency = daoToolsArgDouble(&argc, &argv, str);
+                        if (frequency <= 0.0)
+                        {
+                            daoError("-L: the display rate must be positive\n");
+                            exit(2);
+                        }
                         daoInfo("%s \n", shmName);
                         daoInfo("%f \n", frequency);
-                        realTimeLoop();
+                        if (realTimeLoop() != 0)         /* could not start, or failed (see above) */
+                        {
+                            exit(EXIT_FAILURE);
+                        }
                         break;
             default:
                         daoError("Do not know arg '%s'\n",str);
@@ -233,6 +238,11 @@ int main(int argc, char **argv)
     // r = seteuid(euid_real);//Go back to normal privileges
 
     sArgv0 = *argv;
+    if (argc < 2)
+    {                    /* nothing to do: say how */
+        ShowHelp();
+        return 1;
+    }
 
     DecodeArgs(argc,argv);
 

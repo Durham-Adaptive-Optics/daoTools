@@ -13,7 +13,7 @@ latency = np.zeros(nData)
 
 # Use tqdm for the progress bar
 for k in tqdm(range(nData), desc="Reading Latency"):
-    latency[k] = latencyShm.get_data(check=True, semNb=5)[0, 0]
+    latency[k] = latencyShm.get_data(check=True)[0, 0]
 
 # Calculate statistics
 mean_latency = np.mean(latency)

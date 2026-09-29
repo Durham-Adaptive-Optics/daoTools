@@ -45,7 +45,7 @@ double tlastupdatedouble;
 char ocamRawShmName[DAO_SHM_NAME_LEN];
 char ocamShmName[DAO_SHM_NAME_LEN];
 char lutShmName[DAO_SHM_NAME_LEN];
-int semNb = 0;
+int semNb = DAO_SEM_AUTO;   // -s: a fixed semaphore; default: one of its own
 int binning = 1; // binning factor, default is 1 (no binning)
 
 static int   		end     = 0;		           // termination flag
@@ -61,17 +61,17 @@ static char	*sArgv0=NULL;					/* name of executable */
 
 static void ShowHelp(void)
 {
-    daoInfo("%s of " __DATE__ " at " __TIME__ "\n",sArgv0);
-    daoInfo("   arguments:\n");
-    daoInfo("   -h               display this message and exit\n");
-    daoInfo("   -d               display program debug output\n");
-    daoInfo("   -S               list of SHM (full path separated by space)\n");
-    daoInfo("   -s               semaphore number\n");
-    daoInfo("   -b               binning\n");
-    daoInfo("   -L               start real-time loop\n");
-    daoInfo("   usage:\n");
-    daoInfo("   -S <ocamRaw SHM> <ocamShm SHM> <lut SHM> -s <semNb> -b <binning> -L\n");
-    daoInfo("\n");
+    printf("%s of " __DATE__ " at " __TIME__ "\n", sArgv0);
+    printf("   arguments:\n");
+    printf("   -h               display this message and exit\n");
+    printf("   -d <level>       log level: 0 warnings and errors (default), 1 info, 2 debug, 3 trace\n");
+    printf("   -S               list of SHM (full path separated by space)\n");
+    printf("   -s <semNb>       a fixed semaphore to wait on (default: one of its own)\n");
+    printf("   -b               binning\n");
+    printf("   -L               start the real-time loop (after the other options)\n");
+    printf("   usage:\n");
+    printf("   -S <ocamRaw SHM> <ocamShm SHM> <lut SHM> [-s <semNb>] -b <binning> -L\n");
+    printf("\n");
 }
 #define IMG_WIDTH 1056
 #define IMG_HEIGHT_BINNED 62
@@ -82,7 +82,7 @@ static void ShowHelp(void)
 static int realTimeLoop()
 {
     // register interrupt signal to terminate the main loop
-    signal(SIGINT, endme);
+    daoToolsOnExitSignals(endme);   // Ctrl+C, kill, tmux kill-session
 
     daoInfo("Starting loop, %s -> %s using %s \n", ocamRawShmName, ocamShmName, lutShmName);
     fflush(stdout);
@@ -95,12 +95,6 @@ static int realTimeLoop()
 
     int imgWidth = ocamRawShm[0].md[0].size[0];
     int unscrambledSize = ocamShm[0].md[0].size[0] * ocamShm[0].md[0].size[1];
-    struct timespec timeout;
-    struct timespec t[3];
-    struct timespec lastPrint;
-    double elapsedTime;
-    clock_gettime(CLOCK_REALTIME, &t[1]);
-    clock_gettime(CLOCK_REALTIME, &lastPrint);
 
     // lutShm is only ever loaded once above and never re-read inside the loop, so the
     // scrambled_index -> raw byte offset mapping is constant for the life of this loop.
@@ -118,14 +112,13 @@ static int realTimeLoop()
         }
     }
 
+    daoToolsLoopStatus status;
+    daoToolsLoopStatusInit(&status);
     while (end ==0)
     {
-        clock_gettime(CLOCK_REALTIME, &timeout);
-        timeout.tv_sec += 1; // 1 second timeout
-        // Wait for new image
-        if (daoShmWaitSemTimeout(ocamRawShm, semNb, &timeout) != -1)
+        if (daoToolsWait(ocamRawShm, semNb, 1.0) == DAO_SUCCESS)
         {
-            clock_gettime(CLOCK_REALTIME, &t[0]);
+            daoToolsLoopStatusStart(&status);
             if (binning == 2)
             {
                 uint8_t  *src = ocamRawShm[0].array.UI8;
@@ -160,28 +153,22 @@ static int realTimeLoop()
                 }
                 daoShmSetDataPartFinalize(&ocamShm[0]);
             }
-            clock_gettime(CLOCK_REALTIME, &t[1]);
-
-            elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
-            elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
-
-            // Throttle stdout to ~1 Hz: a blocking terminal write every frame is itself
-            // a source of unbounded latency inside the real-time loop.
-            if (t[1].tv_sec != lastPrint.tv_sec)
-            {
-                printf("\r time to descramble = %8.6f ms", elapsedTime);
-                fflush(stdout);
-                lastPrint = t[1];
-            }
+            daoToolsLoopStatusEnd(&status, NULL);
+        }
+        else
+        {
+            daoToolsLoopStatusWait(&status);
         }
     }
+    printf("\n");
 
 
     daoInfo("EXITING MAIN LOOP\n");
-    fflush(stdout);
 
 
-
+    daoToolsShmRelease(&ocamRawShm);
+    daoToolsShmRelease(&ocamShm);
+    daoToolsShmRelease(&lutShm);
     return 0;
 }
 
@@ -210,37 +197,39 @@ static void DecodeArgs(int argc, char **argv)
             case 'h':	
                         ShowHelp();
                          exit(0);
-            case 'd':	
-                        (void)sscanf(*argv++,"%d",&daoLogLevel); argc -= 1;
-                        break;
+            case 'd':
+                daoLogLevel = daoToolsArgInt(&argc, &argv, str);
+                break;
             case 'l':
-                        daoInfo("%s\n",*argv);
-                        argv += 1; argc -= 1;
-                        break;
+                daoInfo("%s\n", daoToolsArgValue(&argc, &argv, str));
+                break;
             case 'u':
-                        (void)sscanf(*argv++,"%d",&a1); argc -= 1;
-                        daoDebug("will sleep for %d usec\n",a1);
-                        (void)usleep(a1);
-                        break;
+                a1 = daoToolsArgInt(&argc, &argv, str);
+                daoDebug("will sleep for %d usec\n", a1);
+                (void)usleep(a1);
+                break;
             case 'S':
                         daoInfo("Simple filter from SHM real time control\n");
-                    	daoToolsArgName(ocamRawShmName, sizeof ocamRawShmName, *argv++); argc -= 1;
-                    	daoToolsArgName(ocamShmName, sizeof ocamShmName, *argv++); argc -= 1;
-                    	daoToolsArgName(lutShmName, sizeof lutShmName, *argv++); argc -= 1;
+                        daoToolsArgNameNext(&argc, &argv, str, ocamRawShmName, sizeof ocamRawShmName);
+                        daoToolsArgNameNext(&argc, &argv, str, ocamShmName, sizeof ocamShmName);
+                        daoToolsArgNameNext(&argc, &argv, str, lutShmName, sizeof lutShmName);
                         daoInfo("ocamRawShmName = %s\n", ocamRawShmName);
                         daoInfo("ocamShmName = %s\n", ocamShmName);
                         daoInfo("lutShmName = %s\n", lutShmName);
                         break;
-            case 's':	
-                        (void)sscanf(*argv++,"%d", &semNb); argc -= 1;
-                        daoInfo("inputShm sem       = %d \n", semNb);
-                        break;
-            case 'b':	
-                        (void)sscanf(*argv++,"%d", &binning); argc -= 1;
-                        daoInfo("binning       = %d \n", binning);
-                        break;
+            case 's':
+                semNb = daoToolsArgInt(&argc, &argv, str);
+                daoInfo("inputShm sem       = %d \n", semNb);
+                break;
+            case 'b':
+                binning = daoToolsArgInt(&argc, &argv, str);
+                daoInfo("binning       = %d \n", binning);
+                break;
             case 'L':
-                        realTimeLoop();
+                if (realTimeLoop() != 0)         /* could not start, or failed (see above) */
+                {
+                    exit(EXIT_FAILURE);
+                }
                         break;
             default:
                         daoError("Do not know arg '%s'\n",str);
@@ -267,6 +256,11 @@ int main(int argc, char **argv)
         daoWarning("mlockall failed: run scripts/daoToolSetCap to grant RT capabilities. Continuing, but not optimized for real-time.\n");
 
     sArgv0 = *argv;
+    if (argc < 2)
+    {                    /* nothing to do: say how */
+        ShowHelp();
+        return 1;
+    }
 
     DecodeArgs(argc,argv);
 

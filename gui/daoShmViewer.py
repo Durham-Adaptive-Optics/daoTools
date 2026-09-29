@@ -28,8 +28,32 @@ from PyQt5.QtWidgets import (
     QMainWindow, QMessageBox, QPushButton, QRadioButton, QSpinBox,
     QStackedWidget, QStatusBar, QSplitter, QTabWidget, QTableView,
     QAbstractItemView, QTextEdit, QToolBar, QVBoxLayout, QWidget,
-    QTreeWidget, QTreeWidgetItem
+    QTreeWidget, QTreeWidgetItem, QScrollArea, QFrame
 )
+
+def process_command(pid):
+    """The command line of process pid (Linux), or ''."""
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            return f.read().replace(b"\0", b" ").decode(errors="replace").strip()
+    except OSError:
+        return ""
+
+def short_command(cmd):
+    """The program of a command line: the script of 'python script.py', else the executable."""
+    parts = cmd.split()
+    if not parts:
+        return "?"
+    exe = os.path.basename(parts[0])
+    if exe.startswith("python") and len(parts) > 1:
+        if parts[1] == "-c":
+            return exe + " -c"
+        if parts[1] == "-m" and len(parts) > 2:
+            return parts[2]
+        args = [a for a in parts[1:] if not a.startswith("-")]
+        if args:
+            return os.path.basename(args[0])
+    return exe
 
 ################################################
 #               Theme
@@ -608,6 +632,9 @@ class daoShmViewer(QMainWindow):
         # Tab 6: SHM Latency
         self.setup_latency_tab()
 
+        # Tab 7: Semaphores
+        self.setup_semaphore_tab()
+
     def setup_daq_tab(self):
         """Setup the recording tab."""
         
@@ -789,26 +816,15 @@ class daoShmViewer(QMainWindow):
         form.addRow("SHM 1 (start)", shm1Row)
         form.addRow("SHM 2 (end)", shm2Row)
 
-        # daoTimeDiff -S <shm1> <shm2> <sem1> <sem2> <measurement> -n <popSize>
-        # Default semaphore 5 on each, not 0: same convention as
-        # daoPlotLatency.py (get_data(..., semNb=5)) so a monitoring tap
-        # doesn't consume semaphore posts the real pipeline consumer needs.
+        # daoTimeDiff -S <shm1> <shm2> <measurement> -n <popSize>: it waits on a
+        # semaphore of its own, so it never takes frames from the pipeline's readers
         semRow = QHBoxLayout()
-        self.latencySem1Spin = QSpinBox()
-        self.latencySem1Spin.setRange(0, 15)
-        self.latencySem1Spin.setValue(5)
-        self.latencySem2Spin = QSpinBox()
-        self.latencySem2Spin.setRange(0, 15)
-        self.latencySem2Spin.setValue(5)
         self.latencyPopSizeSpin = QSpinBox()
         self.latencyPopSizeSpin.setRange(2, 100000)
         self.latencyPopSizeSpin.setValue(100)
-        semRow.addWidget(QLabel("sem1"))
-        semRow.addWidget(self.latencySem1Spin)
-        semRow.addWidget(QLabel("sem2"))
-        semRow.addWidget(self.latencySem2Spin)
         semRow.addWidget(QLabel("window (-n)"))
         semRow.addWidget(self.latencyPopSizeSpin)
+        semRow.addStretch()
         form.addRow("daoTimeDiff args", semRow)
 
         btnLayout = QHBoxLayout()
@@ -919,7 +935,7 @@ class daoShmViewer(QMainWindow):
         measName = f"/tmp/{self._latency_tmux_name(path1, path2)}.im.shm"
 
         cmd = (f"daoTimeDiff -S {path1} {path2} "
-               f"{self.latencySem1Spin.value()} {self.latencySem2Spin.value()} {measName} "
+               f"{measName} "
                f"-n {self.latencyPopSizeSpin.value()} -L")
         try:
             # Replace any stale session with the same (deterministic) name first.
@@ -1022,6 +1038,115 @@ class daoShmViewer(QMainWindow):
         nbins = int(np.clip(n // 2, 5, 40))
         counts, edges = np.histogram(arr, bins=nbins)
         self.latencyHistCurve.setData(edges, counts)
+
+    # semaphore cells: (background, text, border) for the dark / light theme
+    SEM_COLORS = {
+        False: {"free": ("#2a2a2a", "#8c8c8c", "#444444"),
+                "used": ("#1f5130", "#ffffff", "#3fae63"),
+                "unknown": ("#5a4413", "#ffffff", "#c99a2e")},
+        True:  {"free": ("#ffffff", "#707070", "#c8c8c8"),
+                "used": ("#d3f0db", "#0b3a1a", "#2f9e55"),
+                "unknown": ("#fbe9c2", "#4a3300", "#c99a2e")},
+    }
+
+    def setup_semaphore_tab(self):
+        """Setup the semaphores tab: which semaphores of the selected SHM readers
+        wait on, and which processes (each reader has its own), in blocks of 8."""
+        self.semTab = QWidget()
+        layout = QVBoxLayout()
+        self.semSummary = QLabel("Select an SHM")
+        self.semSummary.setStyleSheet("font-weight: bold;")
+        self.semGrid = QHBoxLayout()
+        self.semGrid.setSpacing(12)
+        self.semGrid.setContentsMargins(0, 0, 0, 0)
+        self.semCells = []
+        grid = QWidget()
+        grid.setLayout(self.semGrid)
+        scroll = QScrollArea()                      # a short panel scrolls, never squeezes the cells
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setWidget(grid)
+        layout.setContentsMargins(6, 4, 6, 4)
+        layout.setSpacing(2)
+        layout.addWidget(self.semSummary)
+        layout.addWidget(scroll)
+        self.semTab.setLayout(layout)
+        self.tabWidget.addTab(self.semTab, "Semaphores")
+        self.semLight = '--light' in sys.argv
+
+        # refreshed while the tab is shown
+        self.semTimer = QTimer(self)
+        self.semTimer.setInterval(1000)
+        self.semTimer.timeout.connect(self.update_semaphores)
+
+    def _sem_cells(self, nsem):
+        """One cell per semaphore, in columns of 8 (0-7, 8-15, ...)."""
+        if len(self.semCells) == nsem:
+            return
+        while self.semGrid.count():
+            item = self.semGrid.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self.semCells = []
+        for first in range(0, nsem, 8):
+            block = QWidget()
+            col = QVBoxLayout()
+            col.setContentsMargins(0, 0, 0, 0)
+            col.setSpacing(2)
+            for sem in range(first, min(first + 8, nsem)):
+                cell = QLabel()
+                cell.setTextFormat(Qt.RichText)
+                cell.setMinimumWidth(300)
+                cell.setFixedHeight(cell.fontMetrics().height() + 1)
+                col.addWidget(cell)
+                self.semCells.append(cell)
+            col.addStretch()
+            block.setLayout(col)
+            self.semGrid.addWidget(block)
+        self.semGrid.addStretch()
+
+    def _sem_cell(self, cell, sem, state, pids):
+        bg, fg, border = self.SEM_COLORS[self.semLight][state]
+        cell.setStyleSheet(f"QLabel {{ background-color: {bg}; color: {fg}; border: 1px solid {border};"
+                           f" border-radius: 3px; padding: 0px 8px; }}")
+        if state == "free":
+            cell.setText(f"<b>{sem:2d}</b>&nbsp;&nbsp;free")
+            cell.setToolTip("")
+        elif state == "unknown":
+            cell.setText(f"<b>{sem:2d}</b>&nbsp;&nbsp;in use &middot; process not visible")
+            cell.setToolTip("Taken by a process of another user (or not on Linux)")
+        else:
+            more = f" +{len(pids) - 1}" if len(pids) > 1 else ""
+            cmd = process_command(pids[0])
+            cell.setText(f"<b>{sem:2d}</b>&nbsp;&nbsp;in use{more} &middot; PID {pids[0]} &middot; "
+                         f"{short_command(cmd)}")
+            cell.setToolTip("\n".join(f"PID {pid}: {process_command(pid)}" for pid in pids))
+
+    def update_semaphores(self):
+        """Fill the semaphores tab for the selected SHM."""
+        if not self.shm:
+            self.semSummary.setText("Select an SHM")
+            self._sem_cells(0)
+            return
+        if not hasattr(self.shm, "sem_users"):
+            self.semSummary.setText("Needs a daoBase with automatic semaphores (shm.sem_users)")
+            self._sem_cells(0)
+            return
+        try:
+            users = self.shm.sem_users()
+            nsem = self.shm.image.md.contents.sem
+        except Exception as e:
+            self.semSummary.setText(f"Cannot read the semaphores: {e}")
+            return
+        self.semSummary.setText(f"{nsem} semaphores: {len(users)} in use, {nsem - len(users)} free")
+        self._sem_cells(nsem)
+        for sem, cell in enumerate(self.semCells):
+            if sem not in users:
+                self._sem_cell(cell, sem, "free", [])
+            elif not users[sem]:
+                self._sem_cell(cell, sem, "unknown", [])
+            else:
+                self._sem_cell(cell, sem, "used", users[sem])
 
     def setup_timers(self):
         """Setup application timers."""
@@ -1134,6 +1259,8 @@ class daoShmViewer(QMainWindow):
             
             # Update metadata and selected files list
             self.updateMetadata(filename)
+            if self.tabWidget.currentWidget() is self.semTab:
+                self.update_semaphores()
             
             # Determine visualization type based on data shape
             data = self.shm.get_data()
@@ -1948,6 +2075,11 @@ class daoShmViewer(QMainWindow):
         """Handle tab change events."""
         if index == 4:  # Tmux Sessions tab
             self.update_tmux_sessions()
+        if self.tabWidget.widget(index) is self.semTab:
+            self.update_semaphores()
+            self.semTimer.start()
+        else:
+            self.semTimer.stop()
 
     def show_error(self, message):
         """Show an error message dialog."""

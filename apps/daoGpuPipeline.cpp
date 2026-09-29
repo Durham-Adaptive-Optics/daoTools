@@ -11,13 +11,13 @@
  * Usage: daoGpuPipeline -c <config.yaml> [-s <stage>] [-C <cpu>] [-d <level>] -L
  *
  * -s N runs only stage N (0 = first) of the configuration, as its own process,
- * triggered by that stage's input SHM (semaphore trigger.sem): one process per
+ * triggered by that stage's input SHM (on a semaphore of its own): one process per
  * stage, like the separate daoTools processes but on the GPU SHMs. Useful while
  * developing and tuning; the same configuration then runs as one pipeline.
  *
  * Configuration (YAML):
  *   device: 0                          # CUDA device (GPU SHMs must be on it)
- *   trigger: {shm: /tmp/pyrIm.im.shm, sem: 1}
+ *   trigger: {shm: /tmp/pyrIm.im.shm}  # waits on a semaphore of its own (sem: N forces one)
  *   hostAccess: map                    # host SHMs: map into the GPU (zero copy, default:
  *                                      # kernels fetch only what they use) or copy
  *   stages:                            # in order; each is the daoTools app of that name
@@ -81,7 +81,7 @@ static double nowUs()
 struct Pipeline {
     int device = 0;
     std::string triggerName;
-    int triggerSem = 1;
+    int triggerSem = DAO_SEM_AUTO;                            // trigger.sem: a fixed semaphore
     int mapHost = 1;                                          // hostAccess: map (default) | copy
     int onlyStage = -1;                                       // -s: run only this stage
     std::map<std::string, IMAGE *> shms;                     // every opened SHM
@@ -386,7 +386,7 @@ static int run(const char *configPath, int cpu, int onlyStage)
     p.onlyStage = onlyStage;
     p.device = cfg["device"] ? cfg["device"].as<int>() : 0;
     p.triggerName = need(cfg["trigger"], "shm", "trigger");
-    p.triggerSem = cfg["trigger"]["sem"] ? cfg["trigger"]["sem"].as<int>() : 1;
+    p.triggerSem = cfg["trigger"]["sem"] ? cfg["trigger"]["sem"].as<int>() : DAO_SEM_AUTO;
     if (cfg["hostAccess"]) {
         std::string mode = cfg["hostAccess"].as<std::string>();
         if (mode != "map" && mode != "copy")
@@ -449,28 +449,35 @@ static int run(const char *configPath, int cpu, int onlyStage)
         cudaGetLastError();
         daoWarning("CUDA graph unavailable, launching the stages one by one\n");
     }
-    daoInfo("%zu stages, %zu upload(s), triggered by %s (sem %d)%s\n", p.stages.size(), p.uploads.size(),
-            p.triggerName.c_str(), p.triggerSem, useGraph ? ", CUDA graph" : "");
+    daoInfo("%zu stages, %zu upload(s), triggered by %s (semaphore %d)%s\n", p.stages.size(), p.uploads.size(),
+            p.triggerName.c_str(),
+            p.triggerSem >= 0 ? p.triggerSem : daoShmClaimSem(trigger), useGraph ? ", CUDA graph" : "");
     if (p.onlyStage < 0)
         daoInfo("one process for the whole chain: MPS is only useful if other processes compute on GPU %d\n",
                 p.device);
 
-    signal(SIGINT, onSignal);
-    signal(SIGTERM, onSignal);
+    daoToolsOnExitSignals(onSignal);   // Ctrl+C, kill, tmux kill-session
     double acc = 0, worst = 0, tPrint = nowUs();
     double accWake = 0, accUpd = 0, accGpu = 0, accPub = 0;   // breakdown, us
     long n = 0;
+    long waits = 0;
     while (!stop) {
-        struct timespec to;
-        clock_gettime(CLOCK_REALTIME, &to);
-        to.tv_sec += 1;
-        if (daoShmWaitSemTimeout(trigger, p.triggerSem, &to) != DAO_SUCCESS)
+        if (daoToolsWait(trigger, p.triggerSem, 1.0) != DAO_SUCCESS)
+        {
+            printf("\rwaiting for %s (%ld s)                    ", p.triggerName.c_str(), ++waits);
+            fflush(stdout);
+            tPrint = nowUs();                            // the rate counts from the next frame
+            acc = worst = accWake = accUpd = accGpu = accPub = 0;
+            n = 0;
             continue;
+        }
+        waits = 0;
         double t0 = nowUs();
-        {   // wake-up delay: trigger timestamp (CLOCK_REALTIME ns) to now
+        {   // wake-up delay: trigger timestamp (CLOCK_REALTIME) to now, in full seconds and ns
             struct timespec rt;
             clock_gettime(CLOCK_REALTIME, &rt);
-            accWake += (rt.tv_sec * 1e9 + rt.tv_nsec - (double) trigger->md[0].atime.tsfixed.secondlong) * 1e-3;
+            const struct timespec &ts = trigger->md[0].atime.ts;
+            accWake += ((double)(rt.tv_sec - ts.tv_sec) * 1e9 + (double)(rt.tv_nsec - ts.tv_nsec)) * 1e-3;
         }
         bool paramsOk = true, recapture = false;
         for (daoGpuStage *s : p.stages) {                // rare: new flat, matrix, gain...
@@ -545,24 +552,51 @@ static int run(const char *configPath, int cpu, int onlyStage)
 static void help(const char *argv0)
 {
     printf("usage: %s -c <config.yaml> [-s <stage>] [-C <cpu>] [-d <level>] -L\n"
+           "  -h  display this message and exit\n"
            "  -c  pipeline configuration (see the header of daoGpuPipeline.cpp)\n"
            "  -s  run only this stage (0 = first), triggered by its input SHM\n"
            "  -C  pin the loop to this CPU core\n"
-           "  -d  log level\n"
-           "  -L  run\n", argv0);
+           "  -d  log level: 0 warnings and errors (default), 1 info, 2 debug, 3 trace\n"
+           "  -L  run\n",
+        argv0);
 }
 
 int main(int argc, char **argv)
 {
     const char *config = nullptr;
     int cpu = -1, go = 0, stage = -1;
-    for (int i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "-c") && i + 1 < argc) config = argv[++i];
-        else if (!strcmp(argv[i], "-C") && i + 1 < argc) cpu = atoi(argv[++i]);
-        else if (!strcmp(argv[i], "-s") && i + 1 < argc) stage = atoi(argv[++i]);
-        else if (!strcmp(argv[i], "-d") && i + 1 < argc) daoSetLogLevel(atoi(argv[++i]));
-        else if (!strcmp(argv[i], "-L")) go = 1;
-        else { help(argv[0]); return !strcmp(argv[i], "-h") ? 0 : 2; }
+    // the options, from the first argument (daoToolsArg* exit with an error when a value is missing)
+    int left = argc - 1;
+    char **arg = argv + 1;
+    while (left-- > 0)
+    {
+        const char *opt = *arg++;
+        if (!strcmp(opt, "-c"))
+        {
+            config = daoToolsArgValue(&left, &arg, opt);
+        }
+        else if (!strcmp(opt, "-C"))
+        {
+            cpu = (int)daoToolsArgInt(&left, &arg, opt);
+        }
+        else if (!strcmp(opt, "-s"))
+        {
+            stage = (int)daoToolsArgInt(&left, &arg, opt);
+        }
+        else if (!strcmp(opt, "-d"))
+        {
+            daoLogLevel = (int)daoToolsArgInt(&left, &arg, opt);
+            daoSetLogLevel(daoLogLevel);
+        }
+        else if (!strcmp(opt, "-L"))
+        {
+            go = 1;
+        }
+        else
+        {
+            help(argv[0]);
+            return !strcmp(opt, "-h") ? 0 : 2;
+        }
     }
     if (!config || !go) {
         help(argv[0]);

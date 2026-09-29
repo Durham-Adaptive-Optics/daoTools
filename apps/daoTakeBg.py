@@ -20,7 +20,7 @@ if __name__ == '__main__':
     for k in range(nFrame):
         sys.stdout.write(f"\raveraging... {k+1}/{nFrame}")
         sys.stdout.flush()
-        bk = bk+cam.get_data(check=True, semNb=3)
+        bk = bk+cam.get_data(check=True)
         bgp.set_data(bgp.get_data()*0+np.uint32(100*(k+1)/nFrame))
     print('\n')
     bk=bk/nFrame

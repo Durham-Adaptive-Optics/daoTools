@@ -16,7 +16,7 @@
     intensity : normalized intensity for each valid pixel (float)
 
   Usage:
-    daoRtcCalIntensity -S <raw> <ff> <bg> <validPix> <illumPix> <intensity> -s <semNb> -L
+    daoCalIntensity -S <raw> <ff> <bg> <ref> <validPix> <illumPix> <intensity> [-s <semNb>] -L
  *****************************************************************************/
 
  #include <stdio.h>
@@ -57,7 +57,7 @@
  char validPixShmName[DAO_SHM_NAME_LEN];
  char illumPixShmName[DAO_SHM_NAME_LEN];
  char intensityShmName[DAO_SHM_NAME_LEN];
- int  semNb = 0;
+ int  semNb = DAO_SEM_AUTO;   // -s: a fixed semaphore; default: one of its own
  
  static int end = 0;
  static void endme(int _a) { (void)_a; end = 1; }
@@ -67,22 +67,22 @@
  /*--------------------------------------------------------------------------*/
  static void ShowHelp(void)
  {
-     daoInfo("%s of " __DATE__ " at " __TIME__ "\n", sArgv0);
-     daoInfo("   Calibrate (bg/ff) + extract + normalize intensity in one pass.\n");
-     daoInfo("   arguments:\n");
-     daoInfo("   -h               display this message and exit\n");
-     daoInfo("   -d <level>       debug level\n");
-     daoInfo("   -s <semNb>       semaphore number on raw SHM\n");
-     daoInfo("   -S <raw> <ff> <bg> <ref> <validPix> <illumPix> <intensity>\n");
-     daoInfo("   -L               start real-time loop\n");
-     daoInfo("\n");
+     printf("%s of " __DATE__ " at " __TIME__ "\n", sArgv0);
+     printf("   Calibrate (bg/ff) + extract + normalize intensity in one pass.\n");
+     printf("   arguments:\n");
+     printf("   -h               display this message and exit\n");
+     printf("   -d <level>       log level: 0 warnings and errors (default), 1 info, 2 debug, 3 trace\n");
+     printf("   [-s <semNb>]     semaphore on raw SHM (default: one of its own)\n");
+     printf("   -S <raw> <ff> <bg> <ref> <validPix> <illumPix> <intensity>\n");
+     printf("   -L               start the real-time loop (after the other options)\n");
+     printf("\n");
  }
  
  /*--------------------------------------------------------------------------*/
  static int realTimeLoop()
  {
-     signal(SIGINT, endme);
- 
+     daoToolsOnExitSignals(endme);   // Ctrl+C, kill, tmux kill-session
+
      IMAGE *rawShm       = (IMAGE*) malloc(sizeof(IMAGE));
      IMAGE *ffShm        = (IMAGE*) malloc(sizeof(IMAGE));
      IMAGE *bgShm        = (IMAGE*) malloc(sizeof(IMAGE));
@@ -100,7 +100,8 @@
      daoToolsShmOpen(intensityShmName, &intensityShm[0]);
  
      int imSize = rawShm[0].md[0].size[0] * rawShm[0].md[0].size[1];
- 
+     daoToolsShmCheck(validPixShm, validPixShmName, _DATATYPE_UINT32, imSize);
+
      // ----------------------------------------------------------------
      // Build LUT of valid pixel indices over the full image (done once)
      // ----------------------------------------------------------------
@@ -114,7 +115,7 @@
      }
  
      daoInfo("Valid pixels: %d / %d\n", nValid, imSize);
- 
+
      int *lut = (int*) malloc(nValid * sizeof(int));
      int  k = 0;
      for (int i = 0; i < imSize; i++)
@@ -124,6 +125,13 @@
              lut[k++] = i;
          }
      }
+     // the maps are read at the valid pixels only: up to the last one
+     long used = nValid > 0 ? lut[nValid - 1] + 1 : 0;
+     daoToolsShmCheck(ffShm, ffShmName, _DATATYPE_FLOAT, used);
+     daoToolsShmCheck(bgShm, bgShmName, _DATATYPE_FLOAT, used);
+     daoToolsShmCheck(refShm, refShmName, _DATATYPE_FLOAT, used);
+     daoToolsShmCheck(illumPixShm, illumPixShmName, _DATATYPE_UINT32, used);
+     daoToolsShmCheck(intensityShm, intensityShmName, _DATATYPE_FLOAT, nValid);
  
      // Temporary calibrated pixel buffer (avoids recomputing for normalization)
      float *cal = (float*) malloc(nValid * sizeof(float));
@@ -147,24 +155,18 @@
            (rawType == _DATATYPE_DOUBLE)  ? (float)(shm).array.D[idx]    :  \
            0.0f )
  
-     struct timespec t[3];
-     struct timespec timeout;
-     double elapsedTime, compTime;
-     int waitCounter = 0;
  
-     clock_gettime(CLOCK_REALTIME, &t[1]);
  
      daoInfo("Entering real-time loop\n");
+     daoToolsLoopStatus status;
+     daoToolsLoopStatusInit(&status);
      while (end == 0)
      {
-         t[0] = t[1];
-         clock_gettime(CLOCK_REALTIME, &timeout);
-         timeout.tv_sec += 1;
- 
-         if (daoShmWaitSemTimeout(rawShm, semNb, &timeout) != -1)
+
+         if (daoToolsWait(rawShm, semNb, 1.0) == DAO_SUCCESS)
          {
-             clock_gettime(CLOCK_REALTIME, &t[2]);
- 
+             daoToolsLoopStatusStart(&status);
+
              // ----------------------------------------------------------------
              // Pass 1: calibrate valid pixels only, accumulate sum over
              //         sub-aperture pixels
@@ -203,30 +205,28 @@
  
              // Release semaphore, notify consumers
              daoShmSetDataPartFinalize(&intensityShm[0]);
- 
-             clock_gettime(CLOCK_REALTIME, &t[1]);
-             elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3
-                         + (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
-             compTime    = (t[1].tv_sec - t[2].tv_sec) * 1e3
-                         + (t[1].tv_nsec - t[2].tv_nsec) / 1e6;
- 
-             printf("\rcomp=%.1f us  fps=%.1f Hz  sum=%.3f  nValid=%d     ",
-                    compTime * 1000.0, 1e3 / elapsedTime, sum, nValid);
-             fflush(stdout);
+
+             daoToolsLoopStatusEnd(&status, ", sum %.3f, %d valid pixels", sum, nValid);
          }
          else
          {
-             waitCounter++;
-             printf("\rWAIT %d", waitCounter);
-             fflush(stdout);
+             daoToolsLoopStatusWait(&status);
          }
      }
  
      free(lut);
      free(cal);
- 
-     daoInfo("\nEXITING MAIN LOOP\n");
-     fflush(stdout);
+     free(ref);
+
+     printf("\n");
+     daoInfo("EXITING MAIN LOOP\n");
+     daoToolsShmRelease(&rawShm);
+     daoToolsShmRelease(&ffShm);
+     daoToolsShmRelease(&bgShm);
+     daoToolsShmRelease(&refShm);
+     daoToolsShmRelease(&validPixShm);
+     daoToolsShmRelease(&illumPixShm);
+     daoToolsShmRelease(&intensityShm);
      return 0;
  }
  
@@ -255,24 +255,23 @@
                  ShowHelp();
                  exit(0);
              case 'd':
-                 (void)sscanf(*argv++, "%d", &daoLogLevel); argc -= 1;
+                 daoLogLevel = daoToolsArgInt(&argc, &argv, str);
                  break;
              case 'l':
-                 daoInfo("%s\n", *argv);
-                 argv += 1; argc -= 1;
+                 daoInfo("%s\n", daoToolsArgValue(&argc, &argv, str));
                  break;
              case 'u':
-                 (void)sscanf(*argv++, "%d", &a1); argc -= 1;
+                 a1 = daoToolsArgInt(&argc, &argv, str);
                  (void)usleep(a1);
                  break;
              case 'S':
-                 daoToolsArgName(rawShmName, sizeof rawShmName, *argv++);       argc -= 1;
-                 daoToolsArgName(ffShmName, sizeof ffShmName, *argv++);        argc -= 1;
-                 daoToolsArgName(bgShmName, sizeof bgShmName, *argv++);        argc -= 1;
-                 daoToolsArgName(refShmName, sizeof refShmName, *argv++);        argc -= 1;
-                 daoToolsArgName(validPixShmName, sizeof validPixShmName, *argv++);  argc -= 1;
-                 daoToolsArgName(illumPixShmName, sizeof illumPixShmName, *argv++); argc -= 1;
-                 daoToolsArgName(intensityShmName, sizeof intensityShmName, *argv++); argc -= 1;
+                 daoToolsArgNameNext(&argc, &argv, str, rawShmName, sizeof rawShmName);
+                 daoToolsArgNameNext(&argc, &argv, str, ffShmName, sizeof ffShmName);
+                 daoToolsArgNameNext(&argc, &argv, str, bgShmName, sizeof bgShmName);
+                 daoToolsArgNameNext(&argc, &argv, str, refShmName, sizeof refShmName);
+                 daoToolsArgNameNext(&argc, &argv, str, validPixShmName, sizeof validPixShmName);
+                 daoToolsArgNameNext(&argc, &argv, str, illumPixShmName, sizeof illumPixShmName);
+                 daoToolsArgNameNext(&argc, &argv, str, intensityShmName, sizeof intensityShmName);
                  daoInfo("raw        : %s\n", rawShmName);
                  daoInfo("flatfield  : %s\n", ffShmName);
                  daoInfo("background : %s\n", bgShmName);
@@ -282,11 +281,14 @@
                  daoInfo("intensity  : %s\n", intensityShmName);
                  break;
              case 's':
-                 (void)sscanf(*argv++, "%d", &semNb); argc -= 1;
+                 semNb = daoToolsArgInt(&argc, &argv, str);
                  daoInfo("semNb      : %d\n", semNb);
                  break;
              case 'L':
-                 realTimeLoop();
+                 if (realTimeLoop() != 0)         /* could not start, or failed (see above) */
+                 {
+                     exit(EXIT_FAILURE);
+                 }
                  break;
              default:
                  daoError("Do not know arg '%s'\n", str);
@@ -302,6 +304,11 @@
      daoToolsSetRtPriority(93);
 
      sArgv0 = *argv;
+     if (argc < 2)
+     {                    /* nothing to do: say how */
+         ShowHelp();
+         return 1;
+     }
      DecodeArgs(argc, argv);
      return sExit;
  }

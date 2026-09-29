@@ -129,7 +129,7 @@ def gpu_config(centroider, n, device):
             "correlationFFT": f"centroidCorrelationFFT: {{{common}, subApCentre: {path('shReferences')}, "
                               f"refImage: {path('shRefImage')}}}"}[centroider]
     return f"""device: {device}
-trigger: {{shm: {path('shIm')}, sem: 1}}
+trigger: {{shm: {path('shIm')}}}
 stages:
   - pixelCalibrate: {{in: {path('shIm')}, ff: {path('shFf')}, bg: {path('shBg')}, out: {path('shImCal')}}}
   - {cent}

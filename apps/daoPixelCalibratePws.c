@@ -45,7 +45,7 @@ double tlastupdatedouble;
 
 
 char inShmName[DAO_SHM_NAME_LEN];
-int semNb = 0;
+int semNb = DAO_SEM_AUTO;   // -s: a fixed semaphore; default: one of its own
 char ffShmName[DAO_SHM_NAME_LEN];
 char bgShmName[DAO_SHM_NAME_LEN];
 char maskShmName[DAO_SHM_NAME_LEN];
@@ -65,23 +65,23 @@ static char	*sArgv0=NULL;					/* name of executable */
 
 static void ShowHelp(void)
 {
-    daoInfo("%s of " __DATE__ " at " __TIME__ "\n",sArgv0);
-    daoInfo("   arguments:\n");
-    daoInfo("   -h               display this message and exit\n");
-    daoInfo("   -d               display program debug output\n");
-    daoInfo("   -S               list of SHM (full path separated by space)\n");
-    daoInfo("   -s               semaphore number\n");
-    daoInfo("   -L               start real-time loop\n");
-    daoInfo("   usage:\n");
-    daoInfo("   -S <input SHM> <background SHM> <flatfield SHM> <mask SHM> <cal SHM> <flux SHM> -s <semNb> -L\n");
-    daoInfo("\n");
+    printf("%s of " __DATE__ " at " __TIME__ "\n", sArgv0);
+    printf("   arguments:\n");
+    printf("   -h               display this message and exit\n");
+    printf("   -d <level>       log level: 0 warnings and errors (default), 1 info, 2 debug, 3 trace\n");
+    printf("   -S               list of SHM (full path separated by space)\n");
+    printf("   -s <semNb>       a fixed semaphore to wait on (default: one of its own)\n");
+    printf("   -L               start the real-time loop (after the other options)\n");
+    printf("   usage:\n");
+    printf("   -S <input SHM> <flatfield SHM> <background SHM> <mask SHM> <cal SHM> <flux SHM> [-s <semNb>] -L\n");
+    printf("\n");
 }
 
 /*--------------------------------------------------------------------------*/
 static int realTimeLoop()
 {
     // register interrupt signal to terminate the main loop
-    signal(SIGINT, endme);
+    daoToolsOnExitSignals(endme);   // Ctrl+C, kill, tmux kill-session
 
     IMAGE *inShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *ffShm = (IMAGE*) malloc(sizeof(IMAGE));
@@ -98,52 +98,35 @@ static int realTimeLoop()
 
     daoInfo("Starting loop, %s/%s \n",inShmName, calShmName);
     fflush(stdout);
-    int inSize = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
-    int calSize = calShm[0].md[0].size[0]*calShm[0].md[0].size[1];
-    struct timespec t[3];
-    struct timespec timeout;
-    double elapsedTime;
-    double calTime;
-    clock_gettime(CLOCK_REALTIME, &t[1]);
-    int waitCounter = 0;
     usleep(2000000);
+    daoToolsLoopStatus status;
+    daoToolsLoopStatusInit(&status);
     while (end ==0)
     {
-        t[0] = t[1];
-        clock_gettime(CLOCK_REALTIME, &timeout);
-        timeout.tv_sec += 1; // 1 second timeout
-        if (daoShmWaitSemTimeout(inShm, semNb, &timeout) != DAO_TIMEOUT)
+        if (daoToolsWait(inShm, semNb, 1.0) == DAO_SUCCESS)
         {
-            clock_gettime(CLOCK_REALTIME, &t[2]);
+            daoToolsLoopStatusStart(&status);
             daoToolsShmCalibratePws(inShm, ffShm, bgShm, maskShm, calShm, fluxShm);
 
-            clock_gettime(CLOCK_REALTIME, &t[1]);
-            elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
-            elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
-            calTime = (t[1].tv_sec - t[2].tv_sec) * 1e3;
-            calTime += (t[1].tv_nsec - t[2].tv_nsec) / 1e6;
-            printf("\rcal time = %8.3f us, fps = %8.3f Hz, %d, cal[%6.3f, %6.3f,...,%6.3f]", 
-                   1000*calTime,
-                   1e6 / (1000 * elapsedTime),
-                   inSize, 
-                   calShm[0].array.F[0],
-                   calShm[0].array.F[1],
-                   calShm[0].array.F[calSize]);
+            daoToolsLoopStatusEnd(&status, NULL);
         }
         else
         {
-            waitCounter += 1;
-            printf("\rWAIT %d", waitCounter);
+            daoToolsLoopStatusWait(&status);
         }
-        fflush(stdout);
     }
+    printf("\n");
 
 
     daoInfo("EXITING MAIN LOOP\n");
-    fflush(stdout);
 
 
-
+    daoToolsShmRelease(&inShm);
+    daoToolsShmRelease(&ffShm);
+    daoToolsShmRelease(&bgShm);
+    daoToolsShmRelease(&maskShm);
+    daoToolsShmRelease(&calShm);
+    daoToolsShmRelease(&fluxShm);
     return 0;
 }
 
@@ -170,40 +153,42 @@ static void DecodeArgs(int argc, char **argv)
             case 'h':	
                         ShowHelp(); 
                         exit(0);
-            case 'd':	
-                        (void)sscanf(*argv++,"%d",&daoLogLevel); argc -= 1;
-                        break;
+            case 'd':
+                daoLogLevel = daoToolsArgInt(&argc, &argv, str);
+                break;
             case 'l':
-                        daoInfo("%s\n",*argv);
-                        argv += 1; argc -= 1;
-                        break;
+                daoInfo("%s\n", daoToolsArgValue(&argc, &argv, str));
+                break;
 
             case 'u':
-                        (void)sscanf(*argv++,"%d",&a1); argc -= 1;
-                        daoDebug("will sleep for %d usec\n",a1);
-                        (void)usleep(a1);
-                        break;
+                a1 = daoToolsArgInt(&argc, &argv, str);
+                daoDebug("will sleep for %d usec\n", a1);
+                (void)usleep(a1);
+                break;
             case 'S':
-                    	daoToolsArgName(inShmName, sizeof inShmName, *argv++); argc -= 1;
-                    	daoToolsArgName(ffShmName, sizeof ffShmName, *argv++); argc -= 1;
-                    	daoToolsArgName(bgShmName, sizeof bgShmName, *argv++); argc -= 1;
-                    	daoToolsArgName(maskShmName, sizeof maskShmName, *argv++); argc -= 1;
-                    	daoToolsArgName(calShmName, sizeof calShmName, *argv++); argc -= 1;
-                    	daoToolsArgName(fluxShmName, sizeof fluxShmName, *argv++); argc -= 1;
-                        daoInfo("image in         : %s\n", inShmName);
-                        daoInfo("flat field       : %s\n", ffShmName);
-                        daoInfo("background       : %s\n", bgShmName);
-                        daoInfo("mask             : %s\n", maskShmName);
-                        daoInfo("calibrated image : %s\n", calShmName);
-                        daoInfo("flux             : %s\n", fluxShmName);
-                        break;
-            case 's':	
-                        (void)sscanf(*argv++,"%d", &semNb);
-                        daoInfo("inputShm sem     : %d \n", semNb);
-                        break;
+                daoToolsArgNameNext(&argc, &argv, str, inShmName, sizeof inShmName);
+                daoToolsArgNameNext(&argc, &argv, str, ffShmName, sizeof ffShmName);
+                daoToolsArgNameNext(&argc, &argv, str, bgShmName, sizeof bgShmName);
+                daoToolsArgNameNext(&argc, &argv, str, maskShmName, sizeof maskShmName);
+                daoToolsArgNameNext(&argc, &argv, str, calShmName, sizeof calShmName);
+                daoToolsArgNameNext(&argc, &argv, str, fluxShmName, sizeof fluxShmName);
+                daoInfo("image in         : %s\n", inShmName);
+                daoInfo("flat field       : %s\n", ffShmName);
+                daoInfo("background       : %s\n", bgShmName);
+                daoInfo("mask             : %s\n", maskShmName);
+                daoInfo("calibrated image : %s\n", calShmName);
+                daoInfo("flux             : %s\n", fluxShmName);
+                break;
+            case 's':
+                semNb = daoToolsArgInt(&argc, &argv, str);
+                daoInfo("inputShm sem     : %d \n", semNb);
+                break;
             case 'L':
                         daoInfo("Apply Falt and Background from SHM of PWFS real time control\n");
-                        realTimeLoop();
+                        if (realTimeLoop() != 0)         /* could not start, or failed (see above) */
+                        {
+                            exit(EXIT_FAILURE);
+                        }
                         break;
             default:
                         daoError("Do not know arg '%s'\n",str);
@@ -226,6 +211,11 @@ int main(int argc, char **argv)
     // r = seteuid(euid_real);//Go back to normal privileges
 
     sArgv0 = *argv;
+    if (argc < 2)
+    {                    /* nothing to do: say how */
+        ShowHelp();
+        return 1;
+    }
 
     DecodeArgs(argc,argv);
 

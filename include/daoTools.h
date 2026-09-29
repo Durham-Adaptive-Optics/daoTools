@@ -27,9 +27,14 @@ typedef struct {
     int step;
 } daoFilterHistory;
 
+#include <stddef.h>
+#include <time.h>
+
 #ifdef __cplusplus
 extern "C"
+{
 #endif
+
 int daoToolsLocalName(const char* shmPath, char* localName, int* len);
 
 uint32_t daoComputeChecksum(const void* data, size_t length_bytes);
@@ -63,6 +68,77 @@ void daoToolsArgName(char* dst, size_t size, const char* arg);
  * than letting the tool run on an unopened IMAGE.
  */
 void daoToolsShmOpen(const char* name, IMAGE* image);
+
+/*
+ * Command line of the apps. In DecodeArgs, `while (argc-- > 0) { str = *argv++; ...`,
+ * an option takes its values with these: each takes the next argument, or exits
+ * (status 2) with an error naming the option when it is missing or malformed.
+ */
+const char *daoToolsArgValue(int *argc, char ***argv, const char *opt);          /**< the next argument  */
+long daoToolsArgInt(int *argc, char ***argv, const char *opt);            /**< a whole number     */
+double daoToolsArgDouble(int *argc, char ***argv, const char *opt);         /**< a number           */
+void daoToolsArgNameNext(int *argc, char ***argv, const char *opt,
+    char *dst, size_t size);                        /**< an SHM name        */
+
+/**
+ * @brief Call handler on SIGINT, SIGTERM and SIGHUP (Ctrl+C, kill, tmux kill-session):
+ * the loop ends and the app releases its SHMs.
+ */
+void daoToolsOnExitSignals(void (*handler)(int));
+
+/**
+ * @brief daoShmClose an SHM opened with daoToolsShmOpen (or created) into a malloc'd
+ * IMAGE, free the IMAGE and set the pointer to NULL. NULL is harmless.
+ */
+void daoToolsShmRelease(IMAGE **image);
+
+/**
+ * Loop status, printed once per second on one terminal line (no write per frame):
+ * the computation time of the frames (mean, max) and their rate over the last second.
+ *
+ *     daoToolsLoopStatus st;
+ *     daoToolsLoopStatusInit(&st);
+ *     while (!end) {
+ *         if (wait for a frame == DAO_SUCCESS) {
+ *             daoToolsLoopStatusStart(&st);
+ *             ... compute, publish ...
+ *             daoToolsLoopStatusEnd(&st, NULL);         // or a format for more: " n=%d", n
+ *         } else
+ *             daoToolsLoopStatusWait(&st);              // the wait timed out
+ *     }
+ */
+typedef struct
+{
+    struct timespec tPrint;   /**< start of the current reporting second */
+    struct timespec tStart;   /**< start of the frame's computation      */
+    double sumUs;             /**< computation time of the frames [us]   */
+    double maxUs;
+    long frames;
+    long waits;             /**< waits in a row without a frame        */
+} daoToolsLoopStatus;
+
+/**
+ * @brief Wait for the next frame of shm, for at most `seconds`: DAO_SUCCESS, or
+ * DAO_TIMEOUT (also when a signal interrupts the wait). Exits with an error if it
+ * cannot wait (no semaphore of its own left): the loop never runs on stale data.
+ * semNb: DAO_SEM_AUTO (this handle's own semaphore) or a fixed one.
+ */
+int daoToolsWait(IMAGE *shm, int semNb, double seconds);
+
+/**
+ * @brief Check an SHM before the loop: its data type (atype, or -1 for any) and that it
+ * holds at least minValues values. Exits with an error naming the SHM otherwise, rather
+ * than letting the loop read or write past it.
+ */
+void daoToolsShmCheck(IMAGE *shm, const char *name, int atype, long minValues);
+
+/** @brief The number of values of an SHM (size[0] x size[1] x size[2], unused axes 1). */
+long daoToolsShmValues(IMAGE *shm);
+
+void daoToolsLoopStatusInit(daoToolsLoopStatus *st);
+void daoToolsLoopStatusStart(daoToolsLoopStatus *st);
+void daoToolsLoopStatusEnd(daoToolsLoopStatus *st, const char *fmt, ...);
+void daoToolsLoopStatusWait(daoToolsLoopStatus *st);
 
 /**
  * @brief Request SCHED_FIFO real-time priority for the calling thread,
@@ -357,5 +433,9 @@ int sched_setscheduler(pid_t pid, int policy, const struct sched_param* param);
 #endif // __APPLE__
 
 void daoRtSetup(int rt_priority);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

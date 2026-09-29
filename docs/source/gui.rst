@@ -27,7 +27,7 @@ Features:
 SHM Latency tab
 ~~~~~~~~~~~~~~~~
 
-Pick any two SHMs from the existing file list, then Start: this launches the real ``daoTimeDiff`` binary in its own named ``tmux`` session (semaphore numbers default to 5/5, matching ``daoPlotLatency.py``'s convention so as not to steal semaphore posts from real consumers). The tab does not re-measure anything itself — it purely reads ``daoTimeDiff``'s own ``Array``/``Avg``/``Rms`` SHMs and renders a small scatter plot (with AVG/RMS reference lines) plus a histogram. Stop kills the tmux session.
+Pick any two SHMs from the existing file list, then Start: this launches the real ``daoTimeDiff`` binary in its own named ``tmux`` session (it waits on a semaphore of its own, so it never takes frames from the pipeline's readers). The tab does not re-measure anything itself — it purely reads ``daoTimeDiff``'s own ``Array``/``Avg``/``Rms`` SHMs and renders a small scatter plot (with AVG/RMS reference lines) plus a histogram. Stop kills the tmux session.
 
 
 daoImDisp / daoImgDisp

@@ -51,8 +51,6 @@ IMAGE *latencyShm;
 char shm0Name[DAO_SHM_NAME_LEN];
 char shm1Name[DAO_SHM_NAME_LEN];
 char latencyShmName[DAO_SHM_NAME_LEN];
-int sem0;
-int sem1;
 
 static int   		end     = 0;		           // termination flag
 // termination function for SIGINT callback
@@ -67,22 +65,23 @@ static char	*sArgv0=NULL;					/* name of executable */
 
 static void ShowHelp(void)
 {
-    daoInfo("%s of " __DATE__ " at " __TIME__ "\n",sArgv0);
-    daoInfo("   arguments:\n");
-    daoInfo("   -h               display this message and exit\n");
-    daoInfo("   -d               display program debug output\n");
-    daoInfo("   -S               list of SHM (full path separated by space)\n");
-    daoInfo("   -L               start real-time loop\n");
-    daoInfo("   usage:\n");
-    daoInfo("    daoTimeDiff -S <SHM1> <SHM2> <sem1> <sem2> <measurement SHM> -L\n");
-    daoInfo("\n");
+    printf("%s of " __DATE__ " at " __TIME__ "\n", sArgv0);
+    printf("   arguments:\n");
+    printf("   -h               display this message and exit\n");
+    printf("   -d <level>       log level: 0 warnings and errors (default), 1 info, 2 debug, 3 trace\n");
+    printf("   -S               list of SHM (full path separated by space)\n");
+    printf("   -L               start the real-time loop (after the other options)\n");
+    printf("   usage:\n");
+    printf("    daoTimeDiff -S <SHM1> <SHM2> <measurement SHM> -L\n");
+    printf("    (waits on a semaphore of its own: never takes frames from other readers)\n");
+    printf("\n");
 }
 
 /*--------------------------------------------------------------------------*/
 static int realTimeLoop()
 {
     // register interrupt signal to terminate the main loop
-    signal(SIGINT, endme);
+    daoToolsOnExitSignals(endme);   // Ctrl+C, kill, tmux kill-session
 
     daoInfo("Starting loop, %s/%s \n",shm0Name, shm1Name);
     fflush(stdout);
@@ -105,43 +104,29 @@ static int realTimeLoop()
 	    daoError("Error initialising ncurses.\n");
         return DAO_ERROR;
     }
-    
-    int64_t t[2];
-    int64_t elapsedTimeNs;
-    int64_t frameId0;
-    int64_t frameId1;
-    int64_t frameIdDiff;
-    //int last = 0;
-    float latency[1];
-    struct timespec timeout;
-    int missedFrameShm0=0;
-    int missedFrameShm1=0;
+
+    int64_t elapsedTimeNs = 0;
+    int64_t frameId0 = 0;
+    int64_t frameId1 = 0;
+    float latency[1] = {0};
     int nbNegTs=0;
     int validFrames=0;
+    struct timespec t0 = {0, 0}, t1 = {0, 0}, now, lastDraw = {0, 0};
+    int timedOut = 0;
     while (end ==0)
     {
-        mvprintw(0, 0, "Measure timing script between\n");
-        printw("SHM0 %s\n", shm0Name);
-        printw("SHM1 %s\n", shm1Name);
-        printw(" -> %s\n", latencyShmName);
-        clock_gettime(CLOCK_REALTIME, &timeout);
-        timeout.tv_sec += 1; // 1 second timeout
         // wait for 2nd shm
-        if (daoShmWaitSemTimeout(shm1, sem1, &timeout) != DAO_TIMEOUT)
+        timedOut = (daoToolsWait(shm1, DAO_SEM_AUTO, 1.0) != DAO_SUCCESS);
+        if (!timedOut)
         {
-            t[0] = shm0[0].md[0].atime.tsfixed.secondlong;
-            frameId0 = daoShmGetCounter(shm0);//shm0[0].md[0].cnt2;
-            t[1] = shm1[0].md[0].atime.tsfixed.secondlong;
-            frameId1 = daoShmGetCounter(shm1);//shm1[0].md[0].cnt2;
-            // Check if timeout
-            elapsedTimeNs = t[1] - t[0];
+            // the full timestamps (seconds and nanoseconds): a difference across
+            // a second boundary is right too
+            t0 = shm0[0].md[0].atime.ts;
+            t1 = shm1[0].md[0].atime.ts;
+            frameId0 = daoShmGetCounter(shm0);
+            frameId1 = daoShmGetCounter(shm1);
+            elapsedTimeNs = (int64_t)(t1.tv_sec - t0.tv_sec) * 1000000000LL + (int64_t)(t1.tv_nsec - t0.tv_nsec);
             latency[0] = (float)elapsedTimeNs / 1e3;
-            frameIdDiff = frameId1 - frameId0;
-            printw("Synchronized True\n");
-            printw("Missed Frames SHM0 = %d\n", missedFrameShm0);
-            printw("Missed Frames SHM1 = %d\n", missedFrameShm1);
-            printw("Negative TS = %d\n", nbNegTs);
-            printw("Valid Frames = %d\n", validFrames);
             if (elapsedTimeNs < 0)
             {
                 nbNegTs++;
@@ -151,20 +136,37 @@ static int realTimeLoop()
                 validFrames++;
                 daoShmSetData(&latencyShm[0], (float *)latency, 1);
             }
-            printw("frame ID SHM0 = %ld\n", frameId0);
-            printw("frame ID SHM1 = %ld\n", frameId1);
-            printw(" -> frame ID diff: %ld\n", frameIdDiff);
-            printw("timeStamp SHM0 = %12ld\n", t[0]);
-            printw("timeStamp SHM1 = %12ld\n", t[1]);
-            printw(" -> time difference ns = %8ld\n", elapsedTimeNs);
-            printw(" -> time difference us = %8.3f\n", (double)elapsedTimeNs / 1e3);
-            refresh();
+        }
+        // the screen, once per second (and at each timeout)
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        if (!timedOut && (now.tv_sec - lastDraw.tv_sec) + (now.tv_nsec - lastDraw.tv_nsec) * 1e-9 < 1.0)
+        {
+            continue;
+        }
+        lastDraw = now;
+        erase();
+        mvprintw(0, 0, "Measure timing script between\n");
+        printw("SHM0 %s\n", shm0Name);
+        printw("SHM1 %s\n", shm1Name);
+        printw(" -> %s\n", latencyShmName);
+        if (timedOut)
+        {
+            printw("Timeout: no frame of shm1 for 1 s\n");
         }
         else
         {
-            printw("Timeout: shm1, error:%s\n", strerror(errno));
-            refresh();
+            printw("Synchronized True\n");
         }
+        printw("Negative TS = %d\n", nbNegTs);
+        printw("Valid Frames = %d\n", validFrames);
+        printw("frame ID SHM0 = %ld\n", (long)frameId0);
+        printw("frame ID SHM1 = %ld\n", (long)frameId1);
+        printw(" -> frame ID diff: %ld\n", (long)(frameId1 - frameId0));
+        printw("timeStamp SHM0 = %ld.%09ld\n", (long)t0.tv_sec, (long)t0.tv_nsec);
+        printw("timeStamp SHM1 = %ld.%09ld\n", (long)t1.tv_sec, (long)t1.tv_nsec);
+        printw(" -> time difference ns = %8ld\n", (long)elapsedTimeNs);
+        printw(" -> time difference us = %8.3f\n", (double)elapsedTimeNs / 1e3);
+        refresh();
     }
     endwin();
     daoInfo("EXITING MAIN LOOP\n");
@@ -176,6 +178,16 @@ static int realTimeLoop()
 /**
  *	Parse the input arguments.
  */
+/* Is s a whole (signed) integer? */
+static int isInteger(const char *s)
+{
+    char *end;
+    if (!s || !*s)
+        return 0;
+    (void) strtol(s, &end, 10);
+    return *end == '\0';
+}
+
 static void DecodeArgs(int argc, char **argv)
 {
     char	*str;
@@ -198,28 +210,34 @@ static void DecodeArgs(int argc, char **argv)
             case 'h':	
                         ShowHelp();
                          exit(0);
-            case 'd':	
-                        (void)sscanf(*argv++,"%d",&daoLogLevel); argc -= 1;
-                        break;
+            case 'd':
+                daoLogLevel = daoToolsArgInt(&argc, &argv, str);
+                break;
             case 'l':
-                        daoInfo("%s\n",*argv);
-                        argv += 1; argc -= 1;
-                        break;
+                daoInfo("%s\n", daoToolsArgValue(&argc, &argv, str));
+                break;
             case 'u':
-                        (void)sscanf(*argv++,"%d",&a1); argc -= 1;
-                        daoDebug("will sleep for %d usec\n",a1);
-                        (void)usleep(a1);
-                        break;
+                a1 = daoToolsArgInt(&argc, &argv, str);
+                daoDebug("will sleep for %d usec\n", a1);
+                (void)usleep(a1);
+                break;
             case 'S':
                         daoInfo("Simple Camera Reader and Writer from SHM real time control\n");
-                    	daoToolsArgName(shm0Name, sizeof shm0Name, *argv++); argc -= 1;
-                    	daoToolsArgName(shm1Name, sizeof shm1Name, *argv++); argc -= 1;
-                    	(void)sscanf(*argv++,"%d",&sem0); argc -= 1;
-                    	(void)sscanf(*argv++,"%d",&sem1); argc -= 1;
-                    	daoToolsArgName(latencyShmName, sizeof latencyShmName, *argv++); argc -= 1;
+                        daoToolsArgNameNext(&argc, &argv, str, shm0Name, sizeof shm0Name);
+                        daoToolsArgNameNext(&argc, &argv, str, shm1Name, sizeof shm1Name);
+                        if (argc > 1 && isInteger(argv[0]) && isInteger(argv[1]))   /* older command lines: <sem1> <sem2> */
+                        {
+                            daoWarning("semaphore numbers %s %s ignored: daoTimeDiff waits on a semaphore of its own\n", argv[0], argv[1]);
+                            argv += 2;
+                            argc -= 2;
+                        }
+                        daoToolsArgNameNext(&argc, &argv, str, latencyShmName, sizeof latencyShmName);
                         break;
             case 'L':
-                        realTimeLoop();
+                if (realTimeLoop() != 0)         /* could not start, or failed (see above) */
+                {
+                    exit(EXIT_FAILURE);
+                }
                         break;
             default:
                         daoError("Do not know arg '%s'\n",str);
@@ -242,6 +260,11 @@ int main(int argc, char **argv)
     // r = seteuid(euid_real);//Go back to normal privileges
 
     sArgv0 = *argv;
+    if (argc < 2)
+    {                    /* nothing to do: say how */
+        ShowHelp();
+        return 1;
+    }
 
     DecodeArgs(argc,argv);
 

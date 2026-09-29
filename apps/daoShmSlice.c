@@ -17,7 +17,7 @@ static int sExit = 0;                           /* program exit code */
 
 char inShmName[DAO_SHM_NAME_LEN];
 char outShmName[DAO_SHM_NAME_LEN];
-int semNb = 0;
+int semNb = DAO_SEM_AUTO;   // -s: a fixed semaphore; default: one of its own
 long offset = 0;                                /* first input value copied (-o) */
 long count = -1;                                /* number of values (-n), -1: the output's size */
 
@@ -34,21 +34,21 @@ static char *sArgv0 = NULL;                     /* name of executable */
 
 static void ShowHelp(void)
 {
-    daoInfo("%s of " __DATE__ " at " __TIME__ "\n", sArgv0);
-    daoInfo("   Each time <in SHM> is published, copy its values [offset, offset + n)\n");
-    daoInfo("   into <out SHM> (from its first value) and publish it, with in's cnt2.\n");
-    daoInfo("   Both SHMs have the same data type.\n");
-    daoInfo("   arguments:\n");
-    daoInfo("   -h               display this message and exit\n");
-    daoInfo("   -d               display program debug output\n");
-    daoInfo("   -S               list of SHM (full path separated by space)\n");
-    daoInfo("   -s               semaphore number of <in SHM> to wait on (default 0)\n");
-    daoInfo("   -o <offset>      first value of <in SHM> to copy (default 0)\n");
-    daoInfo("   -n <n>           number of values (default: the size of <out SHM>)\n");
-    daoInfo("   -L               start real-time loop\n");
-    daoInfo("   usage (options must precede -L):\n");
-    daoInfo("   -S <in SHM> <out SHM> [-o <offset>] [-n <n>] -s <semNb> -L\n");
-    daoInfo("\n");
+    printf("%s of " __DATE__ " at " __TIME__ "\n", sArgv0);
+    printf("   Each time <in SHM> is published, copy its values [offset, offset + n)\n");
+    printf("   into <out SHM> (from its first value) and publish it, with in's cnt2.\n");
+    printf("   Both SHMs have the same data type.\n");
+    printf("   arguments:\n");
+    printf("   -h               display this message and exit\n");
+    printf("   -d <level>       log level: 0 warnings and errors (default), 1 info, 2 debug, 3 trace\n");
+    printf("   -S               list of SHM (full path separated by space)\n");
+    printf("   -s <semNb>       a fixed semaphore to wait on (default: one of its own)\n");
+    printf("   -o <offset>      first value of <in SHM> to copy (default 0)\n");
+    printf("   -n <n>           number of values (default: the size of <out SHM>)\n");
+    printf("   -L               start the real-time loop (after the other options)\n");
+    printf("   usage (options must precede -L):\n");
+    printf("   -S <in SHM> <out SHM> [-o <offset>] [-n <n>] [-s <semNb>] -L\n");
+    printf("\n");
 }
 
 static size_t elemSize(uint8_t atype)
@@ -68,7 +68,7 @@ static size_t elemSize(uint8_t atype)
 static int realTimeLoop()
 {
     // register interrupt signal to terminate the main loop
-    signal(SIGINT, endme);
+    daoToolsOnExitSignals(endme);   // Ctrl+C, kill, tmux kill-session
 
     IMAGE *inShm = (IMAGE*) malloc(sizeof(IMAGE));
     IMAGE *outShm = (IMAGE*) malloc(sizeof(IMAGE));
@@ -99,17 +99,16 @@ static int realTimeLoop()
     daoInfo("%s [%ld, %ld) -> %s (semaphore %d)\n", inShmName, offset, offset + count, outShmName, semNb);
     fflush(stdout);
 
-    struct timespec timeout, t0, t1, tPrint;
-    double busy = 0;
-    long frames = 0;
-    clock_gettime(CLOCK_MONOTONIC, &tPrint);
+    daoToolsLoopStatus status;
+    daoToolsLoopStatusInit(&status);
     while (end == 0)
     {
-        clock_gettime(CLOCK_REALTIME, &timeout);
-        timeout.tv_sec += 1; // 1 second timeout
-        if (daoShmWaitSemTimeout(inShm, semNb, &timeout) != DAO_SUCCESS)
+        if (daoToolsWait(inShm, semNb, 1.0) != DAO_SUCCESS)
+        {
+            daoToolsLoopStatusWait(&status);
             continue;
-        clock_gettime(CLOCK_MONOTONIC, &t0);
+        }
+        daoToolsLoopStatusStart(&status);
 
         // the input's host data (for a GPU SHM, its host copy)
         void *in = NULL;
@@ -127,24 +126,13 @@ static int realTimeLoop()
             memcpy(outShm[0].array.V, src, (size_t) count * es);
             daoShmSetDataPartFinalize(&outShm[0]);
         }
-
-        // status once per second: no terminal write in the loop otherwise
-        clock_gettime(CLOCK_MONOTONIC, &t1);
-        busy += (t1.tv_sec - t0.tv_sec) * 1e6 + (t1.tv_nsec - t0.tv_nsec) / 1e3;
-        frames++;
-        double sincePrint = (t1.tv_sec - tPrint.tv_sec) + (t1.tv_nsec - tPrint.tv_nsec) / 1e9;
-        if (sincePrint >= 1.0)
-        {
-            printf("\rcopy %.2f us, %.1f Hz      ", busy / frames, frames / sincePrint);
-            fflush(stdout);
-            busy = 0;
-            frames = 0;
-            tPrint = t1;
-        }
+        daoToolsLoopStatusEnd(&status, NULL);
     }
+    printf("\n");
 
     daoInfo("EXITING MAIN LOOP\n");
-    fflush(stdout);
+    daoToolsShmRelease(&inShm);
+    daoToolsShmRelease(&outShm);
     return 0;
 }
 
@@ -173,21 +161,21 @@ static void DecodeArgs(int argc, char **argv)
                         ShowHelp();
                         exit(0);
             case 'd':
-                        (void)sscanf(*argv++, "%d", &daoLogLevel); argc -= 1;
-                        break;
+                daoLogLevel = daoToolsArgInt(&argc, &argv, str);
+                break;
             case 'S':
-                        daoToolsArgName(inShmName, sizeof inShmName, *argv++); argc -= 1;
-                        daoToolsArgName(outShmName, sizeof outShmName, *argv++); argc -= 1;
-                        break;
+                daoToolsArgNameNext(&argc, &argv, str, inShmName, sizeof inShmName);
+                daoToolsArgNameNext(&argc, &argv, str, outShmName, sizeof outShmName);
+                break;
             case 's':
-                        (void)sscanf(*argv++, "%d", &semNb); argc -= 1;
-                        break;
+                semNb = daoToolsArgInt(&argc, &argv, str);
+                break;
             case 'o':
-                        (void)sscanf(*argv++, "%ld", &offset); argc -= 1;
-                        break;
+                offset = daoToolsArgInt(&argc, &argv, str);
+                break;
             case 'n':
-                        (void)sscanf(*argv++, "%ld", &count); argc -= 1;
-                        break;
+                count = daoToolsArgInt(&argc, &argv, str);
+                break;
             case 'L':
                         sExit = realTimeLoop();
                         break;
@@ -207,6 +195,11 @@ int main(int argc, char **argv)
     daoToolsSetRtPriority(93); //any number from 0-99; falls back + warns if not permitted
 
     sArgv0 = *argv;
+    if (argc < 2)
+    {                    /* nothing to do: say how */
+        ShowHelp();
+        return 1;
+    }
 
     DecodeArgs(argc, argv);
 

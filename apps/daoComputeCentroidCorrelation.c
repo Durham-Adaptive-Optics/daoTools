@@ -51,7 +51,7 @@ char subApCentreShmName[DAO_SHM_NAME_LEN];
 int subaSize;
 int nbSuba;
 int searchRange;
-int semNb = 0;
+int semNb = DAO_SEM_AUTO;   // -s: a fixed semaphore; default: one of its own
 float refAlpha = 0.0f;   /* running-average reference update rate; 0 = disabled (default) */
 
 static int   		end     = 0;		           // termination flag
@@ -67,35 +67,35 @@ static char	*sArgv0=NULL;					/* name of executable */
 
 static void ShowHelp(void)
 {
-    daoInfo("%s of " __DATE__ " at " __TIME__ "\n",sArgv0);
-    daoInfo("   arguments:\n");
-    daoInfo("   -h               display this message and exit\n");
-    daoInfo("   -d               display program debug output\n");
-    daoInfo("   -S               list of SHM (full path separated by space)\n");
-    daoInfo("   -s               semaphore number\n");
-    daoInfo("   -a <alpha>       running-average reference update rate in (0,1], 0=disabled (default)\n");
-    daoInfo("   -L               start real-time loop\n");
-    daoInfo("   usage:\n");
-    daoInfo("   -S <in SHM> <centroid SHM> <subAp Centres SHM> <ref image SHM> <threshold SHM> <subaSize> <nbSuba> <searchRange> -s <semNb> [-a <alpha>] -L\n");
-    daoInfo("\n");
-    daoInfo("   Correlation centroider: cross-correlates each subaperture spot against\n");
-    daoInfo("   a reference spot image (instead of a center-of-gravity). The ref image\n");
-    daoInfo("   SHM holds one <subaSize>x<subaSize> template per subaperture, stacked\n");
-    daoInfo("   row-wise: subaperture s occupies rows [s*subaSize .. (s+1)*subaSize-1].\n");
-    daoInfo("   searchRange is the integer pixel search half-range for the correlation\n");
-    daoInfo("   peak (must be <= %d, see DAO_CENTROID_CORR_MAX_SEARCH_RANGE).\n", DAO_CENTROID_CORR_MAX_SEARCH_RANGE);
-    daoInfo("\n");
-    daoInfo("   -a enables a running-average (EMA) update of the reference: after each\n");
-    daoInfo("   frame's centroids are computed and PUBLISHED, the just-observed spot\n");
-    daoInfo("   (re-aligned by that frame's own centroid) is blended into the reference\n");
-    daoInfo("   at rate alpha, so the reference tracks slow drift (e.g. seeing-induced\n");
-    daoInfo("   spot elongation) instead of staying fixed at its initial calibration.\n");
-    daoInfo("   This runs strictly after the centroid SHM is published, off the\n");
-    daoInfo("   critical path, and mirrors the updated reference back into the ref\n");
-    daoInfo("   image SHM. Disabled (alpha=0) by default: known to be less stable\n");
-    daoInfo("   than the plain reference in bad seeing with high loop gain -- see\n");
-    daoInfo("   pcpbStart's notes on daoComputeCentroidCorrelation(FFT) stability.\n");
-    daoInfo("\n");
+    printf("%s of " __DATE__ " at " __TIME__ "\n", sArgv0);
+    printf("   arguments:\n");
+    printf("   -h               display this message and exit\n");
+    printf("   -d <level>       log level: 0 warnings and errors (default), 1 info, 2 debug, 3 trace\n");
+    printf("   -S               list of SHM (full path separated by space)\n");
+    printf("   -s <semNb>       a fixed semaphore to wait on (default: one of its own)\n");
+    printf("   -a <alpha>       running-average reference update rate in (0,1], 0=disabled (default)\n");
+    printf("   -L               start the real-time loop (after the other options)\n");
+    printf("   usage:\n");
+    printf("   -S <in SHM> <centroid SHM> <subAp Centres SHM> <ref image SHM> <threshold SHM> <subaSize> <nbSuba> <searchRange> [-s <semNb>] [-a <alpha>] -L\n");
+    printf("\n");
+    printf("   Correlation centroider: cross-correlates each subaperture spot against\n");
+    printf("   a reference spot image (instead of a center-of-gravity). The ref image\n");
+    printf("   SHM holds one <subaSize>x<subaSize> template per subaperture, stacked\n");
+    printf("   row-wise: subaperture s occupies rows [s*subaSize .. (s+1)*subaSize-1].\n");
+    printf("   searchRange is the integer pixel search half-range for the correlation\n");
+    printf("   peak (must be <= %d, see DAO_CENTROID_CORR_MAX_SEARCH_RANGE).\n", DAO_CENTROID_CORR_MAX_SEARCH_RANGE);
+    printf("\n");
+    printf("   -a enables a running-average (EMA) update of the reference: after each\n");
+    printf("   frame's centroids are computed and PUBLISHED, the just-observed spot\n");
+    printf("   (re-aligned by that frame's own centroid) is blended into the reference\n");
+    printf("   at rate alpha, so the reference tracks slow drift (e.g. seeing-induced\n");
+    printf("   spot elongation) instead of staying fixed at its initial calibration.\n");
+    printf("   This runs strictly after the centroid SHM is published, off the\n");
+    printf("   critical path, and mirrors the updated reference back into the ref\n");
+    printf("   image SHM. Disabled (alpha=0) by default: known to be less stable\n");
+    printf("   than the plain reference in bad seeing with high loop gain -- see\n");
+    printf("   pcpbStart's notes on daoComputeCentroidCorrelation(FFT) stability.\n");
+    printf("\n");
 }
 
 
@@ -104,7 +104,7 @@ static void ShowHelp(void)
 static int realTimeLoop()
 {
     // register interrupt signal to terminate the main loop
-    signal(SIGINT, endme);
+    daoToolsOnExitSignals(endme);   // Ctrl+C, kill, tmux kill-session
 
     daoInfo("Starting loop, %s/%s/%s/%s/%s \n", inShmName, centroidShmName, subApCentreShmName, refImageShmName, thresholdShmName);
     fflush(stdout);
@@ -120,22 +120,19 @@ static int realTimeLoop()
     daoToolsShmOpen(thresholdShmName, &thresholdShm[0]);
 
     int inSize = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
-    struct timespec t[3];
-    struct timespec timeout;
-    double elapsedTime;
-    double compTime;
-    int cnt=0;
-    clock_gettime(CLOCK_REALTIME, &t[1]);
+    daoToolsShmCheck(inShm, inShmName, _DATATYPE_FLOAT, inSize);
+    daoToolsShmCheck(thresholdShm, thresholdShmName, _DATATYPE_FLOAT, 1);
+    daoToolsShmCheck(subApCentreShm, subApCentreShmName, _DATATYPE_FLOAT, 2L * nbSuba);
+    daoToolsShmCheck(refImageShm, refImageShmName, _DATATYPE_FLOAT, (long)nbSuba * subaSize * subaSize);
+    daoToolsShmCheck(centroidShm, centroidShmName, _DATATYPE_FLOAT, 3L * nbSuba);   // x, y, peak
     usleep(2000000);
+    daoToolsLoopStatus status;
+    daoToolsLoopStatusInit(&status);
     while (end ==0)
     {
-        t[0] = t[1];
-        // Wait for new image
-        clock_gettime(CLOCK_REALTIME, &timeout);
-        timeout.tv_sec += 1; // 1 second timeout
-        if (daoShmWaitSemTimeout(inShm, semNb, &timeout) != -1)
+        if (daoToolsWait(inShm, semNb, 1.0) == DAO_SUCCESS)
         {
-            clock_gettime(CLOCK_REALTIME, &t[2]);
+            daoToolsLoopStatusStart(&status);
             // New image, insert something here
             centroidShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
 
@@ -175,33 +172,24 @@ static int realTimeLoop()
                 daoShmSetDataPartFinalize(&refImageShm[0]);
             }
 
-            clock_gettime(CLOCK_REALTIME, &t[1]);
-            elapsedTime = (t[1].tv_sec - t[0].tv_sec) * 1e3;
-            elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
-            compTime = (t[1].tv_sec - t[2].tv_sec) * 1e3;
-            compTime += (t[1].tv_nsec - t[2].tv_nsec) / 1e6;
-            printf("\rcompTime = %.3f ms, fps = %8.3f Hz, %d in=[%6.3f,%6.3f,...,%6.3f], out[%6.3f, %6.3f,...,%6.3f]", compTime, 1e6/(1000*elapsedTime),
-                                                                                  inSize, (float)inShm[0].array.F[0],
-                                                                                  (float)inShm[0].array.F[1],
-                                                                                  (float)inShm[0].array.F[inSize],
-                                                                                  centroidShm[0].array.F[0],
-                                                                                  centroidShm[0].array.F[1],
-                                                                                  centroidShm[0].array.F[2]);
+            daoToolsLoopStatusEnd(&status, NULL);
         }
         else
         {
-            printf("\r WAIT %d", cnt);
-            cnt++;
+            daoToolsLoopStatusWait(&status);
         }
-        fflush(stdout);
     }
+    printf("\n");
 
 
     daoInfo("EXITING MAIN LOOP\n");
-    fflush(stdout);
 
 
-
+    daoToolsShmRelease(&inShm);
+    daoToolsShmRelease(&centroidShm);
+    daoToolsShmRelease(&subApCentreShm);
+    daoToolsShmRelease(&refImageShm);
+    daoToolsShmRelease(&thresholdShm);
     return 0;
 }
 
@@ -232,27 +220,26 @@ static void DecodeArgs(int argc, char **argv)
                         ShowHelp();
                         exit(0);
             case 'd':
-                        (void)sscanf(*argv++,"%d",&daoLogLevel); argc -= 1;
-                        break;
+                daoLogLevel = daoToolsArgInt(&argc, &argv, str);
+                break;
             case 'l':
-                        daoInfo("%s\n",*argv);
-                        argv += 1; argc -= 1;
-                        break;
+                daoInfo("%s\n", daoToolsArgValue(&argc, &argv, str));
+                break;
             case 'u':
-                        (void)sscanf(*argv++,"%d",&a1); argc -= 1;
-                        daoDebug("will sleep for %d usec\n",a1);
-                        (void)usleep(a1);
-                        break;
+                a1 = daoToolsArgInt(&argc, &argv, str);
+                daoDebug("will sleep for %d usec\n", a1);
+                (void)usleep(a1);
+                break;
             case 'S':
                         daoInfo("Correlation centroider from SHM real time control\n");
-                    	daoToolsArgName(inShmName, sizeof inShmName, *argv++); argc -= 1;
-                        daoToolsArgName(centroidShmName, sizeof centroidShmName, *argv++); argc -= 1;
-                    	daoToolsArgName(subApCentreShmName, sizeof subApCentreShmName, *argv++); argc -= 1;
-                    	daoToolsArgName(refImageShmName, sizeof refImageShmName, *argv++); argc -= 1;
-                    	daoToolsArgName(thresholdShmName, sizeof thresholdShmName, *argv++); argc -= 1;
-                    	(void)sscanf(*argv++,"%d", &subaSize); argc -= 1;
-                    	(void)sscanf(*argv++,"%d", &nbSuba); argc -= 1;
-                    	(void)sscanf(*argv++,"%d", &searchRange); argc -= 1;
+                        daoToolsArgNameNext(&argc, &argv, str, inShmName, sizeof inShmName);
+                        daoToolsArgNameNext(&argc, &argv, str, centroidShmName, sizeof centroidShmName);
+                        daoToolsArgNameNext(&argc, &argv, str, subApCentreShmName, sizeof subApCentreShmName);
+                        daoToolsArgNameNext(&argc, &argv, str, refImageShmName, sizeof refImageShmName);
+                        daoToolsArgNameNext(&argc, &argv, str, thresholdShmName, sizeof thresholdShmName);
+                        subaSize = daoToolsArgInt(&argc, &argv, str);
+                        nbSuba = daoToolsArgInt(&argc, &argv, str);
+                        searchRange = daoToolsArgInt(&argc, &argv, str);
                         daoInfo("inShmName = %s\n", inShmName);
                         daoInfo("centroidShmName = %s\n", centroidShmName);
                         daoInfo("subApCentreShmName = %s\n", subApCentreShmName);
@@ -263,15 +250,18 @@ static void DecodeArgs(int argc, char **argv)
                         daoInfo("searchRange = %d\n", searchRange);
                         break;
             case 's':
-                        (void)sscanf(*argv++,"%d", &semNb); argc -= 1;
-                        daoInfo("inputShm sem       = %d \n", semNb);
-                        break;
+                semNb = daoToolsArgInt(&argc, &argv, str);
+                daoInfo("inputShm sem       = %d \n", semNb);
+                break;
             case 'a':
-                        (void)sscanf(*argv++,"%f", &refAlpha); argc -= 1;
-                        daoInfo("refAlpha           = %g %s\n", refAlpha, refAlpha > 0.0f ? "" : "(disabled)");
-                        break;
+                refAlpha = daoToolsArgDouble(&argc, &argv, str);
+                daoInfo("refAlpha           = %g %s\n", refAlpha, refAlpha > 0.0f ? "" : "(disabled)");
+                break;
             case 'L':
-                        realTimeLoop();
+                if (realTimeLoop() != 0)         /* could not start, or failed (see above) */
+                {
+                    exit(EXIT_FAILURE);
+                }
                         break;
             default:
                         daoError("Do not know arg '%s'\n",str);
@@ -294,6 +284,11 @@ int main(int argc, char **argv)
     // r = seteuid(euid_real);//Go back to normal privileges
 
     sArgv0 = *argv;
+    if (argc < 2)
+    {                    /* nothing to do: say how */
+        ShowHelp();
+        return 1;
+    }
 
     DecodeArgs(argc,argv);
 

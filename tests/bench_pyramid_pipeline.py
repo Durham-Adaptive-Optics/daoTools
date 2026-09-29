@@ -166,7 +166,7 @@ def main():
         cfg = os.path.join(tmp, "pyramid.yaml")
         with open(cfg, "w") as f:
             f.write(f"""device: {args.device}
-trigger: {{shm: {path('pyrIm')}, sem: 1}}
+trigger: {{shm: {path('pyrIm')}}}
 stages:
   - calIntensityNorm: {{in: {path('pyrIm')}, ff: {path('pyrFf')}, bg: {path('pyrBg')}, ref: {path('pyrImOffset')},
                         validPix: {path('pyrPup')}, illumPix: {path('pyrPup')}, out: {path('pyrImCalExtract')}}}

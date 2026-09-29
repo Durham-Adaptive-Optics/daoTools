@@ -96,8 +96,8 @@ On Linux with GCC 13.3 and daoBase `8f64d74`:
   Build-path strings and their relocation offsets differ between source copies.
 - The excluded `daoModesCutoffFull.c` and `daoRandWriter.c` passed syntax
   checks before and after.
-- The excluded `daoDMSend.c` fails before and after because `inShmName`,
-  `inShm`, and `waitCounter` are undeclared. This unrelated defect is unchanged.
+- `daoDMSend.c` (then excluded) failed before and after because `inShmName`,
+  `inShm`, and `waitCounter` were undeclared; it has since been rewritten and is built.
 
 The C normalization routines cache the mask address and update counter in
 static variables. During testing, closing and recreating masks at a reused

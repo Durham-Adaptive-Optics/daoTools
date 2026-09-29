@@ -52,7 +52,7 @@ double tlastupdatedouble;
 
 IMAGE *inputShm;
 char inputShmName[DAO_SHM_NAME_LEN];
-int semNb = 0;
+int semNb = DAO_SEM_AUTO;   // -s: a fixed semaphore; default: one of its own
 IMAGE *matrixShm;
 char matrixShmName[DAO_SHM_NAME_LEN];
 IMAGE *outputShm;
@@ -74,7 +74,6 @@ static void endme(int _a)
 
 /*--------------------------------------------------------------------------*/
 /* Real-time tuning knobs                                                    */
-#define MVM_PRINT_EVERY 2000     /* throttle telemetry: print once every N iterations */
 static int rtCpu = -1;           /* CPU core to pin the RT thread to (-1 = do not pin) */
 static int gpuId = 0;            /* CUDA device to run the MVM on (see -G) */
 static int gpuIdSet = 0;         /* -G given explicitly */
@@ -166,20 +165,20 @@ static char	*sArgv0=NULL;					/* name of executable */
 
 static void ShowHelp(void)
 {
-    daoInfo("%s of " __DATE__ " at " __TIME__ "\n",sArgv0);
-    daoInfo("   arguments:\n");
-    daoInfo("   -h               display this message and exit\n");
-    daoInfo("   -d               display program debug output\n");
-    daoInfo("   -S               list of SHM (full path separated by space)\n");
-    daoInfo("   -s               semaphore number\n");
-    daoInfo("   -C <cpu>         pin the real-time thread to CPU core <cpu>\n");
-    daoInfo("   -G <gpu>         CUDA device index to run on (default 0; see nvidia-smi -L).\n");
-    daoInfo("                    GPU SHMs (daoShmCreateGpu) are used in place, with no host copy;\n");
-    daoInfo("                    the loop then runs on their GPU\n");
-    daoInfo("   -L               start real-time loop\n");
-    daoInfo("   usage (options must precede -L):\n");
-    daoInfo("    daoMvMGPU -S <input SHM> <matrix SHM> <output SHM> -s <semNb> [-C <cpu>] [-G <gpu>] -L\n");
-    daoInfo("\n");
+    printf("%s of " __DATE__ " at " __TIME__ "\n", sArgv0);
+    printf("   arguments:\n");
+    printf("   -h               display this message and exit\n");
+    printf("   -d <level>       log level: 0 warnings and errors (default), 1 info, 2 debug, 3 trace\n");
+    printf("   -S               list of SHM (full path separated by space)\n");
+    printf("   -s <semNb>       a fixed semaphore to wait on (default: one of its own)\n");
+    printf("   -C <cpu>         pin the real-time thread to CPU core <cpu>\n");
+    printf("   -G <gpu>         CUDA device index to run on (default 0; see nvidia-smi -L).\n");
+    printf("                    GPU SHMs (daoShmCreateGpu) are used in place, with no host copy;\n");
+    printf("                    the loop then runs on their GPU\n");
+    printf("   -L               start the real-time loop (after the other options)\n");
+    printf("   usage (options must precede -L):\n");
+    printf("    daoMvMGPU -S <input SHM> <matrix SHM> <output SHM> [-s <semNb>] [-C <cpu>] [-G <gpu>] -L\n");
+    printf("\n");
 }
 /*--------------------------------------------------------------------------*/
 void * realTimeLoop(void *thread_data)
@@ -192,9 +191,6 @@ void * realTimeLoop(void *thread_data)
     daoInfo("ENTERING LOOP\n");
     fflush(stdout);
 
-    struct timespec t[3];
-    double elapsedTime, compTime;
-    struct timespec timeout;
 
     gNInputs  = matrixShm[0].md[0].size[1];
     gNOutputs = matrixShm[0].md[0].size[0];
@@ -337,28 +333,24 @@ void * realTimeLoop(void *thread_data)
         }
     }
 
-    unsigned long iter = 0;
-    double compAccum = 0.0, fpsAccum = 0.0;
-
-    clock_gettime(CLOCK_MONOTONIC, &t[1]);
+    daoToolsLoopStatus status;
+    daoToolsLoopStatusInit(&status);
     while (end == 0)
     {
-        clock_gettime(CLOCK_REALTIME, &timeout);   // sem_timedwait deadline is CLOCK_REALTIME
-        timeout.tv_sec += 1;
-        if (daoShmWaitSemTimeout(inputShm, semNb, &timeout) == DAO_TIMEOUT)
+        if (daoToolsWait(inputShm, semNb, 1.0) != DAO_SUCCESS)
+        {
+            daoToolsLoopStatusWait(&status);
             continue;
-
-        clock_gettime(CLOCK_MONOTONIC, &t[2]);
-
+        }
+        daoToolsLoopStatusStart(&status);
         if (useGraph)
             cudaGraphLaunch(graphExec, gStream);
         else
             mvmIssue();
         cudaStreamSynchronize(gStream);
-
         // Publish the output.
         daoShmSetDataPartFinalize(&outputShm[0]);
-
+        daoToolsLoopStatusEnd(&status, NULL);
         // Off the critical path: refresh the matrix on the GPU if it changed.
         if (cnt0Matrix != matrixShm[0].md[0].cnt0)
         {
@@ -371,28 +363,8 @@ void * realTimeLoop(void *thread_data)
                     gMatGpu ? "" : ", copied to GPU");
             cnt0Matrix = matrixShm[0].md[0].cnt0;
         }
-
-        t[0] = t[1];
-        clock_gettime(CLOCK_MONOTONIC, &t[1]);
-        elapsedTime  = (t[1].tv_sec - t[0].tv_sec) * 1e3;
-        elapsedTime += (t[1].tv_nsec - t[0].tv_nsec) / 1e6;
-        compTime  = (t[1].tv_sec - t[2].tv_sec) * 1e6;
-        compTime += (t[1].tv_nsec - t[2].tv_nsec) / 1e3;
-
-        // Accumulate telemetry; print only once every MVM_PRINT_EVERY frames so
-        // the per-iteration fflush(stdout) syscall stays off the critical path.
-        compAccum += compTime;
-        fpsAccum  += (elapsedTime > 0.0) ? 1e3 / elapsedTime : 0.0;
-        if (++iter % MVM_PRINT_EVERY == 0)
-        {
-            printf("\rcomp time = %9.3f us, fps = %8.3f Hz (avg/%d)   ",
-                   compAccum / MVM_PRINT_EVERY, fpsAccum / MVM_PRINT_EVERY, MVM_PRINT_EVERY);
-            fflush(stdout);
-            compAccum = 0.0;
-            fpsAccum  = 0.0;
-        }
     }
-
+    printf("\n");
     // Free CUDA resources (only at exit).
     if (useGraph)
     {
@@ -418,7 +390,7 @@ static int realTimeLoopPrep()
 {
     int status;
     // register interrupt signal to terminate the main loop
-    signal(SIGINT, endme);
+    daoToolsOnExitSignals(endme);   // Ctrl+C, kill, tmux kill-session
 
     inputShm = (IMAGE*) malloc(sizeof(IMAGE));
     daoToolsShmOpen(inputShmName, &inputShm[0]);
@@ -447,6 +419,9 @@ static int realTimeLoopPrep()
         return DAO_ERROR;
     }
     pthread_join(controllerThread, NULL);
+    daoToolsShmRelease(&inputShm);
+    daoToolsShmRelease(&matrixShm);
+    daoToolsShmRelease(&outputShm);
     return DAO_SUCCESS;
 }
 
@@ -473,42 +448,44 @@ static void DecodeArgs(int argc, char **argv)
             case 'h':	
                         ShowHelp();
                         exit(0);
-	        case 'd':	
-            			(void)sscanf(*argv++,"%d",&daoLogLevel); argc -= 1;
-			            break;
+	        case 'd':
+                    daoLogLevel = daoToolsArgInt(&argc, &argv, str);
+                    break;
             case 'l':
-                        daoInfo("%s\n",*argv);
-                        argv += 1; argc -= 1;
-                        break;
+                daoInfo("%s\n", daoToolsArgValue(&argc, &argv, str));
+                break;
             case 'u':
-                        (void)sscanf(*argv++,"%d",&a1); argc -= 1;
-                        daoDebug("will sleep for %d usec\n",a1);
-                        (void)usleep(a1);
-                        break;
+                a1 = daoToolsArgInt(&argc, &argv, str);
+                daoDebug("will sleep for %d usec\n", a1);
+                (void)usleep(a1);
+                break;
             case 'S':
-                        daoToolsArgName(inputShmName, sizeof inputShmName, *argv++); argc -= 1;
-                        daoToolsArgName(matrixShmName, sizeof matrixShmName, *argv++); argc -= 1;
-                        daoToolsArgName(outputShmName, sizeof outputShmName, *argv++); argc -= 1;
-                        daoInfo("inputShm       = %s \n", inputShmName);
-                        daoInfo("matrixShm      = %s \n", matrixShmName);
-                        daoInfo("outputShm      = %s \n", outputShmName);
-                        break;
+                daoToolsArgNameNext(&argc, &argv, str, inputShmName, sizeof inputShmName);
+                daoToolsArgNameNext(&argc, &argv, str, matrixShmName, sizeof matrixShmName);
+                daoToolsArgNameNext(&argc, &argv, str, outputShmName, sizeof outputShmName);
+                daoInfo("inputShm       = %s \n", inputShmName);
+                daoInfo("matrixShm      = %s \n", matrixShmName);
+                daoInfo("outputShm      = %s \n", outputShmName);
+                break;
             case 's':
-                        (void)sscanf(*argv++,"%d", &semNb); argc -= 1;
-                        daoInfo("inputShm sem   = %d \n", semNb);
-                        break;
+                semNb = daoToolsArgInt(&argc, &argv, str);
+                daoInfo("inputShm sem   = %d \n", semNb);
+                break;
             case 'C':
-                        (void)sscanf(*argv++,"%d", &rtCpu); argc -= 1;
-                        daoInfo("RT thread CPU  = %d \n", rtCpu);
-                        break;
+                rtCpu = daoToolsArgInt(&argc, &argv, str);
+                daoInfo("RT thread CPU  = %d \n", rtCpu);
+                break;
             case 'G':
-                        (void)sscanf(*argv++,"%d", &gpuId); argc -= 1;
-                        gpuIdSet = 1;
-                        daoInfo("GPU device     = %d \n", gpuId);
-                        break;
+                gpuId = daoToolsArgInt(&argc, &argv, str);
+                gpuIdSet = 1;
+                daoInfo("GPU device     = %d \n", gpuId);
+                break;
             case 'L':
                         daoInfo("MVM real time control\n");
-                        realTimeLoopPrep();
+                        if (realTimeLoopPrep() != 0)         /* could not start, or failed (see above) */
+                        {
+                            exit(EXIT_FAILURE);
+                        }
                         break;
             default:
                         daoError("Do not know arg '%s'\n",str);
@@ -534,6 +511,11 @@ int main(int argc, char **argv)
         daoWarning("mlockall failed: run scripts/daoToolSetCap to grant RT capabilities. Continuing, but not optimized for real-time.\n");
 
     sArgv0 = *argv;
+    if (argc < 2)
+    {                    /* nothing to do: say how */
+        ShowHelp();
+        return 1;
+    }
 
     DecodeArgs(argc,argv);
 

@@ -25,7 +25,6 @@ if __name__ == '__main__':
     mShmName = '/tmp/matrix.im.shm'
     vShmName = '/tmp/vector.im.shm'
     oShmName = '/tmp/output.im.shm'
-    semNb=9
     gpu = False
     try:
         opts, args = getopt.getopt(sys.argv[1:],"hm:v:o:g",["help", "mat=", "vec=", "out=", "gpu"])
@@ -61,7 +60,7 @@ if __name__ == '__main__':
     
     nV = int(m.shape[1])
     while 1:
-        v=vShm.get_data(check=True, semNb=semNb)
+        v=vShm.get_data(check=True)
         v=v[:nV]
         if gpu:
             v = cp.array(v)
