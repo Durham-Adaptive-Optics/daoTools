@@ -47,6 +47,15 @@ char inShmName[DAO_SHM_NAME_LEN];
 char refShmName[DAO_SHM_NAME_LEN];
 char centroidShmName[DAO_SHM_NAME_LEN];
 char thresholdShmName[DAO_SHM_NAME_LEN];
+char minFluxShmName[DAO_SHM_NAME_LEN] = "";   /* -f: optional minimum flux per subaperture */
+
+/* The minimum flux (-f), read every frame so it can be tuned live; without -f: 0, no minimum. */
+static double daoMinFlux(IMAGE *shm)
+{
+    if (shm == NULL)
+        return 0.0;
+    return shm[0].md[0].atype == _DATATYPE_DOUBLE ? shm[0].array.D[0] : shm[0].array.F[0];
+}
 char subApCentreShmName[DAO_SHM_NAME_LEN];
 int subaSize;
 int nbSuba;
@@ -71,6 +80,8 @@ static void ShowHelp(void)
     printf("   -d <level>       log level: 0 warnings and errors (default), 1 info, 2 debug, 3 trace\n");
     printf("   -S               list of SHM (full path separated by space)\n");
     printf("   -s <semNb>       a fixed semaphore to wait on (default: one of its own)\n");
+    printf("   -f <shm>         minimum flux SHM (1 value): a subaperture with less light (the sum\n");
+    printf("                    of its raw pixels) gets slopes (0, 0), no noise; without -f: no minimum\n");
     printf("   -L               start the real-time loop (after the other options)\n");
     printf("   usage:\n");
     printf("   -S <in SHM> <centroid SHM> <subAp Centres SHM> <reference SHM> <threshold SHM> <subaSize> <nbSuba> [-s <semNb>] -L\n");
@@ -97,6 +108,11 @@ static int realTimeLoop()
     daoToolsShmOpen(subApCentreShmName, &subApCentreShm[0]);
     daoToolsShmOpen(refShmName, &refShm[0]);
     daoToolsShmOpen(thresholdShmName, &thresholdShm[0]);
+    IMAGE *minFluxShm = NULL;
+    if (minFluxShmName[0] != '\0') {
+        minFluxShm = (IMAGE*) malloc(sizeof(IMAGE));
+        daoToolsShmOpen(minFluxShmName, &minFluxShm[0]);
+    }
 
     int inSize = inShm[0].md[0].size[0]*inShm[0].md[0].size[1];
     daoToolsShmCheck(inShm, inShmName, _DATATYPE_FLOAT, inSize);
@@ -124,6 +140,7 @@ static int realTimeLoop()
                              subaSize,
                              nbSuba,
                              thresholdShm[0].array.F[0],
+                             (float)daoMinFlux(minFluxShm),
                              centroidShm[0].array.F); 
             daoShmSetDataPartFinalize(&centroidShm[0]);
 
@@ -145,6 +162,8 @@ static int realTimeLoop()
     daoToolsShmRelease(&subApCentreShm);
     daoToolsShmRelease(&refShm);
     daoToolsShmRelease(&thresholdShm);
+    if (minFluxShm)
+        daoToolsShmRelease(&minFluxShm);
     return 0;
 }
 
@@ -203,6 +222,10 @@ static void DecodeArgs(int argc, char **argv)
                         daoInfo("subaSize = %d\n", subaSize);
                         daoInfo("nbSUba = %d\n", nbSuba);
                         break;
+            case 'f':
+                daoToolsArgNameNext(&argc, &argv, str, minFluxShmName, sizeof minFluxShmName);
+                daoInfo("minFluxShmName     = %s\n", minFluxShmName);
+                break;
             case 's':
                 semNb = daoToolsArgInt(&argc, &argv, str);
                 daoInfo("inputShm sem       = %d \n", semNb);

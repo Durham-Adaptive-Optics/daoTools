@@ -95,21 +95,22 @@ parameters.
      - ``in``, ``lut``, ``out``, ``binning`` (1 or 2)
    * - ``centroid``
      - ``daoComputeCentroid``
-     - ``in``, ``ref``, ``threshold``, ``out``, ``subaSize``, ``nbSuba``
+     - ``in``, ``ref``, ``threshold``, ``out``, ``subaSize``, ``nbSuba``, optional ``minFlux``
    * - ``centroidRelative``
      - ``daoComputeCentroidRelative``
-     - ``in``, ``ref``, ``threshold``, ``out``, ``subaSize``, ``nbSuba``
+     - ``in``, ``ref``, ``threshold``, ``out``, ``subaSize``, ``nbSuba``, optional ``minFlux``
    * - ``centroidRelativeRef``
      - ``daoComputeCentroidRelativeRef``
-     - ``in``, ``subApCentre``, ``ref``, ``threshold``, ``out``, ``subaSize``, ``nbSuba``
+     - ``in``, ``subApCentre``, ``ref``, ``threshold``, ``out``, ``subaSize``, ``nbSuba``,
+       optional ``minFlux``
    * - ``centroidCorrelation``
      - ``daoComputeCentroidCorrelation``
      - ``in``, ``subApCentre``, ``refImage``, ``threshold``, ``out``, ``subaSize``,
-       ``nbSuba``, ``searchRange``, optional ``alpha``
+       ``nbSuba``, ``searchRange``, optional ``alpha``, ``minFlux``
    * - ``centroidCorrelationFFT``
      - ``daoComputeCentroidCorrelationFFT``
      - ``in``, ``subApCentre``, ``refImage``, ``threshold``, ``out``, ``subaSize``,
-       ``nbSuba``, optional ``alpha``
+       ``nbSuba``, optional ``alpha``, ``minFlux``
    * - ``mvm``
      - ``daoMvM`` / ``daoMvMGPU``
      - ``in``, ``matrix``, ``out`` (the input may be longer than the matrix: its
@@ -123,6 +124,12 @@ after each frame is published (off the critical path), as the ``-a`` option of
 the applications does, and write it back to its SHM. ``centroidCorrelationFFT``
 computes the periodic correlation directly on the GPU (same result as the FFT,
 up to rounding), so it does not need FFTW.
+
+Sub-apertures without light, in every centroider: no light (nothing above the
+threshold) gives slopes (0, 0). ``minFlux`` (optional, a 1-value SHM, reloaded
+when it changes, as the ``-f`` option of the applications) also gives (0, 0) to
+a sub-aperture whose flux, the sum of its raw pixels, is below it, and keeps its
+reference image when ``alpha > 0``. The third output row is that flux.
 
 
 Running

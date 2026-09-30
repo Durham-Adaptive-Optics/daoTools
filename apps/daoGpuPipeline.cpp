@@ -39,6 +39,8 @@
  *                                subaSize: 20, nbSuba: 52, searchRange: 5, alpha: 0}
  *     - centroidCorrelationFFT: {in: ..., subApCentre: ..., refImage: ..., threshold: ..., out: ...,
  *                                subaSize: 20, nbSuba: 52, alpha: 0}
+ *       every centroid stage also takes minFlux: ... (optional): a 1-value SHM; a
+ *       sub-aperture with less light (sum of its raw pixels) gets cx, cy = 0
  *     # vectors
  *     - mvm:       {in: ..., matrix: ..., out: ...}
  *     - applyGain: {in: ..., gain: ..., out: ..., modal: false}
@@ -203,6 +205,7 @@ static void build(Pipeline &p, const YAML::Node &cfg)
         if (p.onlyStage >= 0)                            // one stage: triggered by its own input
             p.triggerName = need(a, "in", type);
         auto shm = [&](const char *key) { return p.shm(need(a, key, type)); };
+        auto optShm = [&](const char *key) { return a[key] ? shm(key) : (IMAGE *) nullptr; };
         const int one = 1;
         const float zero = 0.f;
         const bool no = false;
@@ -230,21 +233,24 @@ static void build(Pipeline &p, const YAML::Node &cfg)
         else if (type == "descrambleOcam2")
             s = daoGpuDescrambleOcam2Create(in, shm("lut"), num<int>(a, "binning", type, &one), out);
         else if (type == "centroid")
-            s = daoGpuCentroidCreate(in, shm("ref"), shm("threshold"), num<int>(a, "subaSize", type),
+            s = daoGpuCentroidCreate(in, shm("ref"), shm("threshold"), optShm("minFlux"), num<int>(a, "subaSize", type),
                                      num<int>(a, "nbSuba", type), out);
         else if (type == "centroidRelative")
-            s = daoGpuCentroidRelativeCreate(in, shm("ref"), shm("threshold"), num<int>(a, "subaSize", type),
+            s = daoGpuCentroidRelativeCreate(in, shm("ref"), shm("threshold"), optShm("minFlux"),
+                                             num<int>(a, "subaSize", type),
                                              num<int>(a, "nbSuba", type), out);
         else if (type == "centroidRelativeRef")
-            s = daoGpuCentroidRelativeRefCreate(in, shm("subApCentre"), shm("ref"), shm("threshold"),
+            s = daoGpuCentroidRelativeRefCreate(in, shm("subApCentre"), shm("ref"), shm("threshold"), optShm("minFlux"),
                                                 num<int>(a, "subaSize", type), num<int>(a, "nbSuba", type), out);
         else if (type == "centroidCorrelation")
             s = daoGpuCentroidCorrelationCreate(in, shm("subApCentre"), shm("refImage"), shm("threshold"),
+                                                optShm("minFlux"),
                                                 num<int>(a, "subaSize", type), num<int>(a, "nbSuba", type),
                                                 num<int>(a, "searchRange", type), num<float>(a, "alpha", type, &zero),
                                                 out);
         else if (type == "centroidCorrelationFFT")
             s = daoGpuCentroidCorrelationFFTCreate(in, shm("subApCentre"), shm("refImage"), shm("threshold"),
+                                                   optShm("minFlux"),
                                                    num<int>(a, "subaSize", type), num<int>(a, "nbSuba", type),
                                                    num<float>(a, "alpha", type, &zero), out);
         else if (type == "mvm")

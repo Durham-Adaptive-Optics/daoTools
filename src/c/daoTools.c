@@ -1065,12 +1065,14 @@ int_fast8_t daoToolsLeakyModalIntegratorDouble(double* command, int nbVal, doubl
  *
  * - `cent[0 .. nSuba-1]`           : X centroids (cx), relative to ref X
  * - `cent[nSuba .. 2*nSuba-1]`     : Y centroids (cy), relative to ref Y
- * - `cent[2*nSuba .. 3*nSuba-1]`   : Total flux (denominator after thresholding)
+ * - `cent[2*nSuba .. 3*nSuba-1]`   : Flux = sum of the raw pixels of the subaperture
+ *                                    (no threshold): the light in it
  *
  * ### Notes
  * - Pixel coordinates are treated as integer indices.
  * - Subaperture bounds are closed intervals `[x1..x2]` and `[y1..y2]`.
- * - If the flux in a subaperture is zero, the centroid is set to `(0, 0)`.
+ * - No light (no pixel above @p threshold), or a flux below @p minFlux: the
+ *   centroid is `(0, 0)` -- no information, rather than noise.
  * - No bounds checking is performed on image edges.
  *
  * @param[in]  image      Pointer to the input image (row-major, float)
@@ -1079,6 +1081,8 @@ int_fast8_t daoToolsLeakyModalIntegratorDouble(double* command, int nbVal, doubl
  * @param[in]  boxSize    Size of the square subaperture (pixels)
  * @param[in]  nSuba      Number of subapertures
  * @param[in]  threshold  Absolute pixel intensity threshold
+ * @param[in]  minFlux    Minimum flux of a subaperture (sum of its raw pixels) to
+ *                        compute its centroid; below it, `(0, 0)`. <= 0: no minimum
  * @param[out] cent       Output centroid array (size >= `3*nSuba`)
  *
  * @return DAO_SUCCESS on success
@@ -1089,6 +1093,7 @@ int_fast8_t daoCentroidSpots(float* image,
     int boxSize,
     int nSuba,
     float threshold,
+    float minFlux,
     float* cent) {
     daoTrace("\n");
 
@@ -1100,6 +1105,7 @@ int_fast8_t daoCentroidSpots(float* image,
     float xNumerator;
     float yNumerator;
     float denominator;
+    float flux;
     float pixel;
 
     /* Reference arrays (SoA layout) */
@@ -1120,6 +1126,7 @@ int_fast8_t daoCentroidSpots(float* image,
         xNumerator = 0.0f;
         yNumerator = 0.0f;
         denominator = 0.0f;
+        flux = 0.0f;
 
         /* Compute subaperture bounds around reference position */
         x1 = (unsigned int)roundf(rx) - boxSize / 2;
@@ -1131,6 +1138,7 @@ int_fast8_t daoCentroidSpots(float* image,
         for (x = x1; x <= x2; x++) {
             for (y = y1; y <= y2; y++) {
                 pixel = (float)image[y * imageSize + x];
+                flux += pixel;
 
                 /* Apply absolute threshold */
                 if (pixel < threshold) {
@@ -1143,8 +1151,8 @@ int_fast8_t daoCentroidSpots(float* image,
             }
         }
 
-        /* Compute relative centroid if flux is non-zero */
-        if (denominator != 0.0f) {
+        /* Relative centroid, if the subaperture has light enough */
+        if (denominator != 0.0f && !(minFlux > 0.0f && flux < minFlux)) {
             cxOut[s] = xNumerator / denominator - rx;
             cyOut[s] = yNumerator / denominator - ry;
         }
@@ -1154,7 +1162,7 @@ int_fast8_t daoCentroidSpots(float* image,
         }
 
         /* Store flux */
-        denOut[s] = denominator;
+        denOut[s] = flux;
     }
 
     return DAO_SUCCESS;
@@ -1187,7 +1195,10 @@ int_fast8_t daoCentroidSpots(float* image,
  *
  * ### Notes
  * - Subaperture bounds are closed intervals `[x1..x2]` and `[y1..y2]`.
- * - If the thresholded weight is zero, the centroid is set to `(0, 0)`.
+ * - If the thresholded weight is zero, or the flux is below @p minFlux, the
+ *   centroid is set to `(0, 0)` -- no information, rather than noise. The
+ *   threshold is relative to the subaperture's own maximum, so on a dark
+ *   subaperture the noise itself passes it: @p minFlux is what rejects it.
  * - No bounds checking is performed on image edges.
  *
  * @param[in]  image      Pointer to the input image (row-major, float)
@@ -1196,6 +1207,8 @@ int_fast8_t daoCentroidSpots(float* image,
  * @param[in]  boxSize    Size of the square subaperture (pixels)
  * @param[in]  nSuba      Number of subapertures
  * @param[in]  threshold  Relative threshold factor in [0..1] typically (multiplied by local max)
+ * @param[in]  minFlux    Minimum flux of a subaperture (sum of its raw pixels) to
+ *                        compute its centroid; below it, `(0, 0)`. <= 0: no minimum
  * @param[out] cent       Output array (size >= `4*nSuba`, layout described above)
  *
  * @return DAO_SUCCESS on success
@@ -1207,6 +1220,7 @@ int_fast8_t daoCentroidSpotsRelative(float* image,
     int boxSize,
     int nSuba,
     float threshold,
+    float minFlux,
     float* cent) {
     daoTrace("\n");
     (void)imageSizeY; /* kept for signature symmetry with the other centroiders; box rows never cross imageSizeY */
@@ -1283,8 +1297,8 @@ int_fast8_t daoCentroidSpotsRelative(float* image,
             }
         }
 
-        /* Compute relative centroid if weight is non-zero */
-        if (denominator != 0.0f) {
+        /* Relative centroid, if the subaperture has light enough */
+        if (denominator != 0.0f && !(minFlux > 0.0f && flux < minFlux)) {
             cxOut[s] = xNumerator / denominator - rx;
             cyOut[s] = yNumerator / denominator - ry;
         }
@@ -1328,7 +1342,10 @@ int_fast8_t daoCentroidSpotsRelative(float* image,
  *
  * ### Notes
  * - Subaperture bounds are closed intervals `[x1..x2]` and `[y1..y2]`.
- * - If the thresholded weight is zero, the centroid is set to `(0, 0)`.
+ * - If the thresholded weight is zero, or the flux is below @p minFlux, the
+ *   centroid is set to `(0, 0)` -- no information, rather than noise. The
+ *   threshold is relative to the subaperture's own maximum, so on a dark
+ *   subaperture the noise itself passes it: @p minFlux is what rejects it.
  * - No bounds checking is performed on image edges.
  *
  * @param[in]  image      Pointer to the input image (row-major, float)
@@ -1337,6 +1354,8 @@ int_fast8_t daoCentroidSpotsRelative(float* image,
  * @param[in]  boxSize    Size of the square subaperture (pixels)
  * @param[in]  nSuba      Number of subapertures
  * @param[in]  threshold  Relative threshold factor in [0..1] typically (multiplied by local max)
+ * @param[in]  minFlux    Minimum flux of a subaperture (sum of its raw pixels) to
+ *                        compute its centroid; below it, `(0, 0)`. <= 0: no minimum
  * @param[out] cent       Output array (size >= `4*nSuba`, layout described above)
  *
  * @return DAO_SUCCESS on success
@@ -1349,6 +1368,7 @@ int_fast8_t daoCentroidSpotsRelativeRef(float* image,
     int boxSize,
     int nSuba,
     float threshold,
+    float minFlux,
     float* cent) {
     daoTrace("\n");
     (void)imageSizeY; /* kept for signature symmetry with the other centroiders; box rows never cross imageSizeY */
@@ -1428,8 +1448,8 @@ int_fast8_t daoCentroidSpotsRelativeRef(float* image,
             }
         }
 
-        /* Compute relative centroid if weight is non-zero */
-        if (denominator != 0.0f) {
+        /* Relative centroid, if the subaperture has light enough */
+        if (denominator != 0.0f && !(minFlux > 0.0f && flux < minFlux)) {
             cxOut[s] = xNumerator / denominator - cx - refX[s];
             cyOut[s] = yNumerator / denominator - cy - refY[s];
         }
@@ -1537,7 +1557,16 @@ static float daoCentroidCorrSum(const float* image, int imageSizeX,
  * The output array @p cent must contain at least `3 * nSuba` elements:
  * - `cent[0 .. nSuba-1]`           : X centroids (cx), relative to ref X
  * - `cent[nSuba .. 2*nSuba-1]`     : Y centroids (cy), relative to ref Y
- * - `cent[2*nSuba .. 3*nSuba-1]`   : Correlation peak value (quality/flux diagnostic)
+ * - `cent[2*nSuba .. 3*nSuba-1]`   : Flux = sum of the raw pixels of the subaperture
+ *                                    window (no threshold): the light in it
+ *
+ * ### No light
+ * - No light (no pixel above @p threshold overlaps the template: the
+ *   correlation is 0 everywhere), or a flux below @p minFlux: the centroid is
+ *   `(0, 0)`. Without this, a flat zero correlation picks the first shift
+ *   searched, `(-searchRange, -searchRange)`: a large, constant false slope.
+ * - A flux below @p minFlux also skips the search (no cost).
+ * - The reference templates are assumed non-negative (spot images).
  *
  * ### Notes
  * - Subaperture bounds are closed intervals; no bounds checking is performed
@@ -1558,6 +1587,8 @@ static float daoCentroidCorrSum(const float* image, int imageSizeX,
  * @param[in]  nSuba       Number of subapertures
  * @param[in]  searchRange Integer pixel search half-range for the correlation peak
  * @param[in]  threshold   Absolute pixel intensity threshold applied to the observed image
+ * @param[in]  minFlux     Minimum flux of a subaperture (sum of its raw pixels) to
+ *                         compute its centroid; below it, `(0, 0)`. <= 0: no minimum
  * @param[out] cent        Output array (size >= `3*nSuba`, layout described above)
  *
  * @return DAO_SUCCESS on success, DAO_ERROR if searchRange is out of range
@@ -1571,6 +1602,7 @@ int_fast8_t daoCentroidSpotsCorrelation(float* image,
     int nSuba,
     int searchRange,
     float threshold,
+    float minFlux,
     float* cent) {
     daoTrace("\n");
     (void)imageSizeY; /* kept for signature symmetry with the other centroiders; box rows never cross imageSizeY */
@@ -1590,12 +1622,27 @@ int_fast8_t daoCentroidSpotsCorrelation(float* image,
     /* Output arrays (SoA layout) */
     float* cxOut   = cent;
     float* cyOut   = cent + nSuba;
-    float* peakOut = cent + 2 * nSuba;
+    float* fluxOut = cent + 2 * nSuba;
 
     for (int s = 0; s < nSuba; ++s) {
         const int x0 = (int)roundf(refX[s]) - boxSize / 2;
         const int y0 = (int)roundf(refY[s]) - boxSize / 2;
         const float* subRef = refImage + (size_t)s * boxSize * boxSize;
+
+        /* The light in the subaperture: its raw pixels, at no shift */
+        float flux = 0.0f;
+        for (int i = 0; i < boxSize; ++i) {
+            const float* imRow = image + (size_t)(y0 + i) * imageSizeX + x0;
+            for (int j = 0; j < boxSize; ++j) {
+                flux += imRow[j];
+            }
+        }
+        fluxOut[s] = flux;
+        if (minFlux > 0.0f && flux < minFlux) {
+            cxOut[s] = 0.0f;                       /* too little light: no information */
+            cyOut[s] = 0.0f;
+            continue;
+        }
 
         float peak = -INFINITY;
         int bestDx = 0, bestDy = 0;
@@ -1676,9 +1723,16 @@ int_fast8_t daoCentroidSpotsCorrelation(float* image,
             }
         }
 
-        cxOut[s]   = (float)bestDx + subDx;
-        cyOut[s]   = (float)bestDy + subDy;
-        peakOut[s] = peak;
+        if (peak <= 0.0f) {
+            /* no light anywhere in the search: the correlation is flat (0),
+             * its "peak" is only the first shift searched */
+            cxOut[s] = 0.0f;
+            cyOut[s] = 0.0f;
+        }
+        else {
+            cxOut[s] = (float)bestDx + subDx;
+            cyOut[s] = (float)bestDy + subDy;
+        }
     }
 
     return DAO_SUCCESS;
@@ -1733,20 +1787,24 @@ int_fast8_t daoCentroidSpotsCorrelation(float* image,
  * @param[in]     imageSizeX     Image width (pixels)
  * @param[in]     imageSizeY     Image height (pixels), unused (kept for API symmetry)
  * @param[in]     ref            Subaperture reference positions (SoA, size `2*nSuba`)
- * @param[in]     cent           This frame's centroid output; only cx/cy (the
- *                                first `2*nSuba` elements, SoA) are read
+ * @param[in]     cent           This frame's centroid output: cx/cy (the first
+ *                                `2*nSuba` elements, SoA) and the flux (the third
+ *                                `nSuba`, with @p minFlux)
  * @param[in]     boxSize        Size of the square subaperture / reference template (pixels)
  * @param[in]     nSuba          Number of subapertures
  * @param[in]     threshold      Absolute pixel intensity threshold applied to the observed window
  * @param[in]     alpha          EMA rate in (0, 1]; new = (1-alpha)*old + alpha*aligned_obs.
  *                                Larger tracks faster but is noisier. alpha <= 0 is a no-op.
+ * @param[in]     minFlux        Subapertures whose flux (cent's third row) is below it
+ *                                keep their reference: a dark subaperture must not fade
+ *                                its template. <= 0: every subaperture is updated
  * @param[in,out] refImageInOut  Reference template stack updated in place (same
  *                                per-subaperture stacked layout as
  *                                daoCentroidSpotsCorrelation's refImage: size `nSuba*boxSize*boxSize`)
  */
 void daoCentroidSpotsUpdateReference(const float* image, int imageSizeX, int imageSizeY,
     const float* ref, const float* cent, int boxSize, int nSuba,
-    float threshold, float alpha, float* refImageInOut) {
+    float threshold, float alpha, float minFlux, float* refImageInOut) {
     daoTrace("\n");
     (void)imageSizeY; /* kept for signature symmetry with the other centroiders; box rows never cross imageSizeY */
     if (alpha <= 0.0f) return;
@@ -1755,9 +1813,11 @@ void daoCentroidSpotsUpdateReference(const float* image, int imageSizeX, int ima
     const float* refY = ref + nSuba;
     const float* cxIn = cent;
     const float* cyIn = cent + nSuba;
+    const float* fluxIn = cent + 2 * nSuba;
     const int maxShift = boxSize / 4;
 
     for (int s = 0; s < nSuba; ++s) {
+        if (minFlux > 0.0f && fluxIn[s] < minFlux) continue;   /* too dark: keep the reference */
         int shiftX = (int)roundf(cxIn[s]);
         int shiftY = (int)roundf(cyIn[s]);
         if (shiftX >  maxShift) shiftX =  maxShift;
@@ -1783,7 +1843,7 @@ void daoCentroidSpotsUpdateReference(const float* image, int imageSizeX, int ima
 /** @brief Double-precision counterpart of daoCentroidSpotsUpdateReference. */
 void daoCentroidSpotsUpdateReferenceDouble(const double* image, int imageSizeX, int imageSizeY,
     const double* ref, const double* cent, int boxSize, int nSuba,
-    double threshold, double alpha, double* refImageInOut) {
+    double threshold, double alpha, double minFlux, double* refImageInOut) {
     daoTrace("\n");
     (void)imageSizeY; /* kept for signature symmetry with the other centroiders; box rows never cross imageSizeY */
     if (alpha <= 0.0) return;
@@ -1792,9 +1852,11 @@ void daoCentroidSpotsUpdateReferenceDouble(const double* image, int imageSizeX, 
     const double* refY = ref + nSuba;
     const double* cxIn = cent;
     const double* cyIn = cent + nSuba;
+    const double* fluxIn = cent + 2 * nSuba;
     const int maxShift = boxSize / 4;
 
     for (int s = 0; s < nSuba; ++s) {
+        if (minFlux > 0.0 && fluxIn[s] < minFlux) continue;    /* too dark: keep the reference */
         int shiftX = (int)round(cxIn[s]);
         int shiftY = (int)round(cyIn[s]);
         if (shiftX >  maxShift) shiftX =  maxShift;

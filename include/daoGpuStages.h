@@ -80,28 +80,31 @@ daoGpuStage *daoGpuPixelSubstractExtractNormImageCreate(daoGpuPort *in, IMAGE *s
 /* daoDescrambleOcam2: OCAM2 raw bytes -> uint16 image through the LUT (binning 1 or 2) */
 daoGpuStage *daoGpuDescrambleOcam2Create(daoGpuPort *raw, IMAGE *lut, int binning, daoGpuPort *out);
 
-/* ---- Shack-Hartmann centroiders (ref: 2*nSuba positions, x then y; threshold: 1 value) */
+/* ---- Shack-Hartmann centroiders (ref: 2*nSuba positions, x then y; threshold: 1 value;
+ * minFlux: 1 value, or NULL). As the CPU tools: out row 3 is the flux of the sub-aperture
+ * (sum of its raw pixels); no light, or a flux below minFlux (> 0): cx, cy = 0. */
 /* daoComputeCentroid: centre of gravity, absolute threshold. out: cx, cy, flux */
-daoGpuStage *daoGpuCentroidCreate(daoGpuPort *in, IMAGE *ref, IMAGE *threshold, int subaSize, int nbSuba,
-                                  daoGpuPort *out);
+daoGpuStage *daoGpuCentroidCreate(daoGpuPort *in, IMAGE *ref, IMAGE *threshold, IMAGE *minFlux, int subaSize,
+                                  int nbSuba, daoGpuPort *out);
 /* daoComputeCentroidRelative: threshold relative to the spot maximum. out: cx, cy, flux, weight */
-daoGpuStage *daoGpuCentroidRelativeCreate(daoGpuPort *in, IMAGE *ref, IMAGE *threshold, int subaSize,
-                                          int nbSuba, daoGpuPort *out);
+daoGpuStage *daoGpuCentroidRelativeCreate(daoGpuPort *in, IMAGE *ref, IMAGE *threshold, IMAGE *minFlux,
+                                          int subaSize, int nbSuba, daoGpuPort *out);
 /* daoComputeCentroidRelativeRef: same, boxes centred on subApCentre, minus ref */
 daoGpuStage *daoGpuCentroidRelativeRefCreate(daoGpuPort *in, IMAGE *subApCentre, IMAGE *ref,
-                                             IMAGE *threshold, int subaSize, int nbSuba, daoGpuPort *out);
+                                             IMAGE *threshold, IMAGE *minFlux, int subaSize, int nbSuba,
+                                             daoGpuPort *out);
 /* daoComputeCentroidCorrelation: correlation with refImage (one subaSize^2 template per
- * sub-aperture, stacked) within +-searchRange. out: cx, cy, peak. alpha > 0: the
+ * sub-aperture, stacked) within +-searchRange. out: cx, cy, flux. alpha > 0: the
  * reference follows the spots (running average), written back to refImage after
- * each frame is published. */
+ * each frame is published; sub-apertures below minFlux keep their reference. */
 daoGpuStage *daoGpuCentroidCorrelationCreate(daoGpuPort *in, IMAGE *subApCentre, IMAGE *refImage,
-                                             IMAGE *threshold, int subaSize, int nbSuba, int searchRange,
-                                             float alpha, daoGpuPort *out);
+                                             IMAGE *threshold, IMAGE *minFlux, int subaSize, int nbSuba,
+                                             int searchRange, float alpha, daoGpuPort *out);
 /* daoComputeCentroidCorrelationFFT: periodic correlation over the whole sub-aperture
- * (computed directly: same result as the FFT). out: cx, cy, peak. alpha as above. */
+ * (computed directly: same result as the FFT). out: cx, cy, flux. alpha as above. */
 daoGpuStage *daoGpuCentroidCorrelationFFTCreate(daoGpuPort *in, IMAGE *subApCentre, IMAGE *refImage,
-                                                IMAGE *threshold, int subaSize, int nbSuba, float alpha,
-                                                daoGpuPort *out);
+                                                IMAGE *threshold, IMAGE *minFlux, int subaSize, int nbSuba,
+                                                float alpha, daoGpuPort *out);
 
 /* ---- vectors */
 /* daoShmSlice: out[0, count) = in[offset, offset + count), any type (same as in) */

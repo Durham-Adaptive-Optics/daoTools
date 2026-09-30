@@ -1169,12 +1169,13 @@ static __device__ __forceinline__ float pix(const float *img, long nImg, long id
 /* ------------------------------------------ centroid (centre of gravity) */
 enum { COG_ABSOLUTE, COG_RELATIVE, COG_RELATIVE_REF };
 
-/* COG_ABSOLUTE (daoCentroidSpots):     pixel < thr -> 0;  out cx, cy, flux
+/* COG_ABSOLUTE (daoCentroidSpots):     pixel < thr -> 0;  out cx, cy, raw flux
  * COG_RELATIVE (daoCentroidSpotsRelative):  t = thr * max(0, box max),
  *     pixel < t -> 0 else pixel - t;  out cx, cy, raw flux, weight
- * COG_RELATIVE_REF: boxes at centre[], cx -= ref[] as well */
+ * COG_RELATIVE_REF: boxes at centre[], cx -= ref[] as well
+ * No light, or a raw flux below minF[0] (> 0; minF NULL: no minimum): (0, 0). */
 __global__ void cogKernel(const float *img, long nImg, int stride, const float *pos, const float *ref,
-                          const float *thr, int box, int nSuba, int mode, float *out)
+                          const float *thr, const float *minF, int box, int nSuba, int mode, float *out)
 {
     int s = blockIdx.x;
     float px = pos[s], py = pos[nSuba + s];
@@ -1207,8 +1208,8 @@ __global__ void cogKernel(const float *img, long nImg, int stride, const float *
     xn = blockSum(xn);
     yn = blockSum(yn);
     if (threadIdx.x == 0) {
-        float cx = 0.f, cy = 0.f;
-        if (den != 0.f) {
+        float cx = 0.f, cy = 0.f, minFlux = minF ? minF[0] : 0.f;
+        if (den != 0.f && !(minFlux > 0.f && flux < minFlux)) {
             cx = xn / den - px;
             cy = yn / den - py;
             if (mode == COG_RELATIVE_REF) {
@@ -1218,7 +1219,7 @@ __global__ void cogKernel(const float *img, long nImg, int stride, const float *
         }
         out[s] = cx;
         out[nSuba + s] = cy;
-        out[2 * nSuba + s] = mode == COG_ABSOLUTE ? den : flux;
+        out[2 * nSuba + s] = flux;
         if (mode != COG_ABSOLUTE)
             out[3 * nSuba + s] = den;
     }
@@ -1226,16 +1227,16 @@ __global__ void cogKernel(const float *img, long nImg, int stride, const float *
 
 struct CogStage {
     daoGpuStage base;
-    int mode, box, nSuba, stride;
-    Param pos, ref, thr;
+    int mode, box, nSuba, stride, hasMinFlux;
+    Param pos, ref, thr, minFlux;
 };
 
 static int cogUpdate(daoGpuStage *b, cudaStream_t)
 {
     CogStage *c = (CogStage *) b;
     int r1 = paramSync(&c->pos), r2 = c->mode == COG_RELATIVE_REF ? paramSync(&c->ref) : 0;
-    int r3 = paramSync(&c->thr);
-    return r1 < 0 || r2 < 0 || r3 < 0 ? -1 : r1 | r2 | r3;
+    int r3 = paramSync(&c->thr), r4 = c->hasMinFlux ? paramSync(&c->minFlux) : 0;
+    return r1 < 0 || r2 < 0 || r3 < 0 || r4 < 0 ? -1 : r1 | r2 | r3 | r4;
 }
 
 static int cogRun(daoGpuStage *b, cudaStream_t st)
@@ -1243,7 +1244,9 @@ static int cogRun(daoGpuStage *b, cudaStream_t st)
     CogStage *c = (CogStage *) b;
     cogKernel<<<c->nSuba, 256, 0, st>>>((const float *) b->in->d, nelem(b->in), c->stride,
                                         (const float *) c->pos.d, (const float *) c->ref.d,
-                                        (const float *) c->thr.d, c->box, c->nSuba, c->mode, (float *) b->out->d);
+                                        (const float *) c->thr.d,
+                                        c->hasMinFlux ? (const float *) c->minFlux.d : NULL, c->box, c->nSuba,
+                                        c->mode, (float *) b->out->d);
     return cudaGetLastError() == cudaSuccess;
 }
 
@@ -1253,14 +1256,17 @@ static void cogDestroy(daoGpuStage *b)
     paramFree(&c->pos);
     paramFree(&c->ref);
     paramFree(&c->thr);
+    if (c->hasMinFlux)
+        paramFree(&c->minFlux);
     free(c);
 }
 
 static daoGpuStage *cogCreate(const char *name, int mode, daoGpuPort *in, IMAGE *pos, IMAGE *ref,
-                              IMAGE *threshold, int box, int nSuba, daoGpuPort *out)
+                              IMAGE *threshold, IMAGE *minFlux, int box, int nSuba, daoGpuPort *out)
 {
     int nOut = (mode == COG_ABSOLUTE ? 3 : 4) * nSuba;
     if (!isFloat(in) || !isFloat(out) || !isFloat(pos) || !isFloat(threshold) || (ref && !isFloat(ref))
+        || (minFlux && (!isFloat(minFlux) || nelem(minFlux) < 1))
         || nelem(pos) < 2 * nSuba || (ref && nelem(ref) < 2 * nSuba) || nelem(out) < nOut || box < 1
         || nSuba < 1) {
         daoError("%s: float SHMs expected, positions of 2 x %d values and an output of %d values\n", name,
@@ -1280,8 +1286,10 @@ static daoGpuStage *cogCreate(const char *name, int mode, daoGpuPort *in, IMAGE 
     c->nSuba = nSuba;
     /* image row length as each CPU tool reads it */
     c->stride = mode == COG_ABSOLUTE ? in->shm->md[0].size[0] : in->shm->md[0].size[1];
+    c->hasMinFlux = minFlux != NULL;
     if (!paramInit(&c->pos, pos, 2 * nSuba * sizeof(float)) || !paramInit(&c->thr, threshold, sizeof(float))
-        || (ref && !paramInit(&c->ref, ref, 2 * nSuba * sizeof(float)))) {
+        || (ref && !paramInit(&c->ref, ref, 2 * nSuba * sizeof(float)))
+        || (minFlux && !paramInit(&c->minFlux, minFlux, sizeof(float)))) {
         cogDestroy(&c->base);
         return NULL;
     }
@@ -1289,24 +1297,25 @@ static daoGpuStage *cogCreate(const char *name, int mode, daoGpuPort *in, IMAGE 
     return &c->base;
 }
 
-extern "C" daoGpuStage *daoGpuCentroidCreate(daoGpuPort *in, IMAGE *ref, IMAGE *threshold, int subaSize,
-                                             int nbSuba, daoGpuPort *out)
+extern "C" daoGpuStage *daoGpuCentroidCreate(daoGpuPort *in, IMAGE *ref, IMAGE *threshold, IMAGE *minFlux,
+                                             int subaSize, int nbSuba, daoGpuPort *out)
 {
-    return cogCreate("centroid", COG_ABSOLUTE, in, ref, NULL, threshold, subaSize, nbSuba, out);
+    return cogCreate("centroid", COG_ABSOLUTE, in, ref, NULL, threshold, minFlux, subaSize, nbSuba, out);
 }
 
 extern "C" daoGpuStage *daoGpuCentroidRelativeCreate(daoGpuPort *in, IMAGE *ref, IMAGE *threshold,
-                                                     int subaSize, int nbSuba, daoGpuPort *out)
+                                                     IMAGE *minFlux, int subaSize, int nbSuba, daoGpuPort *out)
 {
-    return cogCreate("centroidRelative", COG_RELATIVE, in, ref, NULL, threshold, subaSize, nbSuba, out);
+    return cogCreate("centroidRelative", COG_RELATIVE, in, ref, NULL, threshold, minFlux, subaSize, nbSuba,
+                     out);
 }
 
 extern "C" daoGpuStage *daoGpuCentroidRelativeRefCreate(daoGpuPort *in, IMAGE *subApCentre, IMAGE *ref,
-                                                        IMAGE *threshold, int subaSize, int nbSuba,
-                                                        daoGpuPort *out)
+                                                        IMAGE *threshold, IMAGE *minFlux, int subaSize,
+                                                        int nbSuba, daoGpuPort *out)
 {
-    return cogCreate("centroidRelativeRef", COG_RELATIVE_REF, in, subApCentre, ref, threshold, subaSize,
-                     nbSuba, out);
+    return cogCreate("centroidRelativeRef", COG_RELATIVE_REF, in, subApCentre, ref, threshold, minFlux,
+                     subaSize, nbSuba, out);
 }
 
 /* ----------------------------------------------------------- correlation */
@@ -1317,17 +1326,34 @@ extern "C" daoGpuStage *daoGpuCentroidRelativeRefCreate(daoGpuPort *in, IMAGE *s
  * up to rounding), then the same peak search and refinement as the CPU. */
 #define CORR_COARSE_STRIDE 2                         /* DAO_CENTROID_CORR_COARSE_STRIDE */
 
+/* Both: out cx, cy, raw flux of the sub-aperture window (at no shift). No light
+ * (a flat, zero correlation), or a raw flux below minF[0] (> 0; minF NULL: no
+ * minimum): (0, 0) -- and below minF[0] the correlation is not computed. */
 __global__ void corrWindowKernel(const float *img, long nImg, int stride, const float *pos,
-                                 const float *refImage, const float *thr, int box, int nSuba, int R, float *out)
+                                 const float *refImage, const float *thr, const float *minF, int box, int nSuba,
+                                 int R, float *out)
 {
     extern __shared__ float sh[];
     int s = blockIdx.x, W = box + 2 * R, ns = 2 * R + 1;
     float *obs = sh, *ref = obs + W * W, *surf = ref + box * box;
     int x0 = (int) roundf(pos[s]) - box / 2, y0 = (int) roundf(pos[nSuba + s]) - box / 2;
-    float threshold = thr[0];
+    float threshold = thr[0], flux = 0.f;
     for (int p = threadIdx.x; p < W * W; p += blockDim.x) {
-        float v = pix(img, nImg, (long) (y0 - R + p / W) * stride + (x0 - R + p % W));
+        int r = p / W, c = p % W;
+        float v = pix(img, nImg, (long) (y0 - R + r) * stride + (x0 - R + c));
+        if (r >= R && r < R + box && c >= R && c < R + box)
+            flux += v;                               /* the window at no shift, raw */
         obs[p] = v < threshold ? 0.f : v;
+    }
+    flux = blockSum(flux);                           /* the same value in every thread */
+    float minFlux = minF ? minF[0] : 0.f;
+    if (minFlux > 0.f && flux < minFlux) {           /* too little light: no information */
+        if (threadIdx.x == 0) {
+            out[s] = 0.f;
+            out[nSuba + s] = 0.f;
+            out[2 * nSuba + s] = flux;
+        }
+        return;
     }
     const float *subRef = refImage + (size_t) s * box * box;
     for (int p = threadIdx.x; p < box * box; p += blockDim.x)
@@ -1373,25 +1399,38 @@ __global__ void corrWindowKernel(const float *img, long nImg, int stride, const 
             suby = 0.5f * (l - r) / d;
     }
 #undef SURF
-    out[s] = (float) bx + subx;
-    out[nSuba + s] = (float) by + suby;
-    out[2 * nSuba + s] = peak;
+    bool dark = peak <= 0.f;                         /* flat correlation: its "peak" is the first shift */
+    out[s] = dark ? 0.f : (float) bx + subx;
+    out[nSuba + s] = dark ? 0.f : (float) by + suby;
+    out[2 * nSuba + s] = flux;
 }
 
 __global__ void corrPeriodicKernel(const float *img, long nImg, int stride, const float *pos,
-                                   const float *refImage, const float *thr, int box, int nSuba, float *out)
+                                   const float *refImage, const float *thr, const float *minF, int box, int nSuba,
+                                   float *out)
 {
     extern __shared__ float sh[];
     int s = blockIdx.x, N = box * box, half = box / 2, W = 2 * box;
     float *obs = sh, *ref = obs + 4 * N, *surf = ref + N;   /* obs tiled 2 x 2: no modulo below */
     int x0 = (int) roundf(pos[s]) - half, y0 = (int) roundf(pos[nSuba + s]) - half;
-    float threshold = thr[0];
+    float threshold = thr[0], flux = 0.f;
     for (int p = threadIdx.x; p < N; p += blockDim.x) {
         int r = p / box, c = p % box;
         float v = pix(img, nImg, (long) (y0 + r) * stride + x0 + c);
+        flux += v;                                   /* the window, raw */
         v = v < threshold ? 0.f : v;
         obs[r * W + c] = obs[r * W + c + box] = obs[(r + box) * W + c] = obs[(r + box) * W + c + box] = v;
         ref[p] = refImage[(size_t) s * N + p];
+    }
+    flux = blockSum(flux);                           /* also the barrier obs / ref needed */
+    float minFlux = minF ? minF[0] : 0.f;
+    if (minFlux > 0.f && flux < minFlux) {           /* too little light: no information */
+        if (threadIdx.x == 0) {
+            out[s] = 0.f;
+            out[nSuba + s] = 0.f;
+            out[2 * nSuba + s] = flux;
+        }
+        return;
     }
     __syncthreads();
     for (int k = threadIdx.x; k < N; k += blockDim.x) {       /* c[k] = sum_n ref[n] obs[n + k] */
@@ -1428,18 +1467,22 @@ __global__ void corrPeriodicKernel(const float *img, long nImg, int stride, cons
         subx = 0.5f * (cLx - cRx) / dX;
     if (fabsf(dY * N) > 1e-12f)
         suby = 0.5f * (cLy - cRy) / dY;
-    out[s] = (float) (bkx <= half ? bkx : bkx - box) + subx;
-    out[nSuba + s] = (float) (bky <= half ? bky : bky - box) + suby;
-    out[2 * nSuba + s] = peak;
+    bool dark = peak <= 0.f;                         /* flat correlation: no light in the window */
+    out[s] = dark ? 0.f : (float) (bkx <= half ? bkx : bkx - box) + subx;
+    out[nSuba + s] = dark ? 0.f : (float) (bky <= half ? bky : bky - box) + suby;
+    out[2 * nSuba + s] = flux;
 }
 
 /* daoCentroidSpotsUpdateReference with threshold 0 (what both tools pass):
  * ref = (1 - alpha) ref + alpha obs, obs taken at the rounded centroid shift
- * clamped to +-box/4 */
+ * clamped to +-box/4; a sub-aperture whose flux is below minF[0] keeps its
+ * reference (a dark one must not fade its template) */
 __global__ void corrUpdateRefKernel(const float *img, long nImg, int stride, const float *pos, const float *cent,
-                                    int box, int nSuba, float alpha, float *refImage)
+                                    const float *minF, int box, int nSuba, float alpha, float *refImage)
 {
     int s = blockIdx.x, maxShift = box / 4;
+    if (minF && minF[0] > 0.f && cent[2 * nSuba + s] < minF[0])
+        return;
     int sx = min(max((int) roundf(cent[s]), -maxShift), maxShift);
     int sy = min(max((int) roundf(cent[nSuba + s]), -maxShift), maxShift);
     int x0 = (int) roundf(pos[s]) - box / 2 + sx, y0 = (int) roundf(pos[nSuba + s]) - box / 2 + sy;
@@ -1454,34 +1497,36 @@ __global__ void corrUpdateRefKernel(const float *img, long nImg, int stride, con
 
 struct CorrStage {
     daoGpuStage base;
-    int periodic, box, nSuba, R, stride;
+    int periodic, box, nSuba, R, stride, hasMinFlux;
     float alpha;
     size_t shmem;
-    Param pos, refImage, thr;
+    Param pos, refImage, thr, minFlux;
 };
 
 static int corrUpdate(daoGpuStage *b, cudaStream_t)
 {
     CorrStage *c = (CorrStage *) b;
     int r1 = paramSync(&c->pos), r2 = paramSync(&c->refImage), r3 = paramSync(&c->thr);
+    int r4 = c->hasMinFlux ? paramSync(&c->minFlux) : 0;
     if (r2 > 0)
         daoInfo("%s: reference image %s (re)loaded\n", b->name, c->refImage.im->name);
-    return r1 < 0 || r2 < 0 || r3 < 0 ? -1 : r1 | r2 | r3;
+    return r1 < 0 || r2 < 0 || r3 < 0 || r4 < 0 ? -1 : r1 | r2 | r3 | r4;
 }
 
 static int corrRun(daoGpuStage *b, cudaStream_t st)
 {
     CorrStage *c = (CorrStage *) b;
+    const float *minF = c->hasMinFlux ? (const float *) c->minFlux.d : NULL;
     if (c->periodic)
         corrPeriodicKernel<<<c->nSuba, 256, c->shmem, st>>>((const float *) b->in->d, nelem(b->in), c->stride,
                                                             (const float *) c->pos.d, (const float *) c->refImage.d,
-                                                            (const float *) c->thr.d, c->box, c->nSuba,
+                                                            (const float *) c->thr.d, minF, c->box, c->nSuba,
                                                             (float *) b->out->d);
     else
         corrWindowKernel<<<c->nSuba, 256, c->shmem, st>>>((const float *) b->in->d, nelem(b->in), c->stride,
                                                           (const float *) c->pos.d, (const float *) c->refImage.d,
-                                                          (const float *) c->thr.d, c->box, c->nSuba, c->R,
-                                                          (float *) b->out->d);
+                                                          (const float *) c->thr.d, minF, c->box, c->nSuba,
+                                                          c->R, (float *) b->out->d);
     return cudaGetLastError() == cudaSuccess;
 }
 
@@ -1493,7 +1538,8 @@ static int corrPost(daoGpuStage *b, cudaStream_t st)
         return 1;
     IMAGE *im = c->refImage.im;
     corrUpdateRefKernel<<<c->nSuba, 256, 0, st>>>((const float *) b->in->d, nelem(b->in), c->stride,
-                                                  (const float *) c->pos.d, (const float *) b->out->d, c->box,
+                                                  (const float *) c->pos.d, (const float *) b->out->d,
+                                                  c->hasMinFlux ? (const float *) c->minFlux.d : NULL, c->box,
                                                   c->nSuba, c->alpha, (float *) c->refImage.d);
     cudaMemcpyAsync(im->array.V, c->refImage.d, c->refImage.bytes, cudaMemcpyDeviceToHost, st);
     if (cudaStreamSynchronize(st) != cudaSuccess) {
@@ -1511,6 +1557,8 @@ static void corrDestroy(daoGpuStage *b)
     paramFree(&c->pos);
     paramFree(&c->refImage);
     paramFree(&c->thr);
+    if (c->hasMinFlux)
+        paramFree(&c->minFlux);
     if (c->alpha > 0.f) {
         cudaHostUnregister(c->refImage.im->array.V);
         cudaGetLastError();
@@ -1519,7 +1567,8 @@ static void corrDestroy(daoGpuStage *b)
 }
 
 static daoGpuStage *corrCreate(const char *name, int periodic, daoGpuPort *in, IMAGE *pos, IMAGE *refImage,
-                               IMAGE *threshold, int box, int nSuba, int R, float alpha, daoGpuPort *out)
+                               IMAGE *threshold, IMAGE *minFlux, int box, int nSuba, int R, float alpha,
+                               daoGpuPort *out)
 {
     int dev;
     cudaDeviceProp prop;
@@ -1529,6 +1578,7 @@ static daoGpuStage *corrCreate(const char *name, int periodic, daoGpuPort *in, I
                             : ((size_t) (box + 2 * R) * (box + 2 * R) + box * box + (2 * R + 1) * (2 * R + 1))
                                   * sizeof(float);
     if (!isFloat(in) || !isFloat(out) || !isFloat(pos) || !isFloat(refImage) || !isFloat(threshold)
+        || (minFlux && (!isFloat(minFlux) || nelem(minFlux) < 1))
         || nelem(pos) < 2 * nSuba || nelem(refImage) < (long) nSuba * box * box || nelem(out) < 3 * nSuba
         || box < 2 || nSuba < 1) {
         daoError("%s: float SHMs expected: positions 2 x %d, reference image %d x %d x %d, output 3 x %d\n", name,
@@ -1560,9 +1610,11 @@ static daoGpuStage *corrCreate(const char *name, int periodic, daoGpuPort *in, I
     c->alpha = alpha;
     c->shmem = shmem;
     c->stride = in->shm->md[0].size[1];
+    c->hasMinFlux = minFlux != NULL;
     if (!paramInit(&c->pos, pos, 2 * nSuba * sizeof(float))
         || !paramInit(&c->refImage, refImage, (size_t) nSuba * box * box * sizeof(float))
-        || !paramInit(&c->thr, threshold, sizeof(float))) {
+        || !paramInit(&c->thr, threshold, sizeof(float))
+        || (minFlux && !paramInit(&c->minFlux, minFlux, sizeof(float)))) {
         corrDestroy(&c->base);
         return NULL;
     }
@@ -1574,17 +1626,17 @@ static daoGpuStage *corrCreate(const char *name, int periodic, daoGpuPort *in, I
 }
 
 extern "C" daoGpuStage *daoGpuCentroidCorrelationCreate(daoGpuPort *in, IMAGE *subApCentre, IMAGE *refImage,
-                                                        IMAGE *threshold, int subaSize, int nbSuba,
+                                                        IMAGE *threshold, IMAGE *minFlux, int subaSize, int nbSuba,
                                                         int searchRange, float alpha, daoGpuPort *out)
 {
-    return corrCreate("centroidCorrelation", 0, in, subApCentre, refImage, threshold, subaSize, nbSuba,
+    return corrCreate("centroidCorrelation", 0, in, subApCentre, refImage, threshold, minFlux, subaSize, nbSuba,
                       searchRange, alpha, out);
 }
 
 extern "C" daoGpuStage *daoGpuCentroidCorrelationFFTCreate(daoGpuPort *in, IMAGE *subApCentre, IMAGE *refImage,
-                                                           IMAGE *threshold, int subaSize, int nbSuba, float alpha,
-                                                           daoGpuPort *out)
+                                                           IMAGE *threshold, IMAGE *minFlux, int subaSize,
+                                                           int nbSuba, float alpha, daoGpuPort *out)
 {
-    return corrCreate("centroidCorrelationFFT", 1, in, subApCentre, refImage, threshold, subaSize, nbSuba, 0,
-                      alpha, out);
+    return corrCreate("centroidCorrelationFFT", 1, in, subApCentre, refImage, threshold, minFlux, subaSize,
+                      nbSuba, 0, alpha, out);
 }
