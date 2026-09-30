@@ -29,6 +29,15 @@ not actually built/shipped) and the project-scaffolding tools
 | `daoPrepCentroidLut.py` | image (for geometry) | LUT | Builds the sub-aperture LUT consumed by `daoComputeCentroidsSlow.py`. `-i <imShm> -n <nbSuba> -l <lutShm>` |
 | `daoPrepPwfs.py` | — | background, flat-field, flux (fixed `/tmp/wsBg`, `/tmp/wsFf`, `/tmp/wsFlux`) | One-shot setup script: creates the pyramid-WFS reference SHMs with hardcoded 128×128 defaults. No CLI args. |
 
+**Sub-apertures without light** (`daoComputeCentroid`, `Relative`, `RelativeRef`, `Correlation`,
+`CorrelationFFT`, and their GPU stages in `daoGpuPipeline`): a sub-aperture with no light (nothing
+above the threshold) gets slopes (0, 0) -- no information rather than noise; the correlation
+centroiders used to return (-searchRange, -searchRange) there. `-f <minFluxShm>` (optional, a
+1-value SHM read every frame; GPU stages: `minFlux:`) also gives (0, 0) to a sub-aperture whose
+flux, the sum of its raw pixels, is below that value, and with `-a` keeps its reference template
+unchanged. The third output row is that flux for all of them (it was the correlation peak for the
+correlation centroiders).
+
 ## Matrix-vector multiply
 
 | Tool | Inputs | Outputs | Notes |

@@ -112,7 +112,7 @@ daoCentroidCorrFFTCtx* daoCentroidSpotsCorrelationFFTInit(int boxSize, int nSuba
 
 int_fast8_t daoCentroidSpotsCorrelationFFT(daoCentroidCorrFFTCtx* ctx,
     const float* image, int imageSizeX, int imageSizeY,
-    const float* ref, float threshold, float* cent) {
+    const float* ref, float threshold, float minFlux, float* cent) {
     (void)imageSizeY;
     daoTrace("\n");
     if (!ctx) {
@@ -130,21 +130,30 @@ int_fast8_t daoCentroidSpotsCorrelationFFT(daoCentroidCorrFFTCtx* ctx,
     const float* refY = ref + nSuba;
     float* cxOut   = cent;
     float* cyOut   = cent + nSuba;
-    float* peakOut = cent + 2 * nSuba;
+    float* fluxOut = cent + 2 * nSuba;
 
     for (int s = 0; s < nSuba; ++s) {
         const int x0 = (int)roundf(refX[s]) - boxSize / 2;
         const int y0 = (int)roundf(refY[s]) - boxSize / 2;
 
         /* Extract + threshold the observed window (background suppression,
-         * same convention as daoCentroidSpotsCorrelation). */
+         * same convention as daoCentroidSpotsCorrelation); the raw flux on
+         * the way (the light in the subaperture). */
+        float flux = 0.0f;
         for (int i = 0; i < boxSize; ++i) {
             const float* imRow = image + (size_t)(y0 + i) * imageSizeX + x0;
             float* dst = ctx->obsBuf + (size_t)i * boxSize;
             for (int j = 0; j < boxSize; ++j) {
                 float pixel = imRow[j];
+                flux += pixel;
                 dst[j] = (pixel < threshold) ? 0.0f : pixel;
             }
+        }
+        fluxOut[s] = flux;
+        if (minFlux > 0.0f && flux < minFlux) {
+            cxOut[s] = 0.0f;                       /* too little light: no information, no FFT */
+            cyOut[s] = 0.0f;
+            continue;
         }
 
         fftwf_execute_dft_r2c(ctx->planR2C, ctx->obsBuf, ctx->obsFreq);
@@ -200,9 +209,15 @@ int_fast8_t daoCentroidSpotsCorrelationFFT(daoCentroidCorrFFTCtx* ctx,
         float denomY = cLy - 2.0f * peak + cRy;
         if (fabsf(denomY) > 1e-12f) subDy = 0.5f * (cLy - cRy) / denomY;
 
-        cxOut[s]   = (float)bestDx + subDx;
-        cyOut[s]   = (float)bestDy + subDy;
-        peakOut[s] = peak / (float)(boxSize * boxSize);   /* undo FFTW's unnormalized scale */
+        if (peak <= 0.0f) {
+            /* no light in the window: the correlation is flat (0) */
+            cxOut[s] = 0.0f;
+            cyOut[s] = 0.0f;
+        }
+        else {
+            cxOut[s] = (float)bestDx + subDx;
+            cyOut[s] = (float)bestDy + subDy;
+        }
     }
 
     return DAO_SUCCESS;
@@ -230,6 +245,7 @@ int_fast8_t daoCentroidSpotsCorrelationFFT(daoCentroidCorrFFTCtx* ctx,
  * @param[in]  cent           This frame's centroid output (cx/cy read; see daoCentroidSpotsUpdateReference)
  * @param[in]  threshold      Same absolute threshold used for centroiding
  * @param[in]  alpha          EMA rate in (0, 1]; alpha <= 0 is a no-op (returns DAO_SUCCESS immediately)
+ * @param[in]  minFlux        Subapertures below it keep their reference (see daoCentroidSpotsUpdateReference)
  * @param[out] refImageShmOut Mirrors the blended reference (size `nSuba*boxSize*boxSize`),
  *                             e.g. pass the refImage SHM's own array so external
  *                             readers see the live reference too. May be NULL to skip mirroring.
@@ -238,7 +254,7 @@ int_fast8_t daoCentroidSpotsCorrelationFFT(daoCentroidCorrFFTCtx* ctx,
  */
 int_fast8_t daoCentroidSpotsCorrelationFFTUpdateRef(daoCentroidCorrFFTCtx* ctx,
     const float* image, int imageSizeX, int imageSizeY,
-    const float* ref, const float* cent, float threshold, float alpha,
+    const float* ref, const float* cent, float threshold, float alpha, float minFlux,
     float* refImageShmOut) {
     if (!ctx) {
         daoError("daoCentroidSpotsCorrelationFFTUpdateRef: NULL context\n");
@@ -247,7 +263,7 @@ int_fast8_t daoCentroidSpotsCorrelationFFTUpdateRef(daoCentroidCorrFFTCtx* ctx,
     if (alpha <= 0.0f) return DAO_SUCCESS;
 
     daoCentroidSpotsUpdateReference(image, imageSizeX, imageSizeY, ref, cent,
-                                     ctx->boxSize, ctx->nSuba, threshold, alpha, ctx->refReal);
+                                     ctx->boxSize, ctx->nSuba, threshold, alpha, minFlux, ctx->refReal);
     daoCentroidCorrFFTRefreshSpectra(ctx);
 
     if (refImageShmOut) {
@@ -351,7 +367,7 @@ daoCentroidCorrFFTDoubleCtx* daoCentroidSpotsCorrelationFFTDoubleInit(int boxSiz
 
 int_fast8_t daoCentroidSpotsCorrelationFFTDouble(daoCentroidCorrFFTDoubleCtx* ctx,
     const double* image, int imageSizeX, int imageSizeY,
-    const double* ref, double threshold, double* cent) {
+    const double* ref, double threshold, double minFlux, double* cent) {
     (void)imageSizeY;
     daoTrace("\n");
     if (!ctx) {
@@ -369,19 +385,27 @@ int_fast8_t daoCentroidSpotsCorrelationFFTDouble(daoCentroidCorrFFTDoubleCtx* ct
     const double* refY = ref + nSuba;
     double* cxOut   = cent;
     double* cyOut   = cent + nSuba;
-    double* peakOut = cent + 2 * nSuba;
+    double* fluxOut = cent + 2 * nSuba;
 
     for (int s = 0; s < nSuba; ++s) {
         const int x0 = (int)round(refX[s]) - boxSize / 2;
         const int y0 = (int)round(refY[s]) - boxSize / 2;
 
+        double flux = 0.0;
         for (int i = 0; i < boxSize; ++i) {
             const double* imRow = image + (size_t)(y0 + i) * imageSizeX + x0;
             double* dst = ctx->obsBuf + (size_t)i * boxSize;
             for (int j = 0; j < boxSize; ++j) {
                 double pixel = imRow[j];
+                flux += pixel;
                 dst[j] = (pixel < threshold) ? 0.0 : pixel;
             }
+        }
+        fluxOut[s] = flux;
+        if (minFlux > 0.0 && flux < minFlux) {
+            cxOut[s] = 0.0;                        /* too little light: no information, no FFT */
+            cyOut[s] = 0.0;
+            continue;
         }
 
         fftw_execute_dft_r2c(ctx->planR2C, ctx->obsBuf, ctx->obsFreq);
@@ -431,9 +455,14 @@ int_fast8_t daoCentroidSpotsCorrelationFFTDouble(daoCentroidCorrFFTDoubleCtx* ct
         double denomY = cLy - 2.0 * peak + cRy;
         if (fabs(denomY) > 1e-12) subDy = 0.5 * (cLy - cRy) / denomY;
 
-        cxOut[s]   = (double)bestDx + subDx;
-        cyOut[s]   = (double)bestDy + subDy;
-        peakOut[s] = peak / (double)(boxSize * boxSize);
+        if (peak <= 0.0) {
+            cxOut[s] = 0.0;                        /* no light in the window: flat correlation */
+            cyOut[s] = 0.0;
+        }
+        else {
+            cxOut[s] = (double)bestDx + subDx;
+            cyOut[s] = (double)bestDy + subDy;
+        }
     }
 
     return DAO_SUCCESS;
@@ -442,7 +471,7 @@ int_fast8_t daoCentroidSpotsCorrelationFFTDouble(daoCentroidCorrFFTDoubleCtx* ct
 /** @brief Double-precision counterpart of daoCentroidSpotsCorrelationFFTUpdateRef. */
 int_fast8_t daoCentroidSpotsCorrelationFFTUpdateRefDouble(daoCentroidCorrFFTDoubleCtx* ctx,
     const double* image, int imageSizeX, int imageSizeY,
-    const double* ref, const double* cent, double threshold, double alpha,
+    const double* ref, const double* cent, double threshold, double alpha, double minFlux,
     double* refImageShmOut) {
     if (!ctx) {
         daoError("daoCentroidSpotsCorrelationFFTUpdateRefDouble: NULL context\n");
@@ -451,7 +480,7 @@ int_fast8_t daoCentroidSpotsCorrelationFFTUpdateRefDouble(daoCentroidCorrFFTDoub
     if (alpha <= 0.0) return DAO_SUCCESS;
 
     daoCentroidSpotsUpdateReferenceDouble(image, imageSizeX, imageSizeY, ref, cent,
-                                           ctx->boxSize, ctx->nSuba, threshold, alpha, ctx->refReal);
+                                           ctx->boxSize, ctx->nSuba, threshold, alpha, minFlux, ctx->refReal);
     daoCentroidCorrFFTRefreshSpectraDouble(ctx);
 
     if (refImageShmOut) {

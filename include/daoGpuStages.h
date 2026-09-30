@@ -80,28 +80,31 @@ daoGpuStage *daoGpuPixelSubstractExtractNormImageCreate(daoGpuPort *in, IMAGE *s
 /* daoDescrambleOcam2: OCAM2 raw bytes -> uint16 image through the LUT (binning 1 or 2) */
 daoGpuStage *daoGpuDescrambleOcam2Create(daoGpuPort *raw, IMAGE *lut, int binning, daoGpuPort *out);
 
-/* ---- Shack-Hartmann centroiders (ref: 2*nSuba positions, x then y; threshold: 1 value) */
+/* ---- Shack-Hartmann centroiders (ref: 2*nSuba positions, x then y; threshold: 1 value;
+ * minFlux: 1 value, or NULL). As the CPU tools: out row 3 is the flux of the sub-aperture
+ * (sum of its raw pixels); no light, or a flux below minFlux (> 0): cx, cy = 0. */
 /* daoComputeCentroid: centre of gravity, absolute threshold. out: cx, cy, flux */
-daoGpuStage *daoGpuCentroidCreate(daoGpuPort *in, IMAGE *ref, IMAGE *threshold, int subaSize, int nbSuba,
-                                  daoGpuPort *out);
+daoGpuStage *daoGpuCentroidCreate(daoGpuPort *in, IMAGE *ref, IMAGE *threshold, IMAGE *minFlux, int subaSize,
+                                  int nbSuba, daoGpuPort *out);
 /* daoComputeCentroidRelative: threshold relative to the spot maximum. out: cx, cy, flux, weight */
-daoGpuStage *daoGpuCentroidRelativeCreate(daoGpuPort *in, IMAGE *ref, IMAGE *threshold, int subaSize,
-                                          int nbSuba, daoGpuPort *out);
+daoGpuStage *daoGpuCentroidRelativeCreate(daoGpuPort *in, IMAGE *ref, IMAGE *threshold, IMAGE *minFlux,
+                                          int subaSize, int nbSuba, daoGpuPort *out);
 /* daoComputeCentroidRelativeRef: same, boxes centred on subApCentre, minus ref */
 daoGpuStage *daoGpuCentroidRelativeRefCreate(daoGpuPort *in, IMAGE *subApCentre, IMAGE *ref,
-                                             IMAGE *threshold, int subaSize, int nbSuba, daoGpuPort *out);
+                                             IMAGE *threshold, IMAGE *minFlux, int subaSize, int nbSuba,
+                                             daoGpuPort *out);
 /* daoComputeCentroidCorrelation: correlation with refImage (one subaSize^2 template per
- * sub-aperture, stacked) within +-searchRange. out: cx, cy, peak. alpha > 0: the
+ * sub-aperture, stacked) within +-searchRange. out: cx, cy, flux. alpha > 0: the
  * reference follows the spots (running average), written back to refImage after
- * each frame is published. */
+ * each frame is published; sub-apertures below minFlux keep their reference. */
 daoGpuStage *daoGpuCentroidCorrelationCreate(daoGpuPort *in, IMAGE *subApCentre, IMAGE *refImage,
-                                             IMAGE *threshold, int subaSize, int nbSuba, int searchRange,
-                                             float alpha, daoGpuPort *out);
+                                             IMAGE *threshold, IMAGE *minFlux, int subaSize, int nbSuba,
+                                             int searchRange, float alpha, daoGpuPort *out);
 /* daoComputeCentroidCorrelationFFT: periodic correlation over the whole sub-aperture
- * (computed directly: same result as the FFT). out: cx, cy, peak. alpha as above. */
+ * (computed directly: same result as the FFT). out: cx, cy, flux. alpha as above. */
 daoGpuStage *daoGpuCentroidCorrelationFFTCreate(daoGpuPort *in, IMAGE *subApCentre, IMAGE *refImage,
-                                                IMAGE *threshold, int subaSize, int nbSuba, float alpha,
-                                                daoGpuPort *out);
+                                                IMAGE *threshold, IMAGE *minFlux, int subaSize, int nbSuba,
+                                                float alpha, daoGpuPort *out);
 
 /* ---- vectors */
 /* daoShmSlice: out[0, count) = in[offset, offset + count), any type (same as in) */
@@ -111,6 +114,13 @@ daoGpuStage *daoGpuSliceCreate(daoGpuPort *in, long offset, long count, daoGpuPo
 daoGpuStage *daoGpuMvmCreate(daoGpuPort *in, IMAGE *matrix, daoGpuPort *out);
 /* daoApplyGain: out = in * gain[0], or in * gain[k] with modal */
 daoGpuStage *daoGpuApplyGainCreate(daoGpuPort *in, IMAGE *gain, daoGpuPort *out, int modal);
+/* daoLeakyIntegrator: out (the state) = leak * out - gain * (in - offset) while loop[0] == 1,
+ * then minus its mean (unless keepPiston: the app's -P) and clipped to +-clip (-c); zero
+ * while the loop is open. enable (NULL: always on) == 0: zero published once, then the
+ * stage is silent (-e). gain, leak: 1 value, or one per value with modal (-m). offset:
+ * NULL, or one per value. */
+daoGpuStage *daoGpuLeakyIntegratorCreate(daoGpuPort *in, IMAGE *loop, IMAGE *gain, IMAGE *leak, IMAGE *enable,
+                                         IMAGE *offset, int modal, int keepPiston, float clip, daoGpuPort *out);
 
 const char *daoGpuStageName(const daoGpuStage *s);
 daoGpuPort *daoGpuStageOutput(daoGpuStage *s);

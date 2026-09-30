@@ -81,7 +81,10 @@ daoCentroidCorrFFTCtx* daoCentroidSpotsCorrelationFFTInit(int boxSize, int nSuba
  * daoCentroidSpotsCorrelation:
  * - `cent[0 .. nSuba-1]`         : X centroids (cx), relative to ref X
  * - `cent[nSuba .. 2*nSuba-1]`   : Y centroids (cy), relative to ref Y
- * - `cent[2*nSuba .. 3*nSuba-1]` : Correlation peak value (quality/flux diagnostic)
+ * - `cent[2*nSuba .. 3*nSuba-1]` : Flux = sum of the raw pixels of the window (the light in it)
+ *
+ * No light (a flat, zero correlation), or a flux below @p minFlux (> 0): the
+ * centroid is `(0, 0)`, and below @p minFlux the FFT is skipped.
  *
  * Because the correlation is periodic (not padded), a shift is only
  * meaningful up to +-boxSize/2 before it aliases; peaks are searched only in
@@ -96,13 +99,14 @@ daoCentroidCorrFFTCtx* daoCentroidSpotsCorrelationFFTInit(int boxSize, int nSuba
  * @param[in]  ref         Reference positions, SoA layout (size `2*nSuba`):
  *                         `ref[0..nSuba-1]` = X, `ref[nSuba..2*nSuba-1]` = Y
  * @param[in]  threshold   Absolute pixel intensity threshold applied to the observed image
+ * @param[in]  minFlux     Minimum flux of a subaperture to compute its centroid; <= 0: no minimum
  * @param[out] cent        Output array (size >= `3*nSuba`, layout above)
  *
  * @return DAO_SUCCESS on success
  */
 int_fast8_t daoCentroidSpotsCorrelationFFT(daoCentroidCorrFFTCtx* ctx,
     const float* image, int imageSizeX, int imageSizeY,
-    const float* ref, float threshold, float* cent);
+    const float* ref, float threshold, float minFlux, float* cent);
 
 /**
  * @brief Blend this frame's centroid-aligned observation into the cached
@@ -116,12 +120,13 @@ int_fast8_t daoCentroidSpotsCorrelationFFT(daoCentroidCorrFFTCtx* ctx,
  * of sync with what any external tool, or a future restart, would read; pass
  * NULL to skip that.
  *
- * @param[in]  alpha  EMA rate in (0, 1]; alpha <= 0 is a no-op.
+ * @param[in]  alpha    EMA rate in (0, 1]; alpha <= 0 is a no-op.
+ * @param[in]  minFlux  Subapertures whose flux (cent's third row) is below it keep their reference.
  * @return DAO_SUCCESS on success, DAO_ERROR if ctx is NULL
  */
 int_fast8_t daoCentroidSpotsCorrelationFFTUpdateRef(daoCentroidCorrFFTCtx* ctx,
     const float* image, int imageSizeX, int imageSizeY,
-    const float* ref, const float* cent, float threshold, float alpha,
+    const float* ref, const float* cent, float threshold, float alpha, float minFlux,
     float* refImageShmOut);
 
 /** @brief Release everything created by daoCentroidSpotsCorrelationFFTInit. */
@@ -137,12 +142,12 @@ daoCentroidCorrFFTDoubleCtx* daoCentroidSpotsCorrelationFFTDoubleInit(int boxSiz
 /** @brief Double-precision counterpart of daoCentroidSpotsCorrelationFFT. */
 int_fast8_t daoCentroidSpotsCorrelationFFTDouble(daoCentroidCorrFFTDoubleCtx* ctx,
     const double* image, int imageSizeX, int imageSizeY,
-    const double* ref, double threshold, double* cent);
+    const double* ref, double threshold, double minFlux, double* cent);
 
 /** @brief Double-precision counterpart of daoCentroidSpotsCorrelationFFTUpdateRef. */
 int_fast8_t daoCentroidSpotsCorrelationFFTUpdateRefDouble(daoCentroidCorrFFTDoubleCtx* ctx,
     const double* image, int imageSizeX, int imageSizeY,
-    const double* ref, const double* cent, double threshold, double alpha,
+    const double* ref, const double* cent, double threshold, double alpha, double minFlux,
     double* refImageShmOut);
 
 /** @brief Release everything created by daoCentroidSpotsCorrelationFFTDoubleInit. */

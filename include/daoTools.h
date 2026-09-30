@@ -247,12 +247,18 @@ int_fast8_t daoToolsLeakyModalIntegratorDouble(double *command,
                                               double *gain,
                                               double *commandOffset,
                                               double *filteredCommand);
+/* The centroiders below share two rules, for a subaperture without light:
+ *  - no light (nothing above the threshold): its centroid is (0, 0);
+ *  - minFlux > 0: a subaperture whose flux (sum of its raw pixels) is below it
+ *    gets (0, 0) too -- no information, rather than noise. minFlux <= 0: off.
+ * The third output row is that flux, for every centroider. */
 int_fast8_t daoCentroidSpots(float * image,
                              int imageSize,
                              float * ref,
                              int boxSize,
                              int nSuba,
                              float threshold,
+                             float minFlux,
                              float * cent);
 int_fast8_t daoCentroidSpotsRelative(float *image,
                                      int imageSizeX,
@@ -261,6 +267,7 @@ int_fast8_t daoCentroidSpotsRelative(float *image,
                                      int boxSize,
                                      int nSuba,
                                      float threshold,
+                                     float minFlux,
                                      float *cent);
 
 int_fast8_t daoCentroidSpotsRelativeRef(float *image,
@@ -271,6 +278,7 @@ int_fast8_t daoCentroidSpotsRelativeRef(float *image,
                                      int boxSize,
                                      int nSuba,
                                      float threshold,
+                                     float minFlux,
                                      float *cent);
 
 /* Largest searchRange daoCentroidSpotsCorrelation accepts: a sanity bound on
@@ -287,6 +295,7 @@ int_fast8_t daoCentroidSpotsCorrelation(float *image,
                                         int nSuba,
                                         int searchRange,
                                         float threshold,
+                                        float minFlux,
                                         float *cent);
 
 /**
@@ -296,6 +305,8 @@ int_fast8_t daoCentroidSpotsCorrelation(float *image,
  * computed and published (by daoCentroidSpotsCorrelation or
  * daoCentroidSpotsCorrelationFFT) -- not on the real-time critical path,
  * since it only affects the *next* frame's reference. alpha <= 0 is a no-op.
+ * minFlux > 0: subapertures whose flux (cent's third row) is below it keep
+ * their reference (a dark subaperture must not fade its template).
  * See the .c file for the full rationale and the alignment convention used.
  */
 void daoCentroidSpotsUpdateReference(const float *image,
@@ -307,6 +318,7 @@ void daoCentroidSpotsUpdateReference(const float *image,
                                      int nSuba,
                                      float threshold,
                                      float alpha,
+                                     float minFlux,
                                      float *refImageInOut);
 
 void daoCentroidSpotsUpdateReferenceDouble(const double *image,
@@ -318,6 +330,7 @@ void daoCentroidSpotsUpdateReferenceDouble(const double *image,
                                            int nSuba,
                                            double threshold,
                                            double alpha,
+                                           double minFlux,
                                            double *refImageInOut);
 
 int_fast8_t daoCentroidPws(float *im, float *slopes,

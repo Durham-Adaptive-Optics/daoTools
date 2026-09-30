@@ -18,6 +18,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <algorithm>
+#include <cmath>
 #include <random>
 #include <string>
 #include <vector>
@@ -373,25 +374,25 @@ int main(int argc, char **argv)
         IMAGE *o = mk("cOut", 4 * n, 1, _DATATYPE_FLOAT);
         std::vector<float> cpu(4 * n);
 
-        if (runStage(daoGpuCentroidCreate(port(sh.img), sh.ref, sh.thr, sh.box, n, port(o)), st)) {
-            daoCentroidSpots(sh.img->array.F, sh.img->md[0].size[0], sh.ref->array.F, sh.box, n, sh.thr->array.F[0], cpu.data());
+        if (runStage(daoGpuCentroidCreate(port(sh.img), sh.ref, sh.thr, NULL, sh.box, n, port(o)), st)) {
+            daoCentroidSpots(sh.img->array.F, sh.img->md[0].size[0], sh.ref->array.F, sh.box, n, sh.thr->array.F[0], 0.f, cpu.data());
             checkSh("centroid", o->array.F, cpu.data(), n, 3);
         }
         IMAGE *oRel = mk("cOutRel", 4 * n, 1, _DATATYPE_FLOAT);
         sh.thr->array.F[0] = 0.2f;                                /* relative threshold */
         touch(sh.thr);
-        if (runStage(daoGpuCentroidRelativeCreate(port(sh.img), sh.ref, sh.thr, sh.box, n, port(oRel)), st)) {
+        if (runStage(daoGpuCentroidRelativeCreate(port(sh.img), sh.ref, sh.thr, NULL, sh.box, n, port(oRel)), st)) {
             daoCentroidSpotsRelative(sh.img->array.F, sh.img->md[0].size[1], sh.img->md[0].size[0], sh.ref->array.F,
-                                     sh.box, n, sh.thr->array.F[0], cpu.data());
+                                     sh.box, n, sh.thr->array.F[0], 0.f, cpu.data());
             checkSh("centroidRelative", oRel->array.F, cpu.data(), n, 4);
         }
         IMAGE *oRR = mk("cOutRR", 4 * n, 1, _DATATYPE_FLOAT), *offs = mk("cRefOffsets", 2 * n, 1, _DATATYPE_FLOAT);
         for (int k = 0; k < 2 * n; k++)                          /* reference slopes */
             offs->array.F[k] = uni(-0.5f, 0.5f);
         touch(offs);
-        if (runStage(daoGpuCentroidRelativeRefCreate(port(sh.img), sh.centre, offs, sh.thr, sh.box, n, port(oRR)), st)) {
+        if (runStage(daoGpuCentroidRelativeRefCreate(port(sh.img), sh.centre, offs, sh.thr, NULL, sh.box, n, port(oRR)), st)) {
             daoCentroidSpotsRelativeRef(sh.img->array.F, sh.img->md[0].size[1], sh.img->md[0].size[0],
-                                        sh.centre->array.F, offs->array.F, sh.box, n, sh.thr->array.F[0], cpu.data());
+                                        sh.centre->array.F, offs->array.F, sh.box, n, sh.thr->array.F[0], 0.f, cpu.data());
             checkSh("centroidRelativeRef", oRR->array.F, cpu.data(), n, 4);
         }
 
@@ -401,21 +402,21 @@ int main(int argc, char **argv)
             char name[64];
             snprintf(name, sizeof name, "cOutCorr%d", R);
             IMAGE *oc = mk(name, 3 * n, 1, _DATATYPE_FLOAT);
-            if (runStage(daoGpuCentroidCorrelationCreate(port(sh.img), sh.centre, sh.refImage, sh.thr, sh.box, n, R,
+            if (runStage(daoGpuCentroidCorrelationCreate(port(sh.img), sh.centre, sh.refImage, sh.thr, NULL, sh.box, n, R,
                                                          0.f, port(oc)), st)) {
                 daoCentroidSpotsCorrelation(sh.img->array.F, sh.img->md[0].size[1], sh.img->md[0].size[0],
                                             sh.centre->array.F, sh.refImage->array.F, sh.box, n, R, sh.thr->array.F[0],
-                                            cpu.data());
+                                            0.f, cpu.data());
                 snprintf(name, sizeof name, "centroidCorrelation (range %d)", R);
                 checkSh(name, oc->array.F, cpu.data(), n, 3);
             }
         }
         IMAGE *of = mk("cOutFFT", 3 * n, 1, _DATATYPE_FLOAT);
         daoCentroidCorrFFTCtx *ctx = daoCentroidSpotsCorrelationFFTInit(sh.box, n, sh.refImage->array.F);
-        if (runStage(daoGpuCentroidCorrelationFFTCreate(port(sh.img), sh.centre, sh.refImage, sh.thr, sh.box, n, 0.f,
+        if (runStage(daoGpuCentroidCorrelationFFTCreate(port(sh.img), sh.centre, sh.refImage, sh.thr, NULL, sh.box, n, 0.f,
                                                         port(of)), st)) {
             daoCentroidSpotsCorrelationFFT(ctx, sh.img->array.F, sh.img->md[0].size[1], sh.img->md[0].size[0],
-                                           sh.centre->array.F, sh.thr->array.F[0], cpu.data());
+                                           sh.centre->array.F, sh.thr->array.F[0], 0.f, cpu.data());
             checkSh("centroidCorrelationFFT (vs FFTW)", of->array.F, cpu.data(), n, 3);
         }
 
@@ -424,18 +425,133 @@ int main(int argc, char **argv)
         std::vector<float> refCpu(sh.refImage->array.F, sh.refImage->array.F + (size_t) n * sh.box * sh.box);
         IMAGE *oa = mk("cOutAlpha", 3 * n, 1, _DATATYPE_FLOAT);
         uint64_t c0 = sh.refImage->md[0].cnt0;
-        if (runStage(daoGpuCentroidCorrelationCreate(port(sh.img), sh.centre, sh.refImage, sh.thr, sh.box, n, 5, alpha,
+        if (runStage(daoGpuCentroidCorrelationCreate(port(sh.img), sh.centre, sh.refImage, sh.thr, NULL, sh.box, n, 5, alpha,
                                                      port(oa)), st, true)) {
             daoCentroidSpotsCorrelation(sh.img->array.F, sh.img->md[0].size[1], sh.img->md[0].size[0],
-                                        sh.centre->array.F, refCpu.data(), sh.box, n, 5, sh.thr->array.F[0], cpu.data());
+                                        sh.centre->array.F, refCpu.data(), sh.box, n, 5, sh.thr->array.F[0], 0.f, cpu.data());
             daoCentroidSpotsUpdateReference(sh.img->array.F, sh.img->md[0].size[1], sh.img->md[0].size[0],
-                                            sh.centre->array.F, cpu.data(), sh.box, n, 0.f, alpha, refCpu.data());
+                                            sh.centre->array.F, cpu.data(), sh.box, n, 0.f, alpha, 0.f, refCpu.data());
             check("centroidCorrelation reference update", sh.refImage->array.F, refCpu.data(),
                   (long) n * sh.box * sh.box, 1e-5);
             printf("%-50s %s  (reference SHM published: cnt0 %lu -> %lu)\n", "  ... written back to the SHM",
                    sh.refImage->md[0].cnt0 > c0 ? "PASS" : "FAIL", (unsigned long) c0,
                    (unsigned long) sh.refImage->md[0].cnt0);
             failures += sh.refImage->md[0].cnt0 <= c0;
+        }
+        daoCentroidSpotsCorrelationFFTFree(ctx);
+    }
+
+    /* --------------------------------------- sub-apertures without light */
+    {
+        /* Two special sub-apertures, their whole correlation window (box + 2 x 5 px)
+         * overwritten: one dark (0), one with noise only (some above the correlation
+         * threshold, no spot). Every centroider, CPU and GPU: the dark one gives
+         * (0, 0) with no minimum (correlation used to give -searchRange); with a
+         * minimum flux between the noise's and the spots', the noisy one -- and every
+         * sub-aperture below the minimum -- gives (0, 0); CPU and GPU agree. */
+        Sh sh = makeSh("shDark", 8, 20, 10, 60.f);
+        int n = sh.nSuba, box = sh.box, W = sh.size;
+        const int R = 5, dark = 0, noisy = n / 2;
+        float *im = sh.img->array.F;
+        auto fill = [&](int s, float hi) {
+            int x0 = (int) roundf(sh.centre->array.F[s]) - box / 2 - R;
+            int y0 = (int) roundf(sh.centre->array.F[n + s]) - box / 2 - R;
+            for (int y = y0; y < y0 + box + 2 * R; y++)
+                for (int x = x0; x < x0 + box + 2 * R; x++)
+                    im[y * W + x] = hi > 0.f ? uni(0.f, hi) : 0.f;
+        };
+        fill(dark, 0.f);
+        fill(noisy, 34.f);                                   /* mean 17: flux ~7000 in 400 px */
+        touch(sh.img);
+        IMAGE *mf = mk("shDarkMinFlux", 1, 1, _DATATYPE_FLOAT), *o = mk("dOut", 4 * n, 1, _DATATYPE_FLOAT);
+        std::vector<float> cpu(4 * n);
+        auto setMinFlux = [&](float v) { mf->array.F[0] = v; touch(mf); };
+        auto setThr = [&](float v) { sh.thr->array.F[0] = v; touch(sh.thr); };
+        auto expectZero = [&](const char *what, const float *c, int s) {
+            bool ok = c[s] == 0.f && c[n + s] == 0.f;
+            printf("%-50s %s  (sub-aperture %d: %g, %g)\n", what, ok ? "PASS" : "FAIL", s, c[s], c[n + s]);
+            failures += !ok;
+        };
+        auto expectGated = [&](const char *what, const float *c, float minFlux) {
+            int below = 0, bad = 0;
+            for (int s = 0; s < n; s++)
+                if (c[2 * n + s] < minFlux) {
+                    below++;
+                    bad += !(c[s] == 0.f && c[n + s] == 0.f);
+                }
+            bool ok = bad == 0 && c[2 * n + noisy] < minFlux;
+            printf("%-50s %s  (%d below minFlux, all (0, 0); the noisy one: flux %.0f)\n", what, ok ? "PASS" : "FAIL",
+                   below, c[2 * n + noisy]);
+            failures += !ok;
+        };
+        const float minFlux = 8000.f;                        /* noise ~7000-7500, spots >= ~8500 */
+        daoCentroidCorrFFTCtx *ctx = daoCentroidSpotsCorrelationFFTInit(box, n, sh.refImage->array.F);
+        for (float mfv : {0.f, minFlux}) {
+            setMinFlux(mfv);
+            char name[96];
+            const char *tag = mfv > 0.f ? "minFlux" : "dark";
+            auto both = [&](const char *which, int parts) {
+                snprintf(name, sizeof name, "%s, %s: CPU = GPU", which, tag);
+                checkSh(name, o->array.F, cpu.data(), n, parts);
+                snprintf(name, sizeof name, "%s, %s: GPU", which, tag);
+                if (mfv > 0.f)
+                    expectGated(name, o->array.F, mfv);
+                else
+                    expectZero(name, o->array.F, dark);
+                snprintf(name, sizeof name, "%s, %s: CPU", which, tag);
+                if (mfv > 0.f)
+                    expectGated(name, cpu.data(), mfv);
+                else
+                    expectZero(name, cpu.data(), dark);
+            };
+            setThr(60.f);
+            if (runStage(daoGpuCentroidCreate(port(sh.img), sh.ref, sh.thr, mf, box, n, port(o)), st)) {
+                daoCentroidSpots(im, W, sh.ref->array.F, box, n, 60.f, mfv, cpu.data());
+                both("centroid", 3);
+            }
+            setThr(0.2f);
+            if (runStage(daoGpuCentroidRelativeCreate(port(sh.img), sh.ref, sh.thr, mf, box, n, port(o)), st)) {
+                daoCentroidSpotsRelative(im, W, W, sh.ref->array.F, box, n, 0.2f, mfv, cpu.data());
+                both("centroidRelative", 4);
+            }
+            if (runStage(daoGpuCentroidRelativeRefCreate(port(sh.img), sh.centre, sh.ref, sh.thr, mf, box, n,
+                                                         port(o)), st)) {
+                daoCentroidSpotsRelativeRef(im, W, W, sh.centre->array.F, sh.ref->array.F, box, n, 0.2f, mfv,
+                                            cpu.data());
+                both("centroidRelativeRef", 4);
+            }
+            setThr(30.f);
+            if (runStage(daoGpuCentroidCorrelationCreate(port(sh.img), sh.centre, sh.refImage, sh.thr, mf, box, n, R,
+                                                         0.f, port(o)), st)) {
+                daoCentroidSpotsCorrelation(im, W, W, sh.centre->array.F, sh.refImage->array.F, box, n, R, 30.f, mfv,
+                                            cpu.data());
+                both("centroidCorrelation", 3);
+            }
+            if (runStage(daoGpuCentroidCorrelationFFTCreate(port(sh.img), sh.centre, sh.refImage, sh.thr, mf, box, n,
+                                                            0.f, port(o)), st)) {
+                daoCentroidSpotsCorrelationFFT(ctx, im, W, W, sh.centre->array.F, 30.f, mfv, cpu.data());
+                both("centroidCorrelationFFT", 3);
+            }
+        }
+        /* the reference following the spots: below minFlux, the template is kept */
+        const float alpha = 0.1f;
+        const size_t tsz = (size_t) box * box;
+        std::vector<float> ref0(sh.refImage->array.F, sh.refImage->array.F + (size_t) n * tsz), refCpu = ref0;
+        setMinFlux(minFlux);
+        if (runStage(daoGpuCentroidCorrelationCreate(port(sh.img), sh.centre, sh.refImage, sh.thr, mf, box, n, R,
+                                                     alpha, port(o)), st, true)) {
+            daoCentroidSpotsCorrelation(im, W, W, sh.centre->array.F, refCpu.data(), box, n, R, 30.f, minFlux,
+                                        cpu.data());
+            daoCentroidSpotsUpdateReference(im, W, W, sh.centre->array.F, cpu.data(), box, n, 0.f, alpha, minFlux,
+                                            refCpu.data());
+            check("reference update, minFlux: CPU = GPU", sh.refImage->array.F, refCpu.data(), (long) n * tsz, 1e-5);
+            bool kept = true;
+            for (int s : {dark, noisy})
+                for (size_t k = 0; k < tsz; k++)
+                    kept = kept && refCpu[s * tsz + k] == ref0[s * tsz + k]
+                           && sh.refImage->array.F[s * tsz + k] == ref0[s * tsz + k];
+            printf("%-50s %s\n", "reference update, minFlux: dark templates kept", kept ? "PASS" : "FAIL");
+            failures += !kept;
         }
         daoCentroidSpotsCorrelationFFTFree(ctx);
     }
@@ -463,6 +579,79 @@ int main(int argc, char **argv)
         IMAGE *sl = mk("vSlice", 52, 1, _DATATYPE_FLOAT);
         if (runStage(daoGpuSliceCreate(port(in), 104, -1, port(sl)), st))
             checkExact("slice (values 104..155)", sl->array.V, in->array.F + 104, 52 * sizeof(float));
+    }
+
+    /* ------------------------------------------------ leakyIntegrator */
+    /* daoLeakyIntegrator's loop, step by step: closed (piston removed, or kept, per-value
+     * gain/leak), open, disabled (zero published once, then silent: output untouched) */
+    for (int variant = 0; variant < 3; variant++) {
+        const int n = 97, modal = variant == 2, keepPiston = variant >= 1;
+        const float clip = variant == 0 ? 10.f : 0.2f;           /* 0.2: clipping reached */
+        char tag[8];
+        snprintf(tag, sizeof tag, "i%d", variant);
+        auto name = [&](const char *what) { return std::string(tag) + what; };
+        IMAGE *in = mk(name("In").c_str(), n, 1, _DATATYPE_FLOAT), *out = mk(name("Out").c_str(), n, 1, _DATATYPE_FLOAT);
+        IMAGE *loop = mk(name("Loop").c_str(), 1, 1, _DATATYPE_UINT32), *en = mk(name("En").c_str(), 1, 1, _DATATYPE_UINT32);
+        IMAGE *gain = mk(name("Gain").c_str(), modal ? n : 1, 1, _DATATYPE_FLOAT);
+        IMAGE *leak = mk(name("Leak").c_str(), modal ? n : 1, 1, _DATATYPE_FLOAT);
+        IMAGE *off = mk(name("Off").c_str(), n, 1, _DATATYPE_FLOAT);
+        for (long k = 0; k < (long) gain->md[0].nelement; k++) {
+            gain->array.F[k] = modal ? uni(0.1f, 0.6f) : 0.4f;
+            leak->array.F[k] = modal ? uni(0.9f, 1.f) : 0.99f;
+        }
+        for (int k = 0; k < n; k++)
+            off->array.F[k] = uni(-0.01f, 0.01f);
+        loop->array.UI32[0] = 1;
+        en->array.UI32[0] = 1;
+        touch(gain); touch(leak); touch(off);
+        daoGpuStage *s = daoGpuLeakyIntegratorCreate(port(in), loop, gain, leak, en, off, modal, keepPiston, clip,
+                                                     port(out));
+        std::vector<float> state(n, 0.f);
+        auto cpuStep = [&]() {
+            double mean = 0;
+            for (int k = 0; k < n; k++) {
+                float x = std::isnan(in->array.F[k]) ? 0.f : in->array.F[k];
+                state[k] = leak->array.F[modal ? k : 0] * state[k] - gain->array.F[modal ? k : 0] * (x - off->array.F[k]);
+                mean += state[k];
+            }
+            mean = keepPiston ? 0 : mean / n;
+            for (int k = 0; k < n; k++)
+                state[k] = std::fmin(std::fmax(state[k] - (float) mean, -clip), clip);
+        };
+        bool ok = s != nullptr;
+        for (int step = 0; step < 20 && ok; step++) {
+            for (int k = 0; k < n; k++)
+                in->array.F[k] = uni(-0.2f, 0.3f);
+            if (step == 7)
+                in->array.F[5] = NAN;                              /* NaN input counts as 0 */
+            ok = runStage(s, st);
+            cpuStep();
+            ok = ok && daoGpuStagePublishes(s);
+        }
+        char what[96];
+        const char *label[] = {"piston removed", "piston kept, clipped", "per-value gain/leak, clipped"};
+        snprintf(what, sizeof what, "leakyIntegrator, 20 closed steps (%s)", label[variant]);
+        if (ok)
+            check(what, out->array.F, state.data(), n, 1e-5);
+        if (variant != 0)
+            continue;
+        loop->array.UI32[0] = 0;                                   /* open: zero, published */
+        runStage(s, st);
+        std::vector<float> zeros(n, 0.f);
+        bool open = daoGpuStagePublishes(s) && !memcmp(out->array.F, zeros.data(), n * sizeof(float));
+        printf("%-50s %s\n", "leakyIntegrator, open loop: zero, published", open ? "PASS" : "FAIL");
+        failures += !open;
+        loop->array.UI32[0] = 1;                                   /* closed again, then disabled */
+        runStage(s, st);
+        en->array.UI32[0] = 0;
+        runStage(s, st);
+        bool once = daoGpuStagePublishes(s) && !memcmp(out->array.F, zeros.data(), n * sizeof(float));
+        out->array.F[0] = 1234.f;                                  /* the silent frame must leave it alone */
+        runStage(s, st);                                           /* (ports are mapped: the kernel would write it) */
+        bool silent = !daoGpuStagePublishes(s) && out->array.F[0] == 1234.f;
+        printf("%-50s %s\n", "leakyIntegrator, disabled: zero once, then silent", once && silent ? "PASS" : "FAIL");
+        failures += !(once && silent);
+        daoGpuStageDestroy(s);
     }
 
     for (auto &c : created) {
