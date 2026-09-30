@@ -118,6 +118,10 @@ parameters.
    * - ``applyGain``
      - ``daoApplyGain``
      - ``in``, ``gain``, ``out``, optional ``modal``
+   * - ``leakyIntegrator``
+     - ``daoLeakyIntegrator``
+     - ``in``, ``out`` (the state), ``loop``, ``gain``, ``leak``, optional ``enable``,
+       ``offset``, ``modal`` (``-m``), ``keepPiston`` (``-P``), ``clip`` (``-c``, default 10)
 
 With ``alpha > 0``, the correlation centroiders update their reference image
 after each frame is published (off the critical path), as the ``-a`` option of
@@ -130,6 +134,17 @@ threshold) gives slopes (0, 0). ``minFlux`` (optional, a 1-value SHM, reloaded
 when it changes, as the ``-f`` option of the applications) also gives (0, 0) to
 a sub-aperture whose flux, the sum of its raw pixels, is below it, and keeps its
 reference image when ``alpha > 0``. The third output row is that flux.
+
+``leakyIntegrator`` is the application's control law: ``out = leak * out - gain *
+(in - offset)`` while ``loop`` is 1 (the mean then removed, unless ``keepPiston``,
+and clipped), zero while the loop is open. Its output is its state: keep it a GPU
+SHM (mirrored if CPU tools read it). With ``enable`` at 0 it publishes zero once,
+then is silent. The loop and enable SHMs are read each frame without recapturing
+the graph.
+
+A stage can be silent for a frame (not published, e.g. a disabled integrator). A
+stage whose input comes from a silent stage is silent too and is not run: an M2A
+after a disabled integrator leaves its output SHM to whatever else writes it.
 
 
 Running

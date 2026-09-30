@@ -44,6 +44,11 @@
  *     # vectors
  *     - mvm:       {in: ..., matrix: ..., out: ...}
  *     - applyGain: {in: ..., gain: ..., out: ..., modal: false}
+ *     - leakyIntegrator: {in: ..., out: ..., loop: ..., gain: ..., leak: ...,
+ *                         enable: ..., offset: ..., modal: false, keepPiston: false, clip: 10}
+ *       daoLeakyIntegrator; enable and offset optional. The output is the state: keep it
+ *       a GPU SHM (mirrored if CPU tools read it). keepPiston: true on modes (the mean
+ *       is only removed from actuator commands).
  *     - slice:     {in: ..., out: ..., offset: 0, count: n}      # count: default the size of out
  *
  * Stage types from other libraries (see daoGpuStages.h, daoGpuRegisterStage):
@@ -51,6 +56,11 @@
  *
  * Parameter SHMs (ff, bg, ref, masks, matrix, gain, ...) are reloaded to the GPU
  * when their cnt0 changes, between frames.
+ *
+ * A stage can be silent for a frame (e.g. a disabled integrator): its output is not
+ * published. A stage whose input comes from a silent stage is silent too, and is not
+ * run: an M2A after a disabled integrator leaves its output SHM alone (another
+ * process may be writing it).
  */
 #include <yaml-cpp/yaml.h>
 #include <cuda_runtime.h>
@@ -91,6 +101,9 @@ struct Pipeline {
     std::vector<daoGpuStage *> stages;
     std::vector<daoGpuPort *> uploads;                        // host SHMs read from outside
     std::vector<daoGpuPort *> outputs;                        // in stage order
+    std::vector<int> producer;                                // stage writing each stage's input, or -1
+    std::vector<char> upstream;                               // its input was published this frame: run it
+    std::vector<char> pub;                                    // its output is published this frame
 
     IMAGE *shm(const std::string &name)
     {
@@ -257,6 +270,13 @@ static void build(Pipeline &p, const YAML::Node &cfg)
             s = daoGpuMvmCreate(in, shm("matrix"), out);
         else if (type == "applyGain")
             s = daoGpuApplyGainCreate(in, shm("gain"), out, num<bool>(a, "modal", type, &no));
+        else if (type == "leakyIntegrator") {
+            const float clip = 10.f;                     // daoLeakyIntegrator's default
+            s = daoGpuLeakyIntegratorCreate(in, shm("loop"), shm("gain"), shm("leak"), optShm("enable"),
+                                            optShm("offset"), num<bool>(a, "modal", type, &no),
+                                            num<bool>(a, "keepPiston", type, &no), num<float>(a, "clip", type, &clip),
+                                            out);
+        }
         else if (type == "slice") {
             const long zero = 0, all = -1;
             s = daoGpuSliceCreate(in, num<long>(a, "offset", type, &zero), num<long>(a, "count", type, &all), out);
@@ -271,12 +291,31 @@ static void build(Pipeline &p, const YAML::Node &cfg)
         // a host SHM read before any stage wrote it comes from outside: upload it each frame
         if (!produced.count(in) && !in->onGpu && !in->mapped)
             p.uploads.push_back(in);
+        int from = -1;                                   // the last stage before this one writing its input
+        for (size_t k = 0; k < p.outputs.size(); k++)
+            if (p.outputs[k] == in)
+                from = (int) k;
+        p.producer.push_back(from);
         produced.insert(out);
         p.stages.push_back(s);
         p.outputs.push_back(out);
     }
     if (p.stages.empty())
         throw std::runtime_error(p.onlyStage >= 0 ? "no stage " + std::to_string(p.onlyStage) : "no stages");
+    p.upstream.assign(p.stages.size(), 1);
+    p.pub.assign(p.stages.size(), 1);
+}
+
+/* Which stages run and publish this frame (after the stages' update): a stage is
+ * published if it says so and its input's stage was published; it runs if its
+ * input's stage was published. */
+static void decidePublish(Pipeline &p)
+{
+    for (size_t k = 0; k < p.stages.size(); k++) {
+        int from = p.producer[k];
+        p.upstream[k] = from < 0 || p.pub[from];
+        p.pub[k] = p.upstream[k] && daoGpuStagePublishes(p.stages[k]);
+    }
 }
 
 /* Per-step GPU timing (DAO_GPU_PIPELINE_PROFILE=1): no graph, events between steps. */
@@ -348,11 +387,13 @@ static bool enqueueFrame(Pipeline &p, cudaStream_t st)
     bool anySide = false;
     for (size_t k = 0; k < p.stages.size(); k++) {
         daoGpuStage *s = p.stages[k];
+        if (!p.upstream[k])                              // its input's stage is silent: nothing new
+            continue;
         if (!daoGpuStageRun(s, st))
             return false;
         prof.mark(st, daoGpuStageName(s));
         daoGpuPort *o = daoGpuStageOutput(s);
-        if (!needsCopyOut(o) || !daoGpuStagePublishes(s))   // not published this frame: host SHM left alone
+        if (!needsCopyOut(o) || !p.pub[k])              // not published this frame: host SHM left alone
             continue;
         bool last = k + 1 == p.stages.size();
         if (last || prof.on) {                       // nothing left to overlap with
@@ -374,8 +415,9 @@ static bool enqueueFrame(Pipeline &p, cudaStream_t st)
 
 static void publish(Pipeline &p)
 {
-    for (daoGpuStage *s : p.stages) {
-        if (!daoGpuStagePublishes(s))                    // the stage skips this frame
+    for (size_t k = 0; k < p.stages.size(); k++) {
+        daoGpuStage *s = p.stages[k];
+        if (!p.pub[k])                                   // the stage skips this frame
             continue;
         IMAGE *out = daoGpuStageOutput(s)->shm;
         long long cnt2 = daoGpuStageOutputCnt2(s);
@@ -429,6 +471,7 @@ static int run(const char *configPath, int cpu, int onlyStage)
     for (daoGpuStage *s : p.stages)
         if (daoGpuStageUpdate(s, st) < 0)
             throw std::runtime_error(std::string(daoGpuStageName(s)) + ": cannot load its parameters");
+    decidePublish(p);
     // warm-up (cuBLAS workspace, kernel loading), then capture one frame as a graph
     if (!enqueueFrame(p, st) || cudaStreamSynchronize(st) != cudaSuccess)
         throw std::runtime_error("first frame failed");
@@ -439,7 +482,7 @@ static int run(const char *configPath, int cpu, int onlyStage)
     std::vector<char> capturedPublish(p.stages.size());   // which outputs the graph copies back
     auto capture = [&]() {                           // one frame's work as a graph
         for (size_t k = 0; k < p.stages.size(); k++)
-            capturedPublish[k] = daoGpuStagePublishes(p.stages[k]);
+            capturedPublish[k] = p.pub[k];
         if (exec)
             cudaGraphExecDestroy(exec);
         if (graph)
@@ -491,8 +534,9 @@ static int run(const char *configPath, int cpu, int onlyStage)
             paramsOk = r >= 0 && paramsOk;
             recapture = recapture || r == DAO_GPU_RECAPTURE;
         }
+        decidePublish(p);
         for (size_t k = 0; k < p.stages.size() && !recapture; k++)   // a stage starts / stops publishing:
-            recapture = daoGpuStagePublishes(p.stages[k]) != capturedPublish[k];   // its copy-back changes
+            recapture = p.pub[k] != capturedPublish[k];   // its copy-back (and what runs) changes
         if (!paramsOk)                                   // the stage said why; skip this frame
             continue;
         if (recapture && useGraph && !capture()) {       // a stage's work changed (e.g. sizes)
@@ -501,9 +545,9 @@ static int run(const char *configPath, int cpu, int onlyStage)
             daoWarning("CUDA graph capture failed, launching the stages one by one\n");
         }
         double t1 = nowUs();
-        for (daoGpuStage *s : p.stages)                  // outputs about to be written
-            if (daoGpuStagePublishes(s))
-                daoShmBeginWrite(daoGpuStageOutput(s)->shm);
+        for (size_t k = 0; k < p.stages.size(); k++)     // outputs about to be written
+            if (p.pub[k])
+                daoShmBeginWrite(daoGpuStageOutput(p.stages[k])->shm);
         if (useGraph)
             cudaGraphLaunch(exec, st);
         else

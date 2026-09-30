@@ -18,6 +18,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <algorithm>
+#include <cmath>
 #include <random>
 #include <string>
 #include <vector>
@@ -578,6 +579,79 @@ int main(int argc, char **argv)
         IMAGE *sl = mk("vSlice", 52, 1, _DATATYPE_FLOAT);
         if (runStage(daoGpuSliceCreate(port(in), 104, -1, port(sl)), st))
             checkExact("slice (values 104..155)", sl->array.V, in->array.F + 104, 52 * sizeof(float));
+    }
+
+    /* ------------------------------------------------ leakyIntegrator */
+    /* daoLeakyIntegrator's loop, step by step: closed (piston removed, or kept, per-value
+     * gain/leak), open, disabled (zero published once, then silent: output untouched) */
+    for (int variant = 0; variant < 3; variant++) {
+        const int n = 97, modal = variant == 2, keepPiston = variant >= 1;
+        const float clip = variant == 0 ? 10.f : 0.2f;           /* 0.2: clipping reached */
+        char tag[8];
+        snprintf(tag, sizeof tag, "i%d", variant);
+        auto name = [&](const char *what) { return std::string(tag) + what; };
+        IMAGE *in = mk(name("In").c_str(), n, 1, _DATATYPE_FLOAT), *out = mk(name("Out").c_str(), n, 1, _DATATYPE_FLOAT);
+        IMAGE *loop = mk(name("Loop").c_str(), 1, 1, _DATATYPE_UINT32), *en = mk(name("En").c_str(), 1, 1, _DATATYPE_UINT32);
+        IMAGE *gain = mk(name("Gain").c_str(), modal ? n : 1, 1, _DATATYPE_FLOAT);
+        IMAGE *leak = mk(name("Leak").c_str(), modal ? n : 1, 1, _DATATYPE_FLOAT);
+        IMAGE *off = mk(name("Off").c_str(), n, 1, _DATATYPE_FLOAT);
+        for (long k = 0; k < (long) gain->md[0].nelement; k++) {
+            gain->array.F[k] = modal ? uni(0.1f, 0.6f) : 0.4f;
+            leak->array.F[k] = modal ? uni(0.9f, 1.f) : 0.99f;
+        }
+        for (int k = 0; k < n; k++)
+            off->array.F[k] = uni(-0.01f, 0.01f);
+        loop->array.UI32[0] = 1;
+        en->array.UI32[0] = 1;
+        touch(gain); touch(leak); touch(off);
+        daoGpuStage *s = daoGpuLeakyIntegratorCreate(port(in), loop, gain, leak, en, off, modal, keepPiston, clip,
+                                                     port(out));
+        std::vector<float> state(n, 0.f);
+        auto cpuStep = [&]() {
+            double mean = 0;
+            for (int k = 0; k < n; k++) {
+                float x = std::isnan(in->array.F[k]) ? 0.f : in->array.F[k];
+                state[k] = leak->array.F[modal ? k : 0] * state[k] - gain->array.F[modal ? k : 0] * (x - off->array.F[k]);
+                mean += state[k];
+            }
+            mean = keepPiston ? 0 : mean / n;
+            for (int k = 0; k < n; k++)
+                state[k] = std::fmin(std::fmax(state[k] - (float) mean, -clip), clip);
+        };
+        bool ok = s != nullptr;
+        for (int step = 0; step < 20 && ok; step++) {
+            for (int k = 0; k < n; k++)
+                in->array.F[k] = uni(-0.2f, 0.3f);
+            if (step == 7)
+                in->array.F[5] = NAN;                              /* NaN input counts as 0 */
+            ok = runStage(s, st);
+            cpuStep();
+            ok = ok && daoGpuStagePublishes(s);
+        }
+        char what[96];
+        const char *label[] = {"piston removed", "piston kept, clipped", "per-value gain/leak, clipped"};
+        snprintf(what, sizeof what, "leakyIntegrator, 20 closed steps (%s)", label[variant]);
+        if (ok)
+            check(what, out->array.F, state.data(), n, 1e-5);
+        if (variant != 0)
+            continue;
+        loop->array.UI32[0] = 0;                                   /* open: zero, published */
+        runStage(s, st);
+        std::vector<float> zeros(n, 0.f);
+        bool open = daoGpuStagePublishes(s) && !memcmp(out->array.F, zeros.data(), n * sizeof(float));
+        printf("%-50s %s\n", "leakyIntegrator, open loop: zero, published", open ? "PASS" : "FAIL");
+        failures += !open;
+        loop->array.UI32[0] = 1;                                   /* closed again, then disabled */
+        runStage(s, st);
+        en->array.UI32[0] = 0;
+        runStage(s, st);
+        bool once = daoGpuStagePublishes(s) && !memcmp(out->array.F, zeros.data(), n * sizeof(float));
+        out->array.F[0] = 1234.f;                                  /* the silent frame must leave it alone */
+        runStage(s, st);                                           /* (ports are mapped: the kernel would write it) */
+        bool silent = !daoGpuStagePublishes(s) && out->array.F[0] == 1234.f;
+        printf("%-50s %s\n", "leakyIntegrator, disabled: zero once, then silent", once && silent ? "PASS" : "FAIL");
+        failures += !(once && silent);
+        daoGpuStageDestroy(s);
     }
 
     for (auto &c : created) {

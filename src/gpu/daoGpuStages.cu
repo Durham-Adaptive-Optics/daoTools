@@ -719,6 +719,152 @@ extern "C" daoGpuStage *daoGpuApplyGainCreate(daoGpuPort *in, IMAGE *gain, daoGp
     return &g->base;
 }
 
+/* ------------------------------------------------------- leakyIntegrator */
+/* daoLeakyIntegrator: the output is the integrator's state.
+ *   loop closed, enabled:  out = leak * out - gain * (in - offset)   (NaN input -> 0),
+ *                          then minus its mean (unless keepPiston), clipped to +-clip
+ *   loop open, enabled:    out = 0, published every frame
+ *   disabled:              out = 0 published once, then nothing (not even written)
+ * The mode is read by the kernel from pinned host memory, set in update(): the loop
+ * opening or closing needs no graph capture. */
+enum { INTEG_RUN, INTEG_ZERO, INTEG_IDLE };
+
+struct IntegHost {
+    int mode;
+};
+
+struct IntegStage {
+    daoGpuStage base;
+    IMAGE *loop, *enable;                            /* enable may be NULL: always on */
+    Param gain, leak, offset;
+    int n, modal, keepPiston, hasOffset, zeroSent;
+    float clip;
+    IntegHost *host, *dHost;                         /* pinned, mapped */
+};
+
+__global__ void leakyIntegratorKernel(const volatile IntegHost *h, const float *in, const float *gain,
+                                      const float *leak, const float *offset, float *out, int n, int modal,
+                                      int keepPiston, float clip)
+{
+    const int mode = h->mode;                        /* the same for every thread */
+    if (mode == INTEG_IDLE)
+        return;
+    float sum = 0.f;
+    for (int k = threadIdx.x; k < n; k += blockDim.x) {
+        float v = 0.f;
+        if (mode == INTEG_RUN) {
+            float x = in[k];
+            if (isnan(x))
+                x = 0.f;
+            if (offset)
+                x -= offset[k];
+            v = leak[modal ? k : 0] * out[k] - gain[modal ? k : 0] * x;
+        }
+        out[k] = v;
+        sum += v;
+    }
+    if (mode != INTEG_RUN)
+        return;
+    const float mean = keepPiston ? 0.f : blockSum(sum) / n;
+    for (int k = threadIdx.x; k < n; k += blockDim.x)
+        out[k] = fminf(fmaxf(out[k] - mean, -clip), clip);
+}
+
+static double scalarValue(const IMAGE *im)
+{
+    switch (im->md[0].atype) {
+    case _DATATYPE_FLOAT: return im->array.F[0];
+    case _DATATYPE_DOUBLE: return im->array.D[0];
+    case _DATATYPE_UINT32: return im->array.UI32[0];
+    case _DATATYPE_INT32: return im->array.SI32[0];
+    case _DATATYPE_UINT8: return im->array.UI8[0];
+    default: return 0;
+    }
+}
+
+static int integUpdate(daoGpuStage *b, cudaStream_t)
+{
+    IntegStage *g = (IntegStage *) b;
+    int r1 = paramSync(&g->gain), r2 = paramSync(&g->leak), r3 = g->hasOffset ? paramSync(&g->offset) : 0;
+    if (r1 < 0 || r2 < 0 || r3 < 0)
+        return -1;
+    const int enabled = !g->enable || scalarValue(g->enable) == 1;
+    const int closed = scalarValue(g->loop) == 1;
+    int publish = 1;
+    if (!enabled) {                                  /* zeros once, then silent */
+        publish = !g->zeroSent;
+        g->host->mode = g->zeroSent ? INTEG_IDLE : INTEG_ZERO;
+        g->zeroSent = 1;
+    } else {
+        g->zeroSent = 0;
+        g->host->mode = closed ? INTEG_RUN : INTEG_ZERO;
+    }
+    daoGpuStageSetPublish(b, publish);
+    return r1 || r2 || r3;
+}
+
+static int integRun(daoGpuStage *b, cudaStream_t st)
+{
+    IntegStage *g = (IntegStage *) b;
+    leakyIntegratorKernel<<<1, 256, 0, st>>>(g->dHost, (const float *) b->in->d, (const float *) g->gain.d,
+                                             (const float *) g->leak.d,
+                                             g->hasOffset ? (const float *) g->offset.d : NULL,
+                                             (float *) b->out->d, g->n, g->modal, g->keepPiston, g->clip);
+    return cudaGetLastError() == cudaSuccess;
+}
+
+static void integDestroy(daoGpuStage *b)
+{
+    IntegStage *g = (IntegStage *) b;
+    paramFree(&g->gain);
+    paramFree(&g->leak);
+    if (g->hasOffset)
+        paramFree(&g->offset);
+    cudaFreeHost(g->host);
+    free(g);
+}
+
+extern "C" daoGpuStage *daoGpuLeakyIntegratorCreate(daoGpuPort *in, IMAGE *loop, IMAGE *gain, IMAGE *leak,
+                                                    IMAGE *enable, IMAGE *offset, int modal, int keepPiston,
+                                                    float clip, daoGpuPort *out)
+{
+    const long n = nelem(in), per = modal ? n : 1;
+    if (!isFloat(in) || !isFloat(out) || !isFloat(gain) || !isFloat(leak) || nelem(out) < n
+        || nelem(gain) < per || nelem(leak) < per || (offset && (!isFloat(offset) || nelem(offset) < n))) {
+        daoError("leakyIntegrator: float SHMs expected, out and offset of %ld values, gain and leak of %ld "
+                 "(%s -> %s)\n", n, per, in->shm->name, out->shm->name);
+        return NULL;
+    }
+    IntegStage *g = (IntegStage *) calloc(1, sizeof *g);
+    g->base.name = "leakyIntegrator";
+    g->base.in = in;
+    g->base.out = out;
+    g->base.cnt2FromIn = 1;
+    g->base.update = integUpdate;
+    g->base.run = integRun;
+    g->base.destroy = integDestroy;
+    g->loop = loop;
+    g->enable = enable;
+    g->n = (int) n;
+    g->modal = modal;
+    g->keepPiston = keepPiston;
+    g->clip = clip;
+    g->hasOffset = offset != NULL;
+    if (!paramInit(&g->gain, gain, per * sizeof(float)) || !paramInit(&g->leak, leak, per * sizeof(float))
+        || (offset && !paramInit(&g->offset, offset, n * sizeof(float)))
+        || cudaHostAlloc((void **) &g->host, sizeof *g->host, cudaHostAllocMapped) != cudaSuccess
+        || cudaHostGetDevicePointer((void **) &g->dHost, g->host, 0) != cudaSuccess) {
+        daoError("leakyIntegrator: GPU allocation failed\n");
+        free(g);
+        return NULL;
+    }
+    g->host->mode = INTEG_ZERO;
+    daoInfo("leakyIntegrator: %s -> %s, %s gain/leak, loop %s%s%s, %s, clip %g\n", in->shm->name, out->shm->name,
+            modal ? "per-value" : "scalar", loop->name, enable ? ", enable " : "", enable ? enable->name : "",
+            keepPiston ? "piston kept" : "piston removed", clip);
+    return &g->base;
+}
+
 /* ======================================================== pixel stages */
 /* ------------------------------------------------------- pixelCalibrate */
 /* daoPixelCalibrate: out = (raw - bg) * ff over the output's size */

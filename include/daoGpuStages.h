@@ -114,6 +114,13 @@ daoGpuStage *daoGpuSliceCreate(daoGpuPort *in, long offset, long count, daoGpuPo
 daoGpuStage *daoGpuMvmCreate(daoGpuPort *in, IMAGE *matrix, daoGpuPort *out);
 /* daoApplyGain: out = in * gain[0], or in * gain[k] with modal */
 daoGpuStage *daoGpuApplyGainCreate(daoGpuPort *in, IMAGE *gain, daoGpuPort *out, int modal);
+/* daoLeakyIntegrator: out (the state) = leak * out - gain * (in - offset) while loop[0] == 1,
+ * then minus its mean (unless keepPiston: the app's -P) and clipped to +-clip (-c); zero
+ * while the loop is open. enable (NULL: always on) == 0: zero published once, then the
+ * stage is silent (-e). gain, leak: 1 value, or one per value with modal (-m). offset:
+ * NULL, or one per value. */
+daoGpuStage *daoGpuLeakyIntegratorCreate(daoGpuPort *in, IMAGE *loop, IMAGE *gain, IMAGE *leak, IMAGE *enable,
+                                         IMAGE *offset, int modal, int keepPiston, float clip, daoGpuPort *out);
 
 const char *daoGpuStageName(const daoGpuStage *s);
 daoGpuPort *daoGpuStageOutput(daoGpuStage *s);
