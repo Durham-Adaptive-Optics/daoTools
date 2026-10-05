@@ -48,6 +48,23 @@ Run from the workspace root:
 
 Both tools accept ``--directory`` to override the SHM directory. The default is ``/tmp`` on Linux and the current directory on Windows. The process tools use ``psutil`` for cross-platform process metadata; install it through ``daoTools/pyrequirements.txt``.
 
+daoNetdDisp
+-----------
+
+Control panel of the network SHMs (daoBase ``daoShmNetd``, the service sharing every dao SHM of the network by its name) on this machine:
+
+.. code-block:: bash
+
+   daoNetdDisp.py [--light] [--refresh 1.0]
+
+- **Service**: running or not (machine name, domain, version, port, SHM directory); Start with a domain, peers (``192.168.1.205``, reached without multicast), allowed addresses and the options of ``daoShmNetd`` (no multicast, read-only, spin, verbose, idle); Stop; its log
+- **Machines**: the other services it sees, their address, number of SHMs, when last heard, found by multicast or listed
+- **Network SHMs**: every SHM of every machine, with a filter. *Replicate* it here, *Keep* it (even when nothing uses it), *Release* it, or *View* it (replicated, then opened in ``daoImDisp.py``; also a double-click)
+- **Replicas**: the SHMs replicated on this machine: link (up / down), frames, frames skipped by the owner, rate, age of the last frame, kept or not
+- **Served**: this machine's SHMs read by other machines, and their readers
+
+The service keeps running when the window closes. ``$DAO_NET_CONTROL`` selects its control port (default 7709). Needs a daoBase with network SHMs (the ``daoNet`` Python module).
+
 daoImDisp / daoImgDisp
 -----------------------
 
