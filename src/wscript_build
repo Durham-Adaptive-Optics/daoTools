@@ -20,7 +20,7 @@ else:
     # daoToolsEnableFTZ() so we do not rely on crtfastmath being linked.
     # -fno-finite-math-only: -Ofast / -ffast-math, but NaN and infinity kept -- without
     # it isnan() is compiled away (the NaN guards on commands, the averages, the stats)
-    my_cflags = ['-Ofast', '-march=native', '-funroll-loops', '-fno-finite-math-only']
+    my_cflags = ['-Ofast'] + bld.env.MARCH_NATIVE + ['-funroll-loops', '-fno-finite-math-only']
     my_defines = []
 
 daoTools_sources = ['c/daoTools.c', 'c/daoToolsWindows.c']
