@@ -1786,3 +1786,384 @@ extern "C" daoGpuStage *daoGpuCentroidCorrelationFFTCreate(daoGpuPort *in, IMAGE
     return corrCreate("centroidCorrelationFFT", 1, in, subApCentre, refImage, threshold, minFlux, subaSize,
                       nbSuba, 0, alpha, out);
 }
+
+/* ------------------------------------------------------ centroidWindows */
+/* daoCentroidWindows (daoToolsWindows.c): one block per window. The window's region
+ * (window + search range) and its reference image go to shared memory; each thread
+ * computes some of the shifts; the maximum and the parabola replay the CPU's
+ * coarse-to-fine choice on the full map. The barycentres sort (value, position) so
+ * that ties are kept in the CPU's order. The normalised correlation runs in float, in
+ * two passes per shift (the window's mean, then the sums of the centred values, with
+ * the template centred once): no cancellation, so its 1 - c near the peak keeps its
+ * precision -- the weighted barycentre of a flat map weighs exactly those differences. */
+#define WIN_COLS 9                                   /* DAO_WINDOW_COLS and its columns */
+#define WIN_MAX_SEARCH 8                             /* DAO_CENTROID_CORR_MAX_SEARCH_RANGE */
+#define WIN_MAX_PIXELS 4096                          /* DAO_WINDOW_MAX_PIXELS */
+enum { WIN_CORRELATION = 0, WIN_COG = 1, WIN_CORRELATION_NORMALIZED = 2 };
+enum { WIN_PEAK_MAX, WIN_PEAK_PARABOLA, WIN_PEAK_BARY, WIN_PEAK_BARY_THRESHOLD, WIN_PEAK_BARY_THRESHOLD_WEIGHTED };
+
+/* the window's geometry, as daoToolsWindows.c windowGeometry(); 0: it does not fit */
+static __host__ __device__ int winGeometry(const float *row, int imW, int imH, int refW, int refH, int method,
+                                           int *x0, int *y0, int *w, int *h, int *rx, int *ry)
+{
+    *w = (int) lroundf(row[2]);
+    *h = (int) lroundf(row[3]);
+    *rx = method != WIN_COG ? (int) lroundf(row[4]) : 0;
+    *ry = method != WIN_COG ? (int) lroundf(row[5]) : 0;
+    *x0 = (int) roundf(row[0]) - *w / 2;
+    *y0 = (int) roundf(row[1]) - *h / 2;
+    if (*w < 1 || *h < 1 || (long) *w * *h > WIN_MAX_PIXELS)
+        return 0;
+    if (*rx < 0 || *ry < 0 || *rx > WIN_MAX_SEARCH || *ry > WIN_MAX_SEARCH)
+        return 0;
+    if (method != WIN_COG && (*w > refW || *h > refH))
+        return 0;
+    return *x0 - *rx >= 0 && *y0 - *ry >= 0 && *x0 + *w - 1 + *rx < imW && *y0 + *h - 1 + *ry < imH;
+}
+
+/* sort v[0..P) (P a power of two) by value, largest first, ties by index, smallest first */
+static __device__ void winSort(float *v, int *ix, int P)
+{
+    for (int k = 2; k <= P; k <<= 1)
+        for (int j = k >> 1; j > 0; j >>= 1) {
+            __syncthreads();
+            for (int i = threadIdx.x; i < P; i += blockDim.x) {
+                int l = i ^ j;
+                if (l <= i)
+                    continue;
+                /* "a before b": a larger, or equal with the smaller index */
+                bool iFirst = v[i] > v[l] || (v[i] == v[l] && ix[i] < ix[l]);
+                bool up = (i & k) == 0;                    /* this run sorted in the final order */
+                if (up != iFirst) {
+                    float t = v[i]; v[i] = v[l]; v[l] = t;
+                    int u = ix[i]; ix[i] = ix[l]; ix[l] = u;
+                }
+            }
+        }
+    __syncthreads();
+}
+
+/* the barycentre of n samples (v[i] at position i: x = i % nx + ox, y = i / nx + oy), as
+ * daoToolsWindows.c barycenter(); 0 when the weights sum to 0. Every thread calls it. */
+static __device__ int winBarycenter(float *v, int *ix, int n, int P, int nKeep, int peak, int nx, float ox,
+                                    float oy, float *bx, float *by)
+{
+    float base = 0.f;
+    int keep = n;
+    if (peak != WIN_PEAK_BARY && nKeep > 0 && nKeep < n) {
+        for (int i = threadIdx.x; i < P; i += blockDim.x) {
+            ix[i] = i;
+            if (i >= n)
+                v[i] = -INFINITY;
+        }
+        winSort(v, ix, P);
+        keep = nKeep;
+        if (peak == WIN_PEAK_BARY_THRESHOLD_WEIGHTED)
+            base = v[nKeep];                               /* the first one left out */
+    } else {
+        for (int i = threadIdx.x; i < n; i += blockDim.x)
+            ix[i] = i;
+        __syncthreads();
+    }
+    float sw = 0.f, sx = 0.f, sy = 0.f;
+    for (int i = threadIdx.x; i < keep; i += blockDim.x) {
+        float w = v[i] - base;
+        sw += w;
+        sx += w * (float) (ix[i] % nx + ox);
+        sy += w * (float) (ix[i] / nx + oy);
+    }
+    sw = blockSum(sw);
+    sx = blockSum(sx);
+    sy = blockSum(sy);
+    if (sw == 0.f)
+        return 0;
+    *bx = sx / sw;
+    *by = sy / sw;
+    return 1;
+}
+
+__global__ void windowsKernel(const float *img, long nImg, int stride, int imH, const float *table,
+                              const float *refImages, int refW, int refH, const float *thr, const float *minF,
+                              int method, int peak, int maxRegion, int maxTpl, int P, int nWin, float *out)
+{
+    extern __shared__ float sh[];
+    float *obs = sh, *tpl = obs + maxRegion, *val = tpl + maxTpl;
+    int *ix = (int *) (val + P);
+    const int k = blockIdx.x;
+    const float *row = table + (size_t) k * WIN_COLS;
+    int x0, y0, w, h, rx, ry;
+    if (!winGeometry(row, stride, imH, refW, refH, method, &x0, &y0, &w, &h, &rx, &ry)) {
+        if (threadIdx.x == 0)
+            out[k] = out[nWin + k] = out[2 * nWin + k] = 0.f;
+        return;
+    }
+    const int W = w + 2 * rx, H = h + 2 * ry;
+    const float threshold = thr[0];
+    float flux = 0.f;
+    for (int p = threadIdx.x; p < W * H; p += blockDim.x) {
+        int r = p / W, c = p % W;
+        float v = pix(img, nImg, (long) (y0 - ry + r) * stride + (x0 - rx + c));
+        if (r >= ry && r < ry + h && c >= rx && c < rx + w)
+            flux += v;                                     /* the window at no shift, raw */
+        obs[p] = v < threshold ? 0.f : v;
+    }
+    flux = blockSum(flux);
+    float slopeX = 0.f, slopeY = 0.f;
+    bool ok = !(minF && minF[0] > 0.f && flux < minF[0]);
+    if (ok && method == WIN_COG) {
+        for (int p = threadIdx.x; p < w * h; p += blockDim.x)
+            val[p] = obs[p];
+        __syncthreads();
+        float bx, by;
+        ok = winBarycenter(val, ix, w * h, P, (int) lroundf(row[8]), peak, w, (float) x0, (float) y0, &bx, &by);
+        slopeX = bx - row[0];
+        slopeY = by - row[1];
+    } else if (ok) {
+        const float *t = refImages + (size_t) k * refW * refH;
+        float ts = 0.f;
+        for (int p = threadIdx.x; p < w * h; p += blockDim.x) {
+            tpl[p] = t[(p / w) * refW + p % w];
+            ts += tpl[p];
+        }
+        const bool norm = method == WIN_CORRELATION_NORMALIZED;
+        float tVar = 0.f;
+        if (norm) {                                        /* the template centred, and its spread */
+            const float tMean = blockSum(ts) / (w * h);
+            float tv = 0.f;
+            for (int p = threadIdx.x; p < w * h; p += blockDim.x) {
+                tpl[p] -= tMean;
+                tv += tpl[p] * tpl[p];
+            }
+            tVar = blockSum(tv);
+        }
+        __syncthreads();
+        const int nsx = 2 * rx + 1, ns = nsx * (2 * ry + 1);
+        for (int q = threadIdx.x; q < ns; q += blockDim.x) {
+            int dx = q % nsx, dy = q / nsx;                /* offsets into obs: shift + search */
+            float s = 0.f;
+            if (!norm) {
+                for (int i = 0; i < h; i++)
+                    for (int j = 0; j < w; j++)
+                        s += obs[(i + dy) * W + j + dx] * tpl[i * w + j];
+            } else {
+                float si = 0.f;
+                for (int i = 0; i < h; i++)
+                    for (int j = 0; j < w; j++)
+                        si += obs[(i + dy) * W + j + dx];
+                const float mean = si / (w * h);
+                float sit = 0.f, sii = 0.f;
+                for (int i = 0; i < h; i++)
+                    for (int j = 0; j < w; j++) {
+                        float o = obs[(i + dy) * W + j + dx] - mean;
+                        sit += o * tpl[i * w + j];
+                        sii += o * o;
+                    }
+                s = sii > 0.f && tVar > 0.f ? sit / sqrtf(sii * tVar) : 0.f;
+            }
+            val[q] = s;
+        }
+        __syncthreads();
+        if (peak == WIN_PEAK_MAX || peak == WIN_PEAK_PARABOLA) {
+            /* the CPU's coarse-to-fine choice, replayed on the map; thread 0 */
+            __shared__ float sxy[2];
+            __shared__ int okShared;
+            if (threadIdx.x == 0) {
+#define MAP(dx_, dy_) val[((dy_) + ry) * nsx + (dx_) + rx]
+                float pk = -INFINITY;
+                int bx = 0, by = 0, fy0 = -ry, fy1 = ry, fx0 = -rx, fx1 = rx;
+                if (rx > CORR_COARSE_STRIDE || ry > CORR_COARSE_STRIDE) {
+                    for (int dy = -ry; dy <= ry; dy += CORR_COARSE_STRIDE)
+                        for (int dx = -rx; dx <= rx; dx += CORR_COARSE_STRIDE)
+                            if (MAP(dx, dy) > pk) { pk = MAP(dx, dy); bx = dx; by = dy; }
+                    fy0 = max(by - CORR_COARSE_STRIDE, -ry); fy1 = min(by + CORR_COARSE_STRIDE, ry);
+                    fx0 = max(bx - CORR_COARSE_STRIDE, -rx); fx1 = min(bx + CORR_COARSE_STRIDE, rx);
+                }
+                for (int dy = fy0; dy <= fy1; dy++)
+                    for (int dx = fx0; dx <= fx1; dx++)
+                        if (MAP(dx, dy) > pk) { pk = MAP(dx, dy); bx = dx; by = dy; }
+                float subx = 0.f, suby = 0.f;
+                if (peak == WIN_PEAK_PARABOLA) {
+                    if (bx > -rx && bx < rx) {
+                        float l = MAP(bx - 1, by), r = MAP(bx + 1, by), d = l - 2.f * pk + r;
+                        if (fabsf(d) > 1e-12f)
+                            subx = 0.5f * (l - r) / d;
+                    }
+                    if (by > -ry && by < ry) {
+                        float l = MAP(bx, by - 1), r = MAP(bx, by + 1), d = l - 2.f * pk + r;
+                        if (fabsf(d) > 1e-12f)
+                            suby = 0.5f * (l - r) / d;
+                    }
+                }
+#undef MAP
+                sxy[0] = (float) bx + subx;
+                sxy[1] = (float) by + suby;
+                okShared = pk > 0.f;                       /* no light: a flat correlation */
+            }
+            __syncthreads();
+            ok = okShared;
+            slopeX = sxy[0];
+            slopeY = sxy[1];
+        } else {
+            float m = -INFINITY;
+            for (int q = threadIdx.x; q < ns; q += blockDim.x)
+                m = fmaxf(m, val[q]);
+            m = blockMax(m);
+            float bx = 0.f, by = 0.f;
+            ok = m > 0.f && winBarycenter(val, ix, ns, P, (int) lroundf(row[8]), peak, nsx, (float) -rx,
+                                          (float) -ry, &bx, &by);
+            slopeX = bx;
+            slopeY = by;
+        }
+    }
+    if (threadIdx.x == 0) {
+        out[k] = ok ? slopeX - row[6] : 0.f;
+        out[nWin + k] = ok ? slopeY - row[7] : 0.f;
+        out[2 * nWin + k] = flux;
+    }
+}
+
+struct WinStage {
+    daoGpuStage base;
+    Param table, refImages, thr, minFlux;
+    int nWin, refW, refH, imW, imH, method, peak, hasRef, hasMinFlux;
+    int maxRegion, maxTpl, P;
+    size_t shmem, shmemMax;
+};
+
+/* the shared memory the table's largest window needs; 0 and the reason when a window does not fit */
+static int winLayout(WinStage *c)
+{
+    const float *t = c->table.im->array.F;
+    int maxRegion = 1, maxTpl = 1, maxN = 1, bad = 0;
+    for (int k = 0; k < c->nWin; k++) {
+        int x0, y0, w, h, rx, ry;
+        if (!winGeometry(t + (size_t) k * WIN_COLS, c->imW, c->imH, c->refW, c->refH, c->method, &x0, &y0, &w, &h,
+                         &rx, &ry)) {
+            if (bad++ < 5)
+                daoError("centroidWindows: window %d (x %g, y %g, %g x %g, search %g x %g) does not fit the %d x %d "
+                         "image or the %d x %d reference stack: its slopes are 0\n", k, t[k * WIN_COLS],
+                         t[k * WIN_COLS + 1], t[k * WIN_COLS + 2], t[k * WIN_COLS + 3], t[k * WIN_COLS + 4],
+                         t[k * WIN_COLS + 5], c->imW, c->imH, c->refW, c->refH);
+            continue;
+        }
+        maxRegion = max(maxRegion, (w + 2 * rx) * (h + 2 * ry));
+        maxTpl = max(maxTpl, w * h);
+        maxN = max(maxN, c->method == WIN_COG ? w * h : (2 * rx + 1) * (2 * ry + 1));
+    }
+    int P = 2;
+    while (P < maxN + 1)                                   /* one more: the (N+1)-th value */
+        P <<= 1;
+    c->maxRegion = maxRegion;
+    c->maxTpl = maxTpl;
+    c->P = P;
+    c->shmem = ((size_t) maxRegion + maxTpl + P) * sizeof(float) + (size_t) P * sizeof(int);
+    if (c->shmem > c->shmemMax) {
+        daoError("centroidWindows: windows need %zu bytes of shared memory, the GPU has %zu\n", c->shmem, c->shmemMax);
+        return 0;
+    }
+    if (c->shmem > 48 * 1024)
+        cudaFuncSetAttribute(windowsKernel, cudaFuncAttributeMaxDynamicSharedMemorySize, (int) c->shmem);
+    return 1;
+}
+
+static int winUpdate(daoGpuStage *b, cudaStream_t)
+{
+    WinStage *c = (WinStage *) b;
+    int r1 = paramSync(&c->table), r2 = c->hasRef ? paramSync(&c->refImages) : 0, r3 = paramSync(&c->thr);
+    int r4 = c->hasMinFlux ? paramSync(&c->minFlux) : 0;
+    if (r1 < 0 || r2 < 0 || r3 < 0 || r4 < 0)
+        return -1;
+    if (r1 > 0) {                                          /* new windows: new sizes, maybe new shared memory */
+        size_t before = c->shmem;
+        if (!winLayout(c))
+            return -1;
+        daoInfo("centroidWindows: %d windows (re)loaded from %s\n", c->nWin, c->table.im->name);
+        if (c->shmem != before)
+            return DAO_GPU_RECAPTURE;
+    }
+    return r1 | r2 | r3 | r4;
+}
+
+static int winRun(daoGpuStage *b, cudaStream_t st)
+{
+    WinStage *c = (WinStage *) b;
+    windowsKernel<<<c->nWin, 256, c->shmem, st>>>((const float *) b->in->d, nelem(b->in), c->imW, c->imH,
+                                                  (const float *) c->table.d,
+                                                  c->hasRef ? (const float *) c->refImages.d : NULL, c->refW,
+                                                  c->refH, (const float *) c->thr.d,
+                                                  c->hasMinFlux ? (const float *) c->minFlux.d : NULL, c->method,
+                                                  c->peak, c->maxRegion, c->maxTpl, c->P, c->nWin,
+                                                  (float *) b->out->d);
+    return cudaGetLastError() == cudaSuccess;
+}
+
+static void winDestroy(daoGpuStage *b)
+{
+    WinStage *c = (WinStage *) b;
+    paramFree(&c->table);
+    if (c->hasRef)
+        paramFree(&c->refImages);
+    paramFree(&c->thr);
+    if (c->hasMinFlux)
+        paramFree(&c->minFlux);
+    free(c);
+}
+
+extern "C" daoGpuStage *daoGpuCentroidWindowsCreate(daoGpuPort *in, IMAGE *table, IMAGE *refImages, IMAGE *threshold,
+                                                    IMAGE *minFlux, int method, int peak, daoGpuPort *out)
+{
+    const long nWin = isFloat(table) ? nelem(table) / WIN_COLS : 0;
+    if (!isFloat(in) || !isFloat(out) || !isFloat(threshold) || nWin < 1 || nelem(table) % WIN_COLS
+        || nelem(out) < 3 * nWin || (minFlux && (!isFloat(minFlux) || nelem(minFlux) < 1))
+        || (refImages && (!isFloat(refImages) || refImages->md[0].size[0] % nWin))) {
+        daoError("centroidWindows: float SHMs expected: a table of %d values per window, reference images "
+                 "(windows x height) x width, output 3 x windows\n", WIN_COLS);
+        return NULL;
+    }
+    if (method != WIN_CORRELATION && method != WIN_CORRELATION_NORMALIZED && method != WIN_COG) {
+        daoError("centroidWindows: method %d unknown\n", method);
+        return NULL;
+    }
+    if (peak < WIN_PEAK_MAX || peak > WIN_PEAK_BARY_THRESHOLD_WEIGHTED
+        || (method == WIN_COG && peak < WIN_PEAK_BARY)) {
+        daoError("centroidWindows: estimator %d does not apply (a centre of gravity takes a barycentre)\n", peak);
+        return NULL;
+    }
+    if (method != WIN_COG && !refImages) {
+        daoError("centroidWindows: a correlation needs the reference images\n");
+        return NULL;
+    }
+    int dev;
+    cudaDeviceProp prop;
+    cudaGetDevice(&dev);
+    cudaGetDeviceProperties(&prop, dev);
+    WinStage *c = (WinStage *) calloc(1, sizeof *c);
+    c->base.name = "centroidWindows";
+    c->base.in = in;
+    c->base.out = out;
+    c->base.cnt2FromIn = 1;
+    c->base.update = winUpdate;
+    c->base.run = winRun;
+    c->base.destroy = winDestroy;
+    c->nWin = (int) nWin;
+    c->method = method;
+    c->peak = peak;
+    c->imW = in->shm->md[0].size[1];
+    c->imH = in->shm->md[0].size[0];
+    c->hasRef = refImages != NULL;
+    c->refW = refImages ? refImages->md[0].size[1] : 0;
+    c->refH = refImages ? (int) (refImages->md[0].size[0] / nWin) : 0;
+    c->hasMinFlux = minFlux != NULL;
+    c->shmemMax = prop.sharedMemPerBlockOptin;
+    if (!paramInit(&c->table, table, (size_t) nWin * WIN_COLS * sizeof(float))
+        || (refImages && !paramInit(&c->refImages, refImages, (size_t) nelem(refImages) * sizeof(float)))
+        || !paramInit(&c->thr, threshold, sizeof(float))
+        || (minFlux && !paramInit(&c->minFlux, minFlux, sizeof(float))) || !winLayout(c)) {
+        winDestroy(&c->base);
+        return NULL;
+    }
+    daoInfo("centroidWindows: %d windows, %s, peak %d, on %s -> %s\n", c->nWin,
+            method == WIN_COG ? "centre of gravity" : method == WIN_CORRELATION ? "correlation" : "normalised correlation",
+            peak, in->shm->name, out->shm->name);
+    return &c->base;
+}

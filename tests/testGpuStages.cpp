@@ -581,6 +581,73 @@ int main(int argc, char **argv)
             checkExact("slice (values 104..155)", sl->array.V, in->array.F + 104, 52 * sizeof(float));
     }
 
+    /* ------------------------------------------------ centroidWindows */
+    /* an extended scene on 6 x 6 sub-apertures of 20 px, 5 directions of different sizes
+     * and search ranges in each: GPU = CPU (daoCentroidWindows), every method and estimator */
+    {
+        const int nSub = 6, box = 20, n = nSub * box + 2 * 10, nDir = 5, nWin = nSub * nSub * nDir;
+        IMAGE *img = mk("wImg", n, n, _DATATYPE_FLOAT), *thr = mk("wThr", 1, 1, _DATATYPE_FLOAT);
+        IMAGE *table = mk("wTable", nWin, DAO_WINDOW_COLS, _DATATYPE_FLOAT);
+        const int refW = 12, refH = 12;
+        IMAGE *refs = mk("wRefs", nWin * refH, refW, _DATATYPE_FLOAT);
+        IMAGE *out = mk("wOut", 3 * nWin, 1, _DATATYPE_FLOAT);
+        /* the scene: blobs; each sub-aperture sees it shifted a little (its own tilt) */
+        std::vector<float> scene((size_t) n * n, 0.f);
+        for (int b = 0; b < 400; b++) {
+            float cx = uni(0, n), cy = uni(0, n), sg = uni(1.0f, 3.0f), a = uni(50, 150);
+            for (int y = 0; y < n; y++)
+                for (int x = 0; x < n; x++)
+                    scene[y * n + x] += a * expf(-((x - cx) * (x - cx) + (y - cy) * (y - cy)) / (2 * sg * sg));
+        }
+        for (int k = 0; k < n * n; k++)
+            img->array.F[k] = scene[k] + uni(0, 5);
+        const float dir[nDir][6] = {{0, 0, 8, 8, 3, 3}, {-5, -5, 6, 5, 2, 3}, {5, -5, 5, 7, 3, 2},
+                                    {-5, 5, 7, 6, 2, 2}, {5, 5, 6, 6, 3, 3}};       /* offset x, y, w, h, rx, ry */
+        for (int s = 0; s < nSub * nSub; s++)
+            for (int d = 0; d < nDir; d++) {
+                int k = s * nDir + d;
+                float *r = table->array.F + (size_t) k * DAO_WINDOW_COLS;
+                r[DAO_WINDOW_X] = 10 + (s % nSub) * box + box / 2 + dir[d][0];
+                r[DAO_WINDOW_Y] = 10 + (s / nSub) * box + box / 2 + dir[d][1];
+                r[DAO_WINDOW_WIDTH] = dir[d][2];
+                r[DAO_WINDOW_HEIGHT] = dir[d][3];
+                r[DAO_WINDOW_SEARCH_X] = dir[d][4];
+                r[DAO_WINDOW_SEARCH_Y] = dir[d][5];
+                r[DAO_WINDOW_REF_SLOPE_X] = uni(-0.2f, 0.2f);
+                r[DAO_WINDOW_REF_SLOPE_Y] = uni(-0.2f, 0.2f);
+                r[DAO_WINDOW_N] = 6 + d;
+                int w = (int) dir[d][2], h = (int) dir[d][3];
+                int x0 = (int) roundf(r[DAO_WINDOW_X]) - w / 2 + 1, y0 = (int) roundf(r[DAO_WINDOW_Y]) - h / 2 - 1;
+                for (int y = 0; y < h; y++)                       /* the reference: the scene, shifted (1, -1) */
+                    for (int x = 0; x < w; x++)
+                        refs->array.F[(size_t) k * refW * refH + y * refW + x] = scene[(y0 + y) * n + x0 + x];
+            }
+        thr->array.F[0] = 0.f;
+        touch(img); touch(table); touch(refs); touch(thr);
+        std::vector<float> cpu(3 * nWin);
+        const char *mname[] = {"correlation", "cog", "correlationNormalized"};
+        const char *pname[] = {"max", "parabola", "barycenter", "barycenterThreshold", "barycenterThresholdWeighted"};
+        for (int method : {DAO_WINDOWS_CORRELATION, DAO_WINDOWS_CORRELATION_NORMALIZED, DAO_WINDOWS_COG})
+            for (int pk = DAO_PEAK_MAX; pk <= DAO_PEAK_BARYCENTER_THRESHOLD_WEIGHTED; pk++) {
+                if (method == DAO_WINDOWS_COG && pk < DAO_PEAK_BARYCENTER)
+                    continue;
+                daoCentroidWindows(img->array.F, n, n, table->array.F, nWin, refs->array.F, refW, refH, method, pk,
+                                   0.f, 0.f, cpu.data());
+                daoGpuStage *s = daoGpuCentroidWindowsCreate(port(img), table, method == DAO_WINDOWS_COG ? nullptr
+                                                             : refs, thr, nullptr, method, pk, port(out));
+                char what[96];
+                snprintf(what, sizeof what, "centroidWindows %s, %s", mname[method], pname[pk]);
+                if (runStage(s, st)) {
+                    char part[112];
+                    snprintf(part, sizeof part, "%s: slopes", what);   /* px, absolute */
+                    check(part, out->array.F, cpu.data(), 2 * nWin, 1e-3, 1.0);
+                    snprintf(part, sizeof part, "%s: flux", what);
+                    check(part, out->array.F + 2 * nWin, cpu.data() + 2 * nWin, nWin, 1e-5);
+                }
+                daoGpuStageDestroy(s);
+            }
+    }
+
     /* ------------------------------------------------ leakyIntegrator */
     /* daoLeakyIntegrator's loop, step by step: closed (piston removed, or kept, per-value
      * gain/leak), open, disabled (zero published once, then silent: output untouched) */

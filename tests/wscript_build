@@ -2,6 +2,18 @@
 import os
 import platform
 
+# The window centroider, CPU (not installed): build/tests/testCentroidWindows
+bld.program(
+	source = 'testCentroidWindows.c',
+	target = 'testCentroidWindows',
+	includes = ['../include', os.getenv('DAOROOT')+'/include/'],
+	linkflags = ['-Lsrc', '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
+	ldflags = ['-ldao', '-lpthread', '-lm'],
+	use = ['daoTools'],
+	cflags = ['-O2', '-Wall', '-Wextra', '-pipe'],
+	install_path = None,
+	)
+
 # GPU stages vs the CPU daoTools code (not installed): build/tests/testGpuStages
 if bld.env.CUDA_AVAILABLE and platform.system() != "Darwin":
 
