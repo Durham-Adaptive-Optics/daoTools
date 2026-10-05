@@ -41,6 +41,12 @@
  *                                subaSize: 20, nbSuba: 52, alpha: 0}
  *       every centroid stage also takes minFlux: ... (optional): a 1-value SHM; a
  *       sub-aperture with less light (sum of its raw pixels) gets cx, cy = 0
+ *     - centroidWindows: {in: ..., table: ..., refImage: ..., threshold: ..., out: ...,
+ *                         method: correlation, peak: parabola}           # minFlux optional
+ *       analysis windows (an extended object, one or several directions): table = one row
+ *       of 9 per window (daoTools.h DAO_WINDOW_*); method correlation | correlationNormalized
+ *       | cog (no refImage); peak max | parabola | barycenter | barycenterThreshold |
+ *       barycenterThresholdWeighted
  *     # vectors
  *     - mvm:       {in: ..., matrix: ..., out: ...}
  *     - applyGain: {in: ..., gain: ..., out: ..., modal: false}
@@ -266,6 +272,20 @@ static void build(Pipeline &p, const YAML::Node &cfg)
                                                    optShm("minFlux"),
                                                    num<int>(a, "subaSize", type), num<int>(a, "nbSuba", type),
                                                    num<float>(a, "alpha", type, &zero), out);
+        else if (type == "centroidWindows") {
+            static const std::map<std::string, int> methods = {
+                {"correlation", 0}, {"cog", 1}, {"correlationNormalized", 2}};
+            static const std::map<std::string, int> peaks = {
+                {"max", 0}, {"parabola", 1}, {"barycenter", 2}, {"barycenterThreshold", 3},
+                {"barycenterThresholdWeighted", 4}};
+            std::string m = a["method"] ? a["method"].as<std::string>() : "correlation";
+            std::string k = a["peak"] ? a["peak"].as<std::string>() : (m == "cog" ? "barycenterThreshold" : "parabola");
+            if (!methods.count(m) || !peaks.count(k))
+                throw std::runtime_error(type + ": method correlation | correlationNormalized | cog, peak max | "
+                                         "parabola | barycenter | barycenterThreshold | barycenterThresholdWeighted");
+            s = daoGpuCentroidWindowsCreate(in, shm("table"), optShm("refImage"), shm("threshold"), optShm("minFlux"),
+                                            methods.at(m), peaks.at(k), out);
+        }
         else if (type == "mvm")
             s = daoGpuMvmCreate(in, shm("matrix"), out);
         else if (type == "applyGain")

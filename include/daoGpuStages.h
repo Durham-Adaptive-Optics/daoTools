@@ -106,6 +106,15 @@ daoGpuStage *daoGpuCentroidCorrelationFFTCreate(daoGpuPort *in, IMAGE *subApCent
                                                 IMAGE *threshold, IMAGE *minFlux, int subaSize, int nbSuba,
                                                 float alpha, daoGpuPort *out);
 
+/* daoCentroidWindows: slopes of analysis windows (Shack-Hartmann on an extended object, one
+ * or several directions). table: DAO_WINDOW_COLS floats per window (daoTools.h); refImages:
+ * (windows x height) x width, one reference per window in its top-left corner (NULL for a
+ * centre of gravity); threshold: 1 value; minFlux: 1 value or NULL. method:
+ * DAO_WINDOWS_CORRELATION | _CORRELATION_NORMALIZED | _COG; peak: DAO_PEAK_*. out: slope x,
+ * slope y, flux (3 x windows). The table and references are reloaded when they change. */
+daoGpuStage *daoGpuCentroidWindowsCreate(daoGpuPort *in, IMAGE *table, IMAGE *refImages, IMAGE *threshold,
+                                         IMAGE *minFlux, int method, int peak, daoGpuPort *out);
+
 /* ---- vectors */
 /* daoShmSlice: out[0, count) = in[offset, offset + count), any type (same as in) */
 daoGpuStage *daoGpuSliceCreate(daoGpuPort *in, long offset, long count, daoGpuPort *out);

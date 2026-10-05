@@ -118,6 +118,12 @@ parameters.
    * - ``applyGain``
      - ``daoApplyGain``
      - ``in``, ``gain``, ``out``, optional ``modal``
+   * - ``centroidWindows``
+     - ``daoComputeCentroidWindows``
+     - ``in``, ``table``, ``threshold``, ``out``, ``refImage`` (not for ``cog``), optional
+       ``minFlux``, ``method`` (``correlation`` | ``correlationNormalized`` | ``cog``),
+       ``peak`` (``max`` | ``parabola`` | ``barycenter`` | ``barycenterThreshold`` |
+       ``barycenterThresholdWeighted``)
    * - ``leakyIntegrator``
      - ``daoLeakyIntegrator``
      - ``in``, ``out`` (the state), ``loop``, ``gain``, ``leak``, optional ``enable``,

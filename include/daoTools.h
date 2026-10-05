@@ -298,6 +298,55 @@ int_fast8_t daoCentroidSpotsCorrelation(float *image,
                                         float minFlux,
                                         float *cent);
 
+/* ---- Slopes in analysis windows (daoToolsWindows.c): Shack-Hartmann on an extended
+ * object, in one direction (a window per sub-aperture) or several (several per
+ * sub-aperture, each on another part of the field).
+ *
+ * The windows are a table, one row of DAO_WINDOW_COLS floats per window: */
+#define DAO_WINDOW_X           0   /* centre in the image, pixels (pixel index = coordinate) */
+#define DAO_WINDOW_Y           1
+#define DAO_WINDOW_WIDTH       2   /* pixels: from round(x) - width/2, round(y) - height/2 */
+#define DAO_WINDOW_HEIGHT      3
+#define DAO_WINDOW_SEARCH_X    4   /* correlation: shifts tried, -search..+search pixels */
+#define DAO_WINDOW_SEARCH_Y    5   /*   (<= DAO_CENTROID_CORR_MAX_SEARCH_RANGE) */
+#define DAO_WINDOW_REF_SLOPE_X 6   /* pixels: subtracted from the measured slope */
+#define DAO_WINDOW_REF_SLOPE_Y 7
+#define DAO_WINDOW_N           8   /* barycentres: the number of values kept (<= 0: all) */
+#define DAO_WINDOW_COLS        9
+#define DAO_WINDOW_MAX_PIXELS  4096 /* width x height (64 x 64) */
+
+/* how a window's slope is measured */
+#define DAO_WINDOWS_CORRELATION            0 /* correlation with its reference image (sum of the
+                                                 products: for spots, as daoCentroidSpotsCorrelation),
+                                                 then a peak estimator */
+#define DAO_WINDOWS_COG                       1 /* centre of gravity of its pixels, relative to its centre */
+#define DAO_WINDOWS_CORRELATION_NORMALIZED    2 /* zero-mean normalised correlation (in [-1, 1]): for an
+                                                 extended object, where the product peaks towards the
+                                                 bright parts of the scene */
+/* the peak estimator: of the correlation map, or (COG) of the pixels */
+#define DAO_PEAK_MAX                           0 /* correlation: the integer shift of the maximum */
+#define DAO_PEAK_PARABOLA                      1 /* correlation: maximum + 3-point parabola per axis */
+#define DAO_PEAK_BARYCENTER                    2 /* every value, weighted by itself */
+#define DAO_PEAK_BARYCENTER_THRESHOLD          3 /* the N largest values, weighted by themselves */
+#define DAO_PEAK_BARYCENTER_THRESHOLD_WEIGHTED 4 /* the N largest, weighted by value minus the
+                                                    (N+1)-th largest */
+
+/* Check a window table against the image and the reference stack (refW x refH per
+ * window): DAO_ERROR with the reason when a window does not fit (its slopes would be
+ * 0) or the estimator does not apply. Call it when the table changes. */
+int_fast8_t daoCentroidWindowsCheck(const float *table, int nWin, int imageSizeX, int imageSizeY,
+                                    int refW, int refH, int method, int peak);
+
+/* Slopes of nWin windows. refImages: one refW x refH image per window, stacked (window
+ * k's rows k*refH ..), its template in the top-left width x height corner (correlation
+ * only). Image pixels below threshold count as 0. out (3 * nWin): slope x, slope y (pixels,
+ * minus the reference slope), flux (sum of the window's raw pixels). A window with less
+ * flux than minFlux (> 0), no light, or that does not fit: slopes 0. The correlation and
+ * its maximum / parabola are those of daoCentroidSpotsCorrelation. */
+int_fast8_t daoCentroidWindows(const float *image, int imageSizeX, int imageSizeY,
+                               const float *table, int nWin, const float *refImages, int refW, int refH,
+                               int method, int peak, float threshold, float minFlux, float *out);
+
 /**
  * Blend a centroid-aligned observed window into a persisted reference
  * template stack (exponential moving average), in place. Intended to be
