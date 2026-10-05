@@ -16,7 +16,7 @@ else:
 	# built and run on the same host -> -march=native (AVX2 + FMA on the EPYC).
 	# -fno-finite-math-only: -Ofast / -ffast-math, but NaN and infinity kept -- without
 	# it isnan() is compiled away (the NaN guards on commands, the averages, the stats)
-	my_cflags = ['-Ofast', '-march=native', '-funroll-loops', '-fno-finite-math-only']
+	my_cflags = ['-Ofast'] + bld.env.MARCH_NATIVE + ['-funroll-loops', '-fno-finite-math-only']
 	my_link_flags = ['-Lsrc', '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/']
 
 telemetry_extra_ldflags = []
@@ -191,7 +191,7 @@ daoCalIntensityNorm = bld.program(
 	linkflags = my_link_flags,
 	ldflags = ['-ldao' , '-lpthread', '-lm'] + my_ld_flags,
 	use= 'daoTools',
-	cflags = my_cflags + ['-march=native', '-funroll-loops', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
+	cflags = my_cflags + bld.env.MARCH_NATIVE + ['-funroll-loops', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
 
 daoShmCombiner = bld.program(
