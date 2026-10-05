@@ -58,6 +58,11 @@ class Configure:
         assert kwargs['mandatory'] is False
         return 'CLI11' not in self.missing
 
+    def check_cc(self, **kwargs):
+        assert kwargs['cflags'] == ['-march=native']
+        assert kwargs['mandatory'] is False
+        return True
+
     def find_program(self, *args, **kwargs):
         raise RuntimeError('CUDA unavailable in this fixture')
 
