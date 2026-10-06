@@ -8,6 +8,9 @@ Options:
   --range        Half-range in controller units, display spans -range..+range (default: 1.0)
   --center       Center at 0: spans -range..+range (default: 0..range)
   --fps          Update rate in Hz (default: 100)
+  --offset       index of the tip value in the SHM, the tilt is the next one
+                 (default 0: the first two values) -- a TT inside a longer
+                 command vector, e.g. 292 for a DM292 + TT command of 294
   --centre-file  where the target centres are remembered
                  (default $DAODATA/config/daoTtDispCentre.json)
 
@@ -29,6 +32,7 @@ next start. Delete the file to forget the centres.
 Examples:
   daoTtDisp.py /tmp/ttm1Cmd.im.shm
   daoTtDisp.py /tmp/ttm1Cmd.im.shm --range 0.5
+  daoTtDisp.py /tmp/flCmd.im.shm --offset 292    # the last two of a DM292 + TT command
 """
 
 import dao
@@ -62,6 +66,9 @@ def parse_args():
     p.add_argument('--center', action='store_true',
                    help='Center at 0: spans -range..+range (default: 0..range)')
     p.add_argument('--fps',    type=float, default=100.0, help='Update rate in Hz (default: 100)')
+    p.add_argument('--offset', type=int, default=0,
+                   help='index of the tip value in the SHM, the tilt is the next one '
+                        '(default 0: the first two values)')
     p.add_argument('--centre-file', default=None,
                    help='where target centres are remembered '
                         '(default $DAODATA/config/daoTtDispCentre.json)')
@@ -113,11 +120,17 @@ class TtDisplay:
         self.half = args.range if args.center else args.range / 2.0
         self.cx = self.cy = self.origin
         self.centrePath = centre_file_path(args.centre_file)
-        self.centreKey = args.shmName
+        if args.offset < 0:
+            raise SystemExit(f"--offset must be >= 0, got {args.offset}")
+        self.offset = args.offset
+        # the centre is remembered per SHM, and per offset when there is one (so
+        # the legacy entries, offset 0, keep their key)
+        self.centreKey = args.shmName if args.offset == 0 else f"{args.shmName}:{args.offset}"
         self.ttm = dao.shm(args.shmName)
 
         self.win = QtWidgets.QMainWindow()
-        self.win.setWindowTitle(f"TT Display  {args.shmName}")
+        self.win.setWindowTitle(f"TT Display  {args.shmName}"
+                                + (f"  [{args.offset}, {args.offset + 1}]" if args.offset else ""))
         self.win.setStyleSheet("""
             QMainWindow, QWidget { background-color: #1e1e1e; color: #cccccc; }
             QLabel { color: #cccccc; font-family: monospace; font-size: 12px; }
@@ -344,9 +357,9 @@ class TtDisplay:
 
     def update(self):
         try:
-            cmd = self.ttm.get_data()
-            a = float(cmd[0, 0])
-            b = float(cmd[1, 0])
+            cmd = np.ravel(self.ttm.get_data())
+            a = float(cmd[self.offset])
+            b = float(cmd[self.offset + 1])
         except Exception:
             return
 
