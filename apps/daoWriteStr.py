@@ -8,5 +8,8 @@ shm=sys.argv[1]
 command=sys.argv[2]
 print(f"{command} to {shm}")
 cmdShm=dao.shm(shm)
-command+="\0" + "000000000000000000000000000000000000"
-cmdShm.set_data(np.frombuffer(command.encode('utf8'), dtype=np.uint8))
+# set_data needs the full SHM size: zero-pad the null-terminated string
+buf = np.zeros(cmdShm.get_data().size, dtype=np.uint8)
+raw = command.encode('utf8')[:buf.size - 1]
+buf[:len(raw)] = np.frombuffer(raw, dtype=np.uint8)
+cmdShm.set_data(buf)

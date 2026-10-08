@@ -11,8 +11,11 @@ command=sys.argv[2]
 cmdShm=dao.shm(f"/tmp/{shmName}SCmd.im.shm")
 replyShm=dao.shm(f"/tmp/{shmName}SRsp.im.shm")
 print(f"Writing {command}")
-command+="\0" + "000000000000000000000000000000000000"
-cmdShm.set_data(np.frombuffer(command.encode('utf8'), dtype=np.uint8))
+# set_data needs the full SHM size: zero-pad the null-terminated string
+buf = np.zeros(cmdShm.get_data().size, dtype=np.uint8)
+raw = command.encode('utf8')[:buf.size - 1]
+buf[:len(raw)] = np.frombuffer(raw, dtype=np.uint8)
+cmdShm.set_data(buf)
 time.sleep(0.5)
 # Read uint8 array from SHM
 arr = replyShm.get_data()
