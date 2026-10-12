@@ -43,6 +43,7 @@ import os
 os.environ.setdefault("PYQTGRAPH_QT_LIB", "PyQt5")
 
 import argparse
+import shutil
 import subprocess
 import sys
 
@@ -212,6 +213,11 @@ class Main(QMainWindow, Ui_MainWindow):
                f"{measName} "
                f"-n {self.popSizeSpin.value()}"
                f"{' -m' if self.moreInfoCheck.isChecked() else ''} -L")
+        # tmux starts it from its server, with the server's CPUs: keep it on
+        # this GUI's CPUs instead, so whoever starts the GUI chooses them
+        if shutil.which('taskset'):
+            cpus = ','.join(str(c) for c in sorted(os.sched_getaffinity(0)))
+            cmd = f"taskset -c {cpus} {cmd}"
         try:
             # Replace any stale session with the same (deterministic) name first.
             subprocess.run(f"tmux kill-session -t {session}", shell=True,
