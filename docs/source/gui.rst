@@ -131,6 +131,10 @@ Tip-tilt monitor that displays the residual tip and tilt signals from a TTM or W
 .. code-block:: bash
 
     python daoTtDisp.py [slopes_shm]
+    python daoTtDisp.py /tmp/flCmd.im.shm --offset 292   # tip/tilt further in the vector
+
+``--offset N`` reads the tip at index N and the tilt at N + 1 (default 0, the
+first two values): a TT inside a longer command vector.
 
 
 daoLoopDisp

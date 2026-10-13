@@ -10,7 +10,9 @@ bld.program(
 	linkflags = ['-Lsrc', '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
 	ldflags = ['-ldao', '-lpthread', '-lm'],
 	use = ['daoTools'],
-	cflags = ['-O2', '-Wall', '-Wextra', '-pipe'],
+	# -fno-tree-vectorize: GCC 12 on aarch64 hits an internal compiler error
+	# (vect_transform_reduction) on main(); the test does not need vectorizing.
+	cflags = ['-O2', '-fno-tree-vectorize', '-Wall', '-Wextra', '-pipe'],
 	install_path = None,
 	)
 
