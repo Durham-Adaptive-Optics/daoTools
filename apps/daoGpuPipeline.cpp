@@ -6,7 +6,9 @@
  * the whole chain is launched at once when the trigger SHM is updated, and
  * intermediate data stays on the GPU (make the intermediate SHMs GPU SHMs,
  * daoShmCreateGpu, mirrored if CPU tools read them). Every output SHM is still
- * published (cnt0, timestamp, semaphores) each frame, in stage order.
+ * published (cnt0, timestamp, semaphores) each frame, in stage order. They are
+ * published after the whole frame, but each is timestamped with the time its own
+ * data was ready (a GPU event after its stage), not the time of publishing.
  *
  * Usage: daoGpuPipeline -c <config.yaml> [-s <stage>] [-C <cpu>] [-d <level>] -L
  *
@@ -394,6 +396,29 @@ struct SideCopies {
 };
 static SideCopies side;
 
+/* When each output was really written: an event after its stage (and its copy to the
+ * host), read after the frame against an event at its end. The outputs are published
+ * after the whole frame, each with the time its own data was ready, not the time of
+ * publishing (the same for all of them). */
+struct Stamps {
+    std::vector<cudaEvent_t> done;                    // one per stage
+    std::vector<char> recorded;                       // done[k] is in this frame's work
+    cudaEvent_t end = nullptr;
+    void record(size_t k, cudaStream_t st)            // an event node when captured
+    {
+        cudaEventRecordWithFlags(done[k], st, cudaEventRecordExternal);
+        recorded[k] = 1;
+    }
+};
+static Stamps stamps;
+
+static int64_t realtimeNs()
+{
+    struct timespec t;
+    clock_gettime(CLOCK_REALTIME, &t);
+    return (int64_t) t.tv_sec * 1000000000LL + t.tv_nsec;
+}
+
 static bool needsCopyOut(const daoGpuPort *o) { return (!o->onGpu && !o->mapped) || o->mirror; }
 
 /* Everything one frame does on the GPU, in order (captured once as a graph). */
@@ -405,6 +430,7 @@ static bool enqueueFrame(Pipeline &p, cudaStream_t st)
     if (!p.uploads.empty())
         prof.mark(st, "upload");
     bool anySide = false;
+    std::fill(stamps.recorded.begin(), stamps.recorded.end(), 0);
     for (size_t k = 0; k < p.stages.size(); k++) {
         daoGpuStage *s = p.stages[k];
         if (!p.upstream[k])                              // its input's stage is silent: nothing new
@@ -413,16 +439,22 @@ static bool enqueueFrame(Pipeline &p, cudaStream_t st)
             return false;
         prof.mark(st, daoGpuStageName(s));
         daoGpuPort *o = daoGpuStageOutput(s);
-        if (!needsCopyOut(o) || !p.pub[k])              // not published this frame: host SHM left alone
+        if (!p.pub[k])                                   // not published this frame: host SHM left alone
             continue;
+        if (!needsCopyOut(o)) {                          // written in place: ready now
+            stamps.record(k, st);
+            continue;
+        }
         bool last = k + 1 == p.stages.size();
         if (last || prof.on) {                       // nothing left to overlap with
             daoGpuPortDownload(o, st);
             prof.mark(st, "copyOut");
+            stamps.record(k, st);
         } else {                                     // copy while the next stages run
             cudaEventRecord(side.ready[k], st);
             cudaStreamWaitEvent(side.st, side.ready[k], 0);
             daoGpuPortDownload(o, side.st);
+            stamps.record(k, side.st);
             anySide = true;
         }
     }
@@ -430,10 +462,13 @@ static bool enqueueFrame(Pipeline &p, cudaStream_t st)
         cudaEventRecord(side.done, side.st);
         cudaStreamWaitEvent(st, side.done, 0);
     }
+    cudaEventRecordWithFlags(stamps.end, st, cudaEventRecordExternal);
     return true;
 }
 
-static void publish(Pipeline &p)
+/* tEnd: CLOCK_REALTIME (ns) right after the frame's synchronisation, i.e. at stamps.end
+ * (later by the synchronisation's wake-up, about a us). */
+static void publish(Pipeline &p, int64_t tEnd)
 {
     for (size_t k = 0; k < p.stages.size(); k++) {
         daoGpuStage *s = p.stages[k];
@@ -443,7 +478,14 @@ static void publish(Pipeline &p)
         long long cnt2 = daoGpuStageOutputCnt2(s);
         if (cnt2 >= 0)
             out->md[0].cnt2 = (uint64_t) cnt2;
-        daoShmSetDataPartFinalize(out);                  // cnt0, timestamp, semaphores
+        float ms = 0;                                    // from its data ready to the frame's end
+        if (!stamps.recorded[k] || cudaEventElapsedTime(&ms, stamps.done[k], stamps.end) != cudaSuccess) {
+            cudaGetLastError();
+            daoShmSetDataPartFinalize(out);              // no event: stamped now
+            continue;
+        }
+        int64_t t = tEnd - (int64_t) ((ms > 0 ? ms : 0) * 1e6);
+        daoShmSetDataPartFinalizeAt(out, t);             // cnt0, timestamp, semaphores
     }
 }
 
@@ -488,6 +530,11 @@ static int run(const char *configPath, int cpu, int onlyStage)
     for (auto &e : side.ready)
         cudaEventCreateWithFlags(&e, cudaEventDisableTiming);
     cudaEventCreateWithFlags(&side.done, cudaEventDisableTiming);
+    stamps.done.resize(p.stages.size());
+    stamps.recorded.assign(p.stages.size(), 0);
+    for (auto &e : stamps.done)
+        cudaEventCreate(&e);                         // with timing
+    cudaEventCreate(&stamps.end);
     for (daoGpuStage *s : p.stages)
         if (daoGpuStageUpdate(s, st) < 0)
             throw std::runtime_error(std::string(daoGpuStageName(s)) + ": cannot load its parameters");
@@ -576,10 +623,11 @@ static int run(const char *configPath, int cpu, int onlyStage)
             daoError("GPU error: %s\n", cudaGetErrorString(cudaGetLastError()));
             break;
         }
+        int64_t tEnd = realtimeNs();
         double t2 = nowUs();
         if (prof.on)
             prof.collect();
-        publish(p);
+        publish(p, tEnd);
         double dt = nowUs() - t0;
         for (daoGpuStage *s : p.stages)                  // after publishing: reference updates...
             daoGpuStagePost(s, st);
