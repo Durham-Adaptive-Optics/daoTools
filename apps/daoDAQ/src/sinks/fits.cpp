@@ -69,9 +69,8 @@ namespace Dao::DAQ
         nSampleElements_(smInfo.nelement),
         nFileSamples(0),
         nFiles_(0),
-        file_(nullptr) {
-        //
-    }
+        file_(nullptr),
+        sessionOutputDir_(sessionOutputDir) {}
 
     /* Ensures the active datafile is safely closed before
      * the writer is destroyed. throws if an
@@ -136,6 +135,8 @@ namespace Dao::DAQ
         FITS_CALL(fits_write_key, file_, TULONGLONG, "cnt1", &info.cnt1, NULL);
         FITS_CALL(fits_write_key, file_, TULONGLONG, "cnt2", &info.cnt2, NULL);
         FITS_CALL(fits_write_img, file_, srcType_, 1, nSampleElements_, buffer.get());
-        ++nFileSamples;
+
+        nFileSamples++;
+        totalSamplesWritten_++;
     }
 };

@@ -21,26 +21,50 @@ namespace Dao::DAQ
     using QueueType = std::pair<IMAGE_METADATA, std::unique_ptr<std::byte[]>>;
 
     struct ISampleWriter {
-        ISampleWriter(SmemParameters const& params, std::filesystem::path const& sessionOutputDir, Dao::Log::Logger& log, std::string const& parentID) :
+        ISampleWriter(SmemParameters const& params, Dao::Log::Logger& log, std::string const& parentID) :
             params_(params),
-            sessionOutputDir_(sessionOutputDir),
             log_(log),
-            parentID_(parentID) {
-            //
-        }
+            parentID_(parentID),
+            totalSamplesWritten_(0) {}
 
         virtual void write(QueueType const& sample) = 0;
         virtual ~ISampleWriter() = default;
 
+        auto WriteCount() const { return totalSamplesWritten_; }
+
         protected:
         SmemParameters const& params_;
-        std::filesystem::path sessionOutputDir_;
         Dao::Log::Logger& log_;
         std::string const& parentID_;
+        std::size_t totalSamplesWritten_;
     };
 
-    struct FitsWriter : public ISampleWriter {
-        FitsWriter(SmemParameters const& params, std::filesystem::path const& sessionOutputDir, IMAGE_METADATA const& smInfo, Dao::Log::Logger& log, std::string const& parentID);
+    struct Mudpi1Writer final: public ISampleWriter {
+        Mudpi1Writer(
+            SmemParameters const& params, 
+            std::string const& parentID,
+            Dao::Log::Logger& log
+        );
+        Mudpi1Writer(Mudpi1Writer const&) = delete;
+        Mudpi1Writer(Mudpi1Writer&&) = delete;
+        Mudpi1Writer& operator=(Mudpi1Writer const&) = delete;
+        Mudpi1Writer& operator=(Mudpi1Writer&&) = delete;
+        ~Mudpi1Writer();
+
+        void write(QueueType const& sample) override;
+
+        private:
+        void CreateNetworkSocket_();
+    };
+
+    struct FitsWriter final : public ISampleWriter {
+        FitsWriter(
+            SmemParameters const& params, 
+            std::filesystem::path const& sessionOutputDir, 
+            IMAGE_METADATA const& smInfo, 
+            Dao::Log::Logger& log, 
+            std::string const& parentID
+        );
         FitsWriter& operator= (FitsWriter const&) = delete;
         FitsWriter& operator= (FitsWriter&&) = delete;
         FitsWriter(FitsWriter const&) = delete;
@@ -59,6 +83,7 @@ namespace Dao::DAQ
         size_t nFiles_;
         fitsfile* file_;
         std::string fileName_;
+        std::filesystem::path sessionOutputDir_;
 
         bool storeFull() const;
         void finish();
