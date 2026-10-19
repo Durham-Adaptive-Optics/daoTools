@@ -12,10 +12,15 @@
 
 namespace Dao::DAQ
 {
-    FileDAQ::FileDAQ(FileParameters const& params, ServerDoneCallback doneCallback, ServerErrorCallback errorCallback, Dao::Log::Logger& log) :
+    FileDAQ::FileDAQ(
+        FileParameters const& params, 
+        ServerDoneCallback doneCallback, 
+        ServerErrorCallback errorCallback, 
+        ::Dao::Log::Logger& log
+    ) :
         IDAQ(doneCallback, errorCallback, params.absPath, log),
-        params_(params) {
-        //
+        params_(params) 
+    {
         log_.Debug(LOGFMT("created file resource {}", resourceID));
     }
 
@@ -45,5 +50,5 @@ namespace Dao::DAQ
     }
 
     void FileDAQ::finishAcquisition() {};
-}
+};
 

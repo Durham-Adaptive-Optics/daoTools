@@ -43,7 +43,8 @@ namespace Dao::DAQ
         Mudpi1Writer(
             SmemParameters const& params, 
             std::string const& parentID,
-            Dao::Log::Logger& log
+            Dao::Log::Logger& log,
+            IMAGE_METADATA const& smemInfo
         );
         Mudpi1Writer(Mudpi1Writer const&) = delete;
         Mudpi1Writer(Mudpi1Writer&&) = delete;
@@ -55,6 +56,30 @@ namespace Dao::DAQ
 
         private:
         void CreateNetworkSocket_();
+        void InitDatagramBuffer_();
+        
+        std::vector<std::byte> datagram_;
+        int socketHandle_;
+        IMAGE_METADATA const& smemInfo_;
+        std::size_t SampleSize_;
+
+
+        inline static
+        std::unordered_map<std::uint8_t, std::uint8_t> DaoTypeSize_
+        {
+            {_DATATYPE_UINT8, SIZEOF_DATATYPE_UINT8},
+            {_DATATYPE_INT8, SIZEOF_DATATYPE_INT8},
+            {_DATATYPE_UINT16, SIZEOF_DATATYPE_UINT16},
+            {_DATATYPE_INT16, SIZEOF_DATATYPE_INT16},
+            {_DATATYPE_UINT32, SIZEOF_DATATYPE_UINT32},
+            {_DATATYPE_INT32, SIZEOF_DATATYPE_INT32},
+            {_DATATYPE_UINT64, SIZEOF_DATATYPE_UINT64},
+            {_DATATYPE_INT64, SIZEOF_DATATYPE_INT64},
+            {_DATATYPE_FLOAT, SIZEOF_DATATYPE_FLOAT},
+            {_DATATYPE_DOUBLE, SIZEOF_DATATYPE_DOUBLE},
+            {_DATATYPE_COMPLEX_FLOAT, SIZEOF_DATATYPE_COMPLEX_FLOAT},
+            {_DATATYPE_COMPLEX_DOUBLE, SIZEOF_DATATYPE_COMPLEX_DOUBLE}
+        };
     };
 
     struct FitsWriter final : public ISampleWriter {

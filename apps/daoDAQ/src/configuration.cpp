@@ -120,15 +120,15 @@ namespace Dao::DAQ
         // @TODO add decimation settings..
 
         // load sink specific settings..
-        switch(params.format) {
+        switch(params.format.value()) {
             case SinkFormat::FITS:
                 loadOptional(params.fileRollover, "file_rollover", sourceNode);
                 break;
 
             case SinkFormat::MUDPI_1:
-                loadRequired(params.fileRollover, "port", sourceNode);
-                loadRequired(params.fileRollover, "topic", sourceNode);
-                loadOptional(params.fileRollover, "ip", sourceNode);
+                loadRequired(params.netPort, "port", sourceNode);
+                loadRequired(params.topic, "topic", sourceNode);
+                loadOptional(params.netAddress, "ip", sourceNode);
                 break;
         }
 

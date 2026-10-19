@@ -20,6 +20,7 @@
 #include <mutex>
 #include <log.hpp>
 #include <sinks.hpp>
+#include <daoLog.hpp>
 #include <atomic>
 
 namespace Dao::DAQ
@@ -33,7 +34,7 @@ namespace Dao::DAQ
      * interface with them.
     */
     struct IDAQ {
-        IDAQ(ServerDoneCallback doneCallback, ServerErrorCallback errorCallback, std::string const& resourceID, Dao::Log::Logger& log)
+        IDAQ(ServerDoneCallback doneCallback, ServerErrorCallback errorCallback, std::string const& resourceID, ::Dao::Log::Logger& log)
             : resourceID(resourceID), doneCallback_(doneCallback), errorCallback_(errorCallback), log_(log) {
         }
 
@@ -47,13 +48,13 @@ namespace Dao::DAQ
         protected:
         ServerDoneCallback doneCallback_;
         ServerErrorCallback errorCallback_;
-        Dao::Log::Logger& log_;
+        ::Dao::Log::Logger& log_;
     };
 
     /* File DAQ Resource.
     */
     struct FileDAQ final : public IDAQ {
-        FileDAQ(FileParameters const& params, ServerDoneCallback doneCallback, ServerErrorCallback errorCallback, Dao::Log::Logger& log);
+        FileDAQ(FileParameters const& params, ServerDoneCallback doneCallback, ServerErrorCallback errorCallback, ::Dao::Log::Logger& log);
         ~FileDAQ();
 
         void beginAcquisition(std::filesystem::path const& outputPath) override;
@@ -70,7 +71,7 @@ namespace Dao::DAQ
     struct SmemDAQ final : public IDAQ {
         using QueueType = std::pair<IMAGE_METADATA, std::unique_ptr<std::byte[]>>;
 
-        SmemDAQ(SmemParameters const& params, ServerDoneCallback doneCallback, ServerErrorCallback errorCallback, Dao::Log::Logger& log);
+        SmemDAQ(SmemParameters const& params, ServerDoneCallback doneCallback, ServerErrorCallback errorCallback, ::Dao::Log::Logger& log);
         SmemDAQ& operator=(SmemDAQ const&) = delete;
         SmemDAQ& operator=(SmemDAQ&&) = delete;
         SmemDAQ(SmemDAQ const&) = delete;

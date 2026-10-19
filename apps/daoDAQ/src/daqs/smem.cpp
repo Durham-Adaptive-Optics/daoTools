@@ -285,14 +285,14 @@ void SmemDAQ::sinkSamples() {
     }
     
     std::unique_ptr<ISampleWriter> writer;
-    switch(params_.format){
+    switch(params_.format.value()){
         case SinkFormat::FITS:
             writer = std::make_unique<FitsWriter>(params_, output, *smem_.md, log_, resourceID);
             log_.Debug(LOGFMT("Created fits sink for {}", resourceID));
             break;
         
         case SinkFormat::MUDPI_1:
-            writer = std::make_unique<Mudpi1Writer>(params_, resourceID, log_);
+            writer = std::make_unique<Mudpi1Writer>(params_, resourceID, log_, *smem_.md);
             log_.Debug(LOGFMT("Created mudpi-1 sink for {}", resourceID));
             break;
     }

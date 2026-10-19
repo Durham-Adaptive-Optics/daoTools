@@ -61,7 +61,7 @@ namespace Dao::DAQ
         Dao::Log::Logger& log,
         std::string const& parentID
     ) :
-        ISampleWriter(params, sessionOutputDir, log, parentID),
+        ISampleWriter(params, log, parentID),
         nAxes_(smInfo.naxis),
         axes_(std::reverse_iterator(smInfo.size + nAxes_), std::reverse_iterator(smInfo.size)),
         imgType_(daoToImgType_.at(smInfo.atype)),
@@ -70,7 +70,8 @@ namespace Dao::DAQ
         nFileSamples(0),
         nFiles_(0),
         file_(nullptr),
-        sessionOutputDir_(sessionOutputDir) {}
+        sessionOutputDir_(sessionOutputDir) 
+    {}
 
     /* Ensures the active datafile is safely closed before
      * the writer is destroyed. throws if an
