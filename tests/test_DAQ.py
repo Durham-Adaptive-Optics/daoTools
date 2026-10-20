@@ -136,6 +136,8 @@ def test_SharedMemoryToMUDPI(tmp_directory, client, tool_inst, shape, dtype):
         # Verify the UDP payload (ie. the MUDPI packet).
         packet, _ = udp_socket.recvfrom(65_535) # IPv4 max payload limit.
         
+        assert len(packet) == (32 + test_sample.nbytes), "MUDPI packet sized incorrectly"
+        
         assert struct.unpack_from("!I", packet, 0)[0] == TopicID, "Incorrect topic ID"
         assert packet[4:6] == b"DU", "Incorrect component ID"
         assert struct.unpack_from("!H", packet, 10)[0] == 1, "Incorrect version"
@@ -146,7 +148,7 @@ def test_SharedMemoryToMUDPI(tmp_directory, client, tool_inst, shape, dtype):
 
         payload_size = struct.unpack_from("!H", packet, 28)[0]
         assert payload_size == test_sample.nbytes, "Incorrect payload size"
-        assert packet[30 : 30 + payload_size] == test_sample.tobytes(), "Incorrect sample payload"
+        assert packet[30 : 30 + payload_size] == test_sample.tobytes(), "Incorrect sample data"
        
         assert struct.unpack_from("!H", packet, 30 + payload_size)[0] == 0, "Incorrect checksum"
     

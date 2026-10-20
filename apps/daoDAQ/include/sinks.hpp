@@ -59,10 +59,9 @@ namespace Dao::DAQ
         void InitDatagramBuffer_();
         
         std::vector<std::byte> datagram_;
-        int socketHandle_;
-        IMAGE_METADATA const& smemInfo_;
         std::size_t SampleSize_;
-
+        std::uint16_t FrameTotal_ {};
+        int socketHandle_;
 
         inline static
         std::unordered_map<std::uint8_t, std::uint8_t> DaoTypeSize_
