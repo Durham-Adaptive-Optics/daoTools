@@ -65,17 +65,13 @@ def expect_error_state(client, timeout=1):
 
 # ================================================================ #
     
-@pytest.mark.parametrize("shape", 
-                         [(2, 3), 
-                        #   (2, 3, 4)
-                          ])
+@pytest.mark.parametrize("shape", [(2, 3), (2, 3, 4)])
 @pytest.mark.parametrize("dtype", [
-    np.uint8, 
-    # np.int8, 
-    # np.uint16, np.int16, 
-    # np.uint32, np.int32, 
-    # np.uint64, np.int64, 
-    # np.float32, np.float64
+    np.uint8, np.int8, 
+    np.uint16, np.int16, 
+    np.uint32, np.int32, 
+    np.uint64, np.int64, 
+    np.float32, np.float64
 ])
 def test_SharedMemoryToMUDPI(tmp_directory, client, tool_inst, shape, dtype):
     '''Verifies daoDAQ correctly exports a shared-memory sample over the network using the MUDPI protocol.'''
