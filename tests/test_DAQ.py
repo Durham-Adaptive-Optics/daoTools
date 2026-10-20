@@ -140,17 +140,15 @@ def test_SharedMemoryToMUDPI(tmp_directory, client, tool_inst, shape, dtype):
         assert packet[4:6] == b"DU", "Incorrect component ID"
         assert struct.unpack_from("!H", packet, 10)[0] == 1, "Incorrect version"
         assert struct.unpack_from("!I", packet, 12)[0] == reference_md["cnt0"], "Incorrect sample ID"
-        assert struct.unpack_from("!Q", packet, 16)[0] == reference_md["atime"], "Incorrect timestamp"
+        assert struct.unpack_from("!d", packet, 16)[0] == np.float64(reference_md["atime"]), "Incorrect timestamp"
         assert struct.unpack_from("!H", packet, 24)[0] == 1, "Incorrect frame ID"
         assert struct.unpack_from("!H", packet, 26)[0] == 1, "Incorrect number of frames"
 
         payload_size = struct.unpack_from("!H", packet, 28)[0]
         assert payload_size == test_sample.nbytes, "Incorrect payload size"
-        
-        payload_end = 32 + payload_size
-        assert packet[32:payload_end] == test_sample.tobytes(), "Incorrect sample payload"
-        
-        assert struct.unpack_from("!H", packet, payload_end)[0] == 0, "Incorrect checksum"
+        assert packet[30 : 30 + payload_size] == test_sample.tobytes(), "Incorrect sample payload"
+       
+        assert struct.unpack_from("!H", packet, 30 + payload_size)[0] == 0, "Incorrect checksum"
     
     
 # ================================================================ #
