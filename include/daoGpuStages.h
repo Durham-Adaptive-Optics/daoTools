@@ -149,6 +149,12 @@ void daoGpuStageDestroy(daoGpuStage *s);
 void daoGpuStageSetPublish(daoGpuStage *s, int publish);
 int  daoGpuStagePublishes(const daoGpuStage *s);
 
+/* ----------------------------------------------------------------- timing */
+/* Enqueue on st one thread writing the GPU's nanosecond clock (%globaltimer) to *t,
+ * device-visible memory (e.g. mapped host memory); graph-capturable. Not
+ * CLOCK_REALTIME: only the difference between two stamps is meaningful. */
+void daoGpuStampTime(unsigned long long *t, cudaStream_t st);
+
 /* ------------------------------------------------ stages written elsewhere */
 /* A stage is its own functions and state. update() returns 0 (nothing
  * changed), 1 (parameters reloaded), DAO_GPU_RECAPTURE (the work run() enqueues

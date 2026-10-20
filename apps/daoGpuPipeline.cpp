@@ -6,11 +6,13 @@
  * the whole chain is launched at once when the trigger SHM is updated, and
  * intermediate data stays on the GPU (make the intermediate SHMs GPU SHMs,
  * daoShmCreateGpu, mirrored if CPU tools read them). Every output SHM is still
- * published (cnt0, timestamp, semaphores) each frame, in stage order. They are
- * published after the whole frame, but each is timestamped with the time its own
- * data was ready (a GPU event after its stage), not the time of publishing.
+ * published (cnt0, timestamp, semaphores) each frame, in stage order, after the
+ * whole frame, and timestamped when published. With stage timestamps (-T, or
+ * stageTimestamps: true) each is timestamped with the time its own data was ready
+ * (the GPU clock after its stage) instead: about 10 us more per frame, for
+ * measuring the latency of each stage.
  *
- * Usage: daoGpuPipeline -c <config.yaml> [-s <stage>] [-C <cpu>] [-d <level>] -L
+ * Usage: daoGpuPipeline -c <config.yaml> [-s <stage>] [-C <cpu>] [-T] [-W] [-d <level>] -L
  *
  * -s N runs only stage N (0 = first) of the configuration, as its own process,
  * triggered by that stage's input SHM (on a semaphore of its own): one process per
@@ -19,9 +21,13 @@
  *
  * Configuration (YAML):
  *   device: 0                          # CUDA device (GPU SHMs must be on it)
- *   trigger: {shm: /tmp/pyrIm.im.shm}  # waits on a semaphore of its own (sem: N forces one)
+ *   trigger: {shm: /tmp/pyrIm.im.shm}  # waits on a semaphore of its own (sem: N forces one);
+ *                                      # wait: spin polls its cnt0 instead (as -W): about 5 us
+ *                                      # sooner, for a CPU core busy all the time (pin it, -C)
  *   hostAccess: map                    # host SHMs: map into the GPU (zero copy, default:
  *                                      # kernels fetch only what they use) or copy
+ *   stageTimestamps: false             # true: each output timestamped when its data was
+ *                                      # ready (as -T), about 10 us more per frame
  *   stages:                            # in order; each is the daoTools app of that name
  *     # pixels
  *     - pixelCalibrate:   {in: ..., ff: ..., bg: ..., out: ...}
@@ -98,10 +104,40 @@ static double nowUs()
     return t.tv_sec * 1e6 + t.tv_nsec * 1e-3;
 }
 
+static inline void cpuRelax()
+{
+#if defined(__x86_64__) || defined(__i386__)
+    __builtin_ia32_pause();
+#elif defined(__aarch64__)
+    __asm__ volatile("yield");
+#endif
+}
+
+/* -W / trigger.wait: spin: wait for the next frame of shm by polling its cnt0, written
+ * right after its timestamp, instead of a semaphore: no wake-up by the kernel (about
+ * 5 us on the Ekarus RTC), for a CPU core busy all the time. *last: the cnt0 of the
+ * last frame seen. DAO_SUCCESS, or DAO_TIMEOUT after `seconds` or on a signal. */
+static int spinWait(IMAGE *shm, uint64_t *last, double seconds)
+{
+    volatile IMAGE_METADATA *md = (volatile IMAGE_METADATA *) shm->md;
+    double until = nowUs() + seconds * 1e6;
+    for (unsigned i = 1;; i++) {
+        uint64_t c = md[md[0].fifo_last_written].cnt0;
+        if (c != *last) {
+            *last = c;
+            return DAO_SUCCESS;
+        }
+        cpuRelax();
+        if ((i & 4095) == 0 && (stop || nowUs() > until))
+            return DAO_TIMEOUT;
+    }
+}
+
 struct Pipeline {
     int device = 0;
     std::string triggerName;
     int triggerSem = DAO_SEM_AUTO;                            // trigger.sem: a fixed semaphore
+    bool triggerSpin = false;                                 // trigger.wait: spin (-W): poll cnt0
     int mapHost = 1;                                          // hostAccess: map (default) | copy
     int onlyStage = -1;                                       // -s: run only this stage
     std::map<std::string, IMAGE *> shms;                     // every opened SHM
@@ -396,18 +432,36 @@ struct SideCopies {
 };
 static SideCopies side;
 
-/* When each output was really written: an event after its stage (and its copy to the
- * host), read after the frame against an event at its end. The outputs are published
- * after the whole frame, each with the time its own data was ready, not the time of
- * publishing (the same for all of them). */
+/* When each output was really written: the GPU clock after its stage (and its copy to
+ * the host), compared after the frame with the GPU clock at its end. The outputs are
+ * published after the whole frame, each with the time its own data was ready, not the
+ * time of publishing (the same for all of them).
+ * The stamps run on a branch of their own, so they never delay the next stage (timing
+ * events in the graph cost about 2.5 us each, a stamp in the chain about 1.5 us); the
+ * branch joins the chain at the end of the frame. Still about 10 us per frame on the
+ * Ekarus chain: off unless asked for, every output then stamped when published. */
+enum { STAMP_NONE, STAMP_BRANCH, STAMP_END };
 struct Stamps {
-    std::vector<cudaEvent_t> done;                    // one per stage
-    std::vector<char> recorded;                       // done[k] is in this frame's work
-    cudaEvent_t end = nullptr;
-    void record(size_t k, cudaStream_t st)            // an event node when captured
+    bool on = false;                                  // -T / stageTimestamps
+    cudaStream_t st = nullptr;                        // the branch
+    std::vector<cudaEvent_t> ready;                   // one per stage: the branch waits on it
+    cudaEvent_t joined = nullptr;                     // the chain waits for the branch
+    volatile unsigned long long *host = nullptr;      // GPU ns per stage, then the end (mapped)
+    unsigned long long *dev = nullptr;
+    std::vector<char> how;                            // STAMP_*, per stage, in this frame's work
+    bool anyBranch = false;
+    bool end = false;                                 // the end stamp is in this frame's work
+    void atEnd(size_t k) { how[k] = on ? STAMP_END : STAMP_NONE; }   // nothing after it
+    void record(size_t k, cudaStream_t from)          // after the work on from
     {
-        cudaEventRecordWithFlags(done[k], st, cudaEventRecordExternal);
-        recorded[k] = 1;
+        if (!on)
+            return;
+        cudaEventRecord(ready[k], from);
+        cudaStreamWaitEvent(st, ready[k], 0);
+        daoGpuStampTime(dev + k, st);
+        bool ok = cudaGetLastError() == cudaSuccess;  // never left for the next stage to report
+        how[k] = ok ? STAMP_BRANCH : STAMP_NONE;
+        anyBranch = anyBranch || ok;
     }
 };
 static Stamps stamps;
@@ -430,7 +484,8 @@ static bool enqueueFrame(Pipeline &p, cudaStream_t st)
     if (!p.uploads.empty())
         prof.mark(st, "upload");
     bool anySide = false;
-    std::fill(stamps.recorded.begin(), stamps.recorded.end(), 0);
+    std::fill(stamps.how.begin(), stamps.how.end(), STAMP_NONE);
+    stamps.anyBranch = false;
     for (size_t k = 0; k < p.stages.size(); k++) {
         daoGpuStage *s = p.stages[k];
         if (!p.upstream[k])                              // its input's stage is silent: nothing new
@@ -441,15 +496,21 @@ static bool enqueueFrame(Pipeline &p, cudaStream_t st)
         daoGpuPort *o = daoGpuStageOutput(s);
         if (!p.pub[k])                                   // not published this frame: host SHM left alone
             continue;
+        bool last = k + 1 == p.stages.size();
         if (!needsCopyOut(o)) {                          // written in place: ready now
-            stamps.record(k, st);
+            if (last)
+                stamps.atEnd(k);
+            else
+                stamps.record(k, st);
             continue;
         }
-        bool last = k + 1 == p.stages.size();
         if (last || prof.on) {                       // nothing left to overlap with
             daoGpuPortDownload(o, st);
             prof.mark(st, "copyOut");
-            stamps.record(k, st);
+            if (last)
+                stamps.atEnd(k);
+            else
+                stamps.record(k, st);
         } else {                                     // copy while the next stages run
             cudaEventRecord(side.ready[k], st);
             cudaStreamWaitEvent(side.st, side.ready[k], 0);
@@ -462,12 +523,20 @@ static bool enqueueFrame(Pipeline &p, cudaStream_t st)
         cudaEventRecord(side.done, side.st);
         cudaStreamWaitEvent(st, side.done, 0);
     }
-    cudaEventRecordWithFlags(stamps.end, st, cudaEventRecordExternal);
+    stamps.end = false;                              // if not, publish() stamps "now"
+    if (stamps.on) {
+        daoGpuStampTime(stamps.dev + p.stages.size(), st);
+        stamps.end = cudaGetLastError() == cudaSuccess;
+    }
+    if (stamps.anyBranch) {                          // the frame ends once every stamp is written
+        cudaEventRecord(stamps.joined, stamps.st);
+        cudaStreamWaitEvent(st, stamps.joined, 0);
+    }
     return true;
 }
 
-/* tEnd: CLOCK_REALTIME (ns) right after the frame's synchronisation, i.e. at stamps.end
- * (later by the synchronisation's wake-up, about a us). */
+/* tEnd: CLOCK_REALTIME (ns) right after the frame's synchronisation, i.e. at the end
+ * stamp (later by the synchronisation's wake-up, about a us). */
 static void publish(Pipeline &p, int64_t tEnd)
 {
     for (size_t k = 0; k < p.stages.size(); k++) {
@@ -478,18 +547,18 @@ static void publish(Pipeline &p, int64_t tEnd)
         long long cnt2 = daoGpuStageOutputCnt2(s);
         if (cnt2 >= 0)
             out->md[0].cnt2 = (uint64_t) cnt2;
-        float ms = 0;                                    // from its data ready to the frame's end
-        if (!stamps.recorded[k] || cudaEventElapsedTime(&ms, stamps.done[k], stamps.end) != cudaSuccess) {
-            cudaGetLastError();
-            daoShmSetDataPartFinalize(out);              // no event: stamped now
+        if (stamps.how[k] == STAMP_NONE || !stamps.end) {
+            daoShmSetDataPartFinalize(out);              // no stamp: stamped now
             continue;
         }
-        int64_t t = tEnd - (int64_t) ((ms > 0 ? ms : 0) * 1e6);
-        daoShmSetDataPartFinalizeAt(out, t);             // cnt0, timestamp, semaphores
+        int64_t ns = 0;                                  // from its data ready to the frame's end
+        if (stamps.how[k] == STAMP_BRANCH)
+            ns = (int64_t) (stamps.host[p.stages.size()] - stamps.host[k]);
+        daoShmSetDataPartFinalizeAt(out, tEnd - (ns > 0 ? ns : 0));   // cnt0, timestamp, semaphores
     }
 }
 
-static int run(const char *configPath, int cpu, int onlyStage)
+static int run(const char *configPath, int cpu, int onlyStage, bool stageTimestamps, bool spin)
 {
     YAML::Node cfg = YAML::LoadFile(configPath);
     Pipeline p;
@@ -497,12 +566,20 @@ static int run(const char *configPath, int cpu, int onlyStage)
     p.device = cfg["device"] ? cfg["device"].as<int>() : 0;
     p.triggerName = need(cfg["trigger"], "shm", "trigger");
     p.triggerSem = cfg["trigger"]["sem"] ? cfg["trigger"]["sem"].as<int>() : DAO_SEM_AUTO;
+    p.triggerSpin = spin;
+    if (cfg["trigger"]["wait"]) {
+        std::string mode = cfg["trigger"]["wait"].as<std::string>();
+        if (mode != "semaphore" && mode != "spin")
+            throw std::runtime_error("trigger wait: 'semaphore' or 'spin'");
+        p.triggerSpin = p.triggerSpin || mode == "spin";
+    }
     if (cfg["hostAccess"]) {
         std::string mode = cfg["hostAccess"].as<std::string>();
         if (mode != "map" && mode != "copy")
             throw std::runtime_error("hostAccess: 'map' or 'copy'");
         p.mapHost = mode == "map";
     }
+    stamps.on = stageTimestamps || (cfg["stageTimestamps"] && cfg["stageTimestamps"].as<bool>());
 
     // device and spin scheduling before any CUDA context exists in this process
     if (cudaSetDevice(p.device) != cudaSuccess || cudaSetDeviceFlags(cudaDeviceScheduleSpin) != cudaSuccess)
@@ -530,11 +607,18 @@ static int run(const char *configPath, int cpu, int onlyStage)
     for (auto &e : side.ready)
         cudaEventCreateWithFlags(&e, cudaEventDisableTiming);
     cudaEventCreateWithFlags(&side.done, cudaEventDisableTiming);
-    stamps.done.resize(p.stages.size());
-    stamps.recorded.assign(p.stages.size(), 0);
-    for (auto &e : stamps.done)
-        cudaEventCreate(&e);                         // with timing
-    cudaEventCreate(&stamps.end);
+    cudaStreamCreateWithFlags(&stamps.st, cudaStreamNonBlocking);
+    stamps.ready.resize(p.stages.size());
+    for (auto &e : stamps.ready)
+        cudaEventCreateWithFlags(&e, cudaEventDisableTiming);
+    cudaEventCreateWithFlags(&stamps.joined, cudaEventDisableTiming);
+    stamps.how.assign(p.stages.size(), STAMP_NONE);
+    unsigned long long *stampHost = nullptr;         // one per stage, then the end
+    if (cudaHostAlloc((void **) &stampHost, (p.stages.size() + 1) * sizeof *stampHost, cudaHostAllocMapped)
+            != cudaSuccess
+        || cudaHostGetDevicePointer((void **) &stamps.dev, stampHost, 0) != cudaSuccess)
+        throw std::runtime_error("cannot allocate the stage time stamps");
+    stamps.host = stampHost;
     for (daoGpuStage *s : p.stages)
         if (daoGpuStageUpdate(s, st) < 0)
             throw std::runtime_error(std::string(daoGpuStageName(s)) + ": cannot load its parameters");
@@ -565,9 +649,12 @@ static int run(const char *configPath, int cpu, int onlyStage)
         cudaGetLastError();
         daoWarning("CUDA graph unavailable, launching the stages one by one\n");
     }
-    daoInfo("%zu stages, %zu upload(s), triggered by %s (semaphore %d)%s\n", p.stages.size(), p.uploads.size(),
-            p.triggerName.c_str(),
-            p.triggerSem >= 0 ? p.triggerSem : daoShmClaimSem(trigger), useGraph ? ", CUDA graph" : "");
+    std::string waitHow = p.triggerSpin ? "spinning on its cnt0"
+                                        : "semaphore " + std::to_string(p.triggerSem >= 0 ? p.triggerSem
+                                                                                         : daoShmClaimSem(trigger));
+    daoInfo("%zu stages, %zu upload(s), triggered by %s (%s)%s%s\n", p.stages.size(), p.uploads.size(),
+            p.triggerName.c_str(), waitHow.c_str(), useGraph ? ", CUDA graph" : "",
+            stamps.on ? ", stage timestamps" : "");
     if (p.onlyStage < 0)
         daoInfo("one process for the whole chain: MPS is only useful if other processes compute on GPU %d\n",
                 p.device);
@@ -577,8 +664,10 @@ static int run(const char *configPath, int cpu, int onlyStage)
     double accWake = 0, accUpd = 0, accGpu = 0, accPub = 0;   // breakdown, us
     long n = 0;
     long waits = 0;
+    uint64_t lastCnt = trigger->md[trigger->md[0].fifo_last_written].cnt0;   // -W: the next frame
     while (!stop) {
-        if (daoToolsWait(trigger, p.triggerSem, 1.0) != DAO_SUCCESS)
+        int w = p.triggerSpin ? spinWait(trigger, &lastCnt, 1.0) : daoToolsWait(trigger, p.triggerSem, 1.0);
+        if (w != DAO_SUCCESS)
         {
             printf("\rwaiting for %s (%ld s)                    ", p.triggerName.c_str(), ++waits);
             fflush(stdout);
@@ -663,17 +752,22 @@ static int run(const char *configPath, int cpu, int onlyStage)
         daoShmClose(kv.second);
         free(kv.second);
     }
+    cudaFreeHost(stampHost);
     cudaStreamDestroy(st);
     return 0;
 }
 
 static void help(const char *argv0)
 {
-    printf("usage: %s -c <config.yaml> [-s <stage>] [-C <cpu>] [-d <level>] -L\n"
+    printf("usage: %s -c <config.yaml> [-s <stage>] [-C <cpu>] [-T] [-W] [-d <level>] -L\n"
            "  -h  display this message and exit\n"
            "  -c  pipeline configuration (see the header of daoGpuPipeline.cpp)\n"
            "  -s  run only this stage (0 = first), triggered by its input SHM\n"
            "  -C  pin the loop to this CPU core\n"
+           "  -T  stage timestamps: each output timestamped when its data was ready on the GPU,\n"
+           "      not when published (about 10 us more per frame; also stageTimestamps: true)\n"
+           "  -W  wait for the trigger by polling its cnt0, not on a semaphore: about 5 us sooner,\n"
+           "      for a CPU core busy all the time (also trigger: {..., wait: spin})\n"
            "  -d  log level: 0 warnings and errors (default), 1 info, 2 debug, 3 trace\n"
            "  -L  run\n",
         argv0);
@@ -683,6 +777,7 @@ int main(int argc, char **argv)
 {
     const char *config = nullptr;
     int cpu = -1, go = 0, stage = -1;
+    bool stageTimestamps = false, spin = false;
     // the options, from the first argument (daoToolsArg* exit with an error when a value is missing)
     int left = argc - 1;
     char **arg = argv + 1;
@@ -705,6 +800,14 @@ int main(int argc, char **argv)
         {
             daoLogLevel = (int)daoToolsArgInt(&left, &arg, opt);
             daoSetLogLevel(daoLogLevel);
+        }
+        else if (!strcmp(opt, "-T"))
+        {
+            stageTimestamps = true;
+        }
+        else if (!strcmp(opt, "-W"))
+        {
+            spin = true;
         }
         else if (!strcmp(opt, "-L"))
         {
@@ -729,7 +832,7 @@ int main(int argc, char **argv)
     if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0)
         daoWarning("mlockall failed: run scripts/daoToolSetCap to grant RT capabilities\n");
     try {
-        return run(config, cpu, stage);
+        return run(config, cpu, stage, stageTimestamps, spin);
     } catch (const std::exception &e) {
         daoError("%s\n", e.what());
         return 1;

@@ -285,7 +285,10 @@ intermediate data stays on the GPU (GPU SHMs), and every output SHM is still
 published each frame, so displays and telemetry keep working. `-s N` runs a
 single stage as its own process instead, to develop and tune stage by stage
 with the same configuration. Host SHMs read or written by the GPU should be in
-RAM (tmpfs, e.g. `/dev/shm`) so the GPU can use them in place. Stages,
+RAM (tmpfs, e.g. `/dev/shm`) so the GPU can use them in place. The outputs are
+published, and by default timestamped, at the end of the frame; `-T` (or
+`stageTimestamps: true`) timestamps each one when its data was ready on the GPU,
+to measure the latency of each stage, for about 10 µs more per frame. Stages,
 configuration and options: `docs/source/gpu_pipeline.rst`.
 
 See [the migration regression tests](tests/README.md) for the exact rename

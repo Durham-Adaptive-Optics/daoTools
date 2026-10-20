@@ -23,7 +23,8 @@ How it works
   process hand-over between stages.
 - Every **output SHM is published each frame** (``cnt0``, timestamp,
   semaphores), in stage order, so any process can still wait on an
-  intermediate result.
+  intermediate result. They are all published at the end of the frame, and by
+  default timestamped then (see :ref:`gpu-pipeline-timestamps`).
 - **Intermediate SHMs** are best created as GPU SHMs (daoBase
   ``daoShmCreateGpu``, or ``dao.shm(..., gpu=N, mirror=True)`` in Python): the
   next stage reads them in place on the GPU. With ``mirror``, a host copy is
@@ -47,8 +48,10 @@ A YAML file lists the device, the trigger and the stages, in order:
 .. code-block:: yaml
 
     device: 0                               # CUDA device (GPU SHMs must be on it)
-    trigger: {shm: /tmp/wfsIm.im.shm}    # waits on a semaphore of its own (sem: N forces one)
+    trigger: {shm: /tmp/wfsIm.im.shm}    # waits on a semaphore of its own (sem: N forces one;
+                                            # wait: spin polls its cnt0 instead, see Running)
     hostAccess: map                         # host SHMs: map (zero copy, default) or copy
+    stageTimestamps: false                  # true: each output timestamped when its data was ready
     stages:
       - calIntensityNorm: {in: /tmp/wfsIm.im.shm, ff: /tmp/wfsFf.im.shm, bg: /tmp/wfsBg.im.shm,
                            ref: /tmp/wfsRef.im.shm, validPix: /tmp/wfsPup.im.shm,
@@ -158,7 +161,7 @@ Running
 
 .. code-block:: bash
 
-    daoGpuPipeline -c <config.yaml> [-s <stage>] [-C <cpu>] [-d <level>] -L
+    daoGpuPipeline -c <config.yaml> [-s <stage>] [-C <cpu>] [-T] [-W] [-d <level>] -L
 
 - **One process** (default): the whole chain, one CUDA graph per frame. It needs
   no NVIDIA MPS, unless other processes compute on the same GPU.
@@ -169,12 +172,74 @@ Running
   processes on one GPU need NVIDIA MPS (daoBase's ``daoGpuMps start``), or each
   hand-over costs about 100 µs.
 - ``-C <cpu>`` pins the loop to a CPU core.
+- ``-T`` turns on the stage timestamps (as ``stageTimestamps: true``), see
+  below.
+- ``-W`` waits for the trigger by **spinning** on its ``cnt0`` instead of a
+  semaphore (as ``trigger: {shm: ..., wait: spin}``). The writer increments
+  ``cnt0`` right after its timestamp, so the pipeline sees the frame a fraction
+  of a µs later, instead of being woken up by the kernel after the semaphore is
+  posted (about 5 µs on the Ekarus RTC, the *wake* of the status line). The
+  cost: the CPU core is busy all the time, so pin the loop (``-C`` or
+  ``taskset``) on an isolated core of its own. If the pipeline falls behind, it
+  takes the latest frame (with a semaphore it would run the ones it missed), and
+  it does not take one of the trigger's semaphores. The pipeline runs with a
+  real-time priority, and Linux by default lets real-time tasks use only 95% of
+  each second (``kernel.sched_rt_runtime_us = 950000``): a loop that never sleeps
+  is then stopped for 50 ms every second and misses about 5% of the frames.
+  Turn this limit off before using ``-W``
+  (``sudo sysctl -w kernel.sched_rt_runtime_us=-1``, kept across reboots in
+  ``/etc/sysctl.d/``), but only once nothing else can run on the pipeline's
+  core: with the limit off, any other thread there (a server, a GUI, an
+  interrupt thread of lower priority) never runs again. ``isolcpus`` alone does
+  not ensure it: a process allowed on every core can land on an isolated core
+  and stay there. Keep the other processes on the housekeeping cores (e.g.
+  ``CPUAffinity=`` in systemd's ``system.conf`` and ``user.conf``) and the
+  interrupts off that core first; otherwise do not use ``-W``.
 
 Once per second the pipeline prints its average and worst latency per frame,
 split into *wake* (trigger timestamp to the pipeline waking up), *params*
 (parameter reloads), *gpu* (the graph) and *publish*.
 ``DAO_GPU_PIPELINE_PROFILE=1`` runs without the graph and adds the GPU time of
 each step.
+
+
+.. _gpu-pipeline-timestamps:
+
+Timestamps
+----------
+
+The whole chain runs as one CUDA graph, and the host only knows that the frame is
+finished when the graph is: every output SHM is published after the whole frame,
+the first stage's output as well as the last one's.
+
+- **Default: timestamped when published.** Every output gets the time it is
+  published, i.e. the end of the frame, about a µs apart in stage order. The last
+  output (e.g. the DM command) is timestamped exactly as by a separate process,
+  and nothing is added to the frame: this is the mode for running the loop.
+  The intermediate outputs, though, look as late as the last one: a latency
+  measured on them (``daoTimeDiff`` between the camera frame and the first stage's
+  output, for instance) is the latency of the whole chain, not of that stage.
+- **Stage timestamps** (``-T``, or ``stageTimestamps: true`` in the configuration):
+  each output is timestamped with the time its own data was ready on the GPU,
+  after its stage (and its copy to the host, if any). Intermediate latencies then
+  mean what they say: camera frame to descrambled frame is the descrambler's
+  time, not the whole chain's. Use it to measure the latency of each stage; the
+  start-up message ends with ``stage timestamps``.
+
+How the stage timestamps are made: after each stage, a one-thread kernel writes
+the GPU clock (``%globaltimer``, ns) to mapped host memory, on a branch of the
+graph of its own so that it does not delay the next stage, and one more at the
+end of the frame. Each output is then timestamped ``tEnd - (end - done)``, with
+``tEnd`` the host clock (``CLOCK_REALTIME``) when the frame is seen finished: only
+differences of the GPU clock within the frame are used, so it does not need to
+be synchronised with the host clock. The timestamps are late by the host's
+wake-up at the end of the frame, about 1 µs. The last output takes the end-of-
+frame time.
+
+They are not free: the extra kernels and the branch cost about 1.5 µs per stage
+on the GPU, about 10 µs per frame on a 7-stage pyramid chain (A40, MPS on, 2 kHz),
+measured end to end from the camera frame to the DM command. Turn them on to
+measure, off to run.
 
 
 .. _gpu-pipeline-build:
