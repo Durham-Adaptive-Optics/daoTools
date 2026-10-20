@@ -62,12 +62,11 @@ void Mudpi1Writer::write(QueueType const& sample)
     auto const FrameID = htons(1);
     auto const FrameTotal = htons(1);
 
-    std::memcpy(Head, &SampleID, 4); Head += 4;
-    std::memcpy(Head, &Timestamp, 8); Head += 8;
-    std::memcpy(Head, &FrameID, 2); Head += 2;
-    std::memcpy(Head, &FrameTotal, 2); Head += 2;
-    Head += 2;
-    std::memcpy(Head, SampleBuffer, SampleSize_);
+    std::memcpy(Head, &SampleID, 4);
+    std::memcpy(Head + 4, &Timestamp, 8);
+    std::memcpy(Head + 12, &FrameID, 2);
+    std::memcpy(Head + 14, &FrameTotal, 2);
+    std::memcpy(Head + 18, SampleBuffer, SampleSize_);
 
     if(::sendto(socketHandle_, datagram_.data(), datagram_.size(), 0, 0, 0) < 0) {
         log_.Error(LOGFMT(
@@ -117,20 +116,16 @@ void Mudpi1Writer::InitDatagramBuffer_()
     std::int32_t const TopicID = ::htonl(params_.topic);
     
     // @TODO: handle large packets properly..
-    auto const SampleSize = static_cast<std::uint16_t>(htonl(SampleSize_));
+    auto const SampleSize = htons(static_cast<std::uint16_t>(SampleSize_));
 
     datagram_.resize(SampleSize_ + 32);
-    std::memset(datagram_.data(), 0, datagram_.size());
 
     std::byte* head = datagram_.data();
-    std::memcpy(head, &TopicID, sizeof(std::int32_t));  head += sizeof(std::int32_t);
-    std::memcpy(head, &ComponentTag_, sizeof(std::uint16_t)); head += sizeof(std::uint16_t);
-    head += sizeof(std::uint16_t) * 2;
-    std::memcpy(head, &MudpiVersion, sizeof(std::uint16_t)); head += sizeof(std::uint16_t);
-    head += sizeof(std::uint32_t);
-    head += sizeof(double);
-    head += sizeof(std::uint16_t) * 2;
-    std::memcpy(head, &SampleSize, sizeof(std::uint16_t));
+
+    std::memcpy(head, &TopicID, 4);
+    std::memcpy(head + 4, &ComponentTag_, 2);
+    std::memcpy(head + 10, &MudpiVersion, 2);
+    std::memcpy(head + 28, &SampleSize, 2);
 }
 
 };
