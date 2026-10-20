@@ -257,6 +257,16 @@ extern "C" void daoGpuStageDestroy(daoGpuStage *s)
 extern "C" void daoGpuStageSetPublish(daoGpuStage *s, int publish) { s->noPublish = !publish; }
 extern "C" int daoGpuStagePublishes(const daoGpuStage *s) { return !s->noPublish; }
 
+/* ---------------------------------------------------------------- timing */
+__global__ void stampTimeKernel(unsigned long long *t)
+{
+    unsigned long long ns;
+    asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(ns));
+    *t = ns;
+}
+
+extern "C" void daoGpuStampTime(unsigned long long *t, cudaStream_t st) { stampTimeKernel<<<1, 1, 0, st>>>(t); }
+
 /* -------------------------------------------- stages written elsewhere */
 struct CustomStage {
     daoGpuStage base;

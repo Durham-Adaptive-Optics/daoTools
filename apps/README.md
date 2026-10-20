@@ -52,7 +52,7 @@ correlation centroiders).
 
 | Tool | Inputs | Outputs | Notes |
 |---|---|---|---|
-| `daoGpuPipeline` | the configuration's trigger and input SHMs, parameter SHMs | every stage's output SHM, published each frame | A chain of GPU stages (GPU versions of the tools in this file: pixel calibration / extraction, centroiders, MVM, gain) in one process, one CUDA graph per frame. `-c <config.yaml> [-s <stage>] [-C <cpu>] -L`; `-s N` runs only stage N, triggered by its input. See `docs/source/gpu_pipeline.rst`. |
+| `daoGpuPipeline` | the configuration's trigger and input SHMs, parameter SHMs | every stage's output SHM, published each frame | A chain of GPU stages (GPU versions of the tools in this file: pixel calibration / extraction, centroiders, MVM, gain) in one process, one CUDA graph per frame. `-c <config.yaml> [-s <stage>] [-C <cpu>] [-T] [-W] -L`; `-s N` runs only stage N, triggered by its input. Outputs are timestamped when published (end of the frame); `-T` timestamps each when its data was ready on the GPU, for per-stage latency (about 10 µs more per frame); `-W` waits for the trigger by spinning on its `cnt0`, not on a semaphore (about 5 µs sooner, a CPU core busy all the time). See `docs/source/gpu_pipeline.rst`. |
 
 ## Pixel calibration
 
