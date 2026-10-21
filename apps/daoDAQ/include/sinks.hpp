@@ -16,6 +16,7 @@
 #include <memory>
 #include <dao.h>
 #include <array>
+#include <netinet/in.h>
 
 namespace Dao::DAQ
 {
@@ -39,6 +40,7 @@ namespace Dao::DAQ
         std::string const& parentID_;
         std::size_t totalSamplesWritten_;
     };
+
 
     struct Mudpi1Writer final: public ISampleWriter {
         Mudpi1Writer(
@@ -73,6 +75,7 @@ namespace Dao::DAQ
         std::size_t SmemSampleSize_;
         std::uint16_t FrameTotal_ {};
         int socketHandle_;
+        sockaddr_in endpoint_ {};
         std::uint16_t NumFrames_ {};
 
         /* Maps from Dao data-type to type-size.
@@ -157,4 +160,3 @@ namespace Dao::DAQ
         };
     };
 };
-

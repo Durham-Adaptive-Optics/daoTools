@@ -50,22 +50,14 @@ void Mudpi1Writer::CreateNetworkSocket_()
         ));
     }
 
-    /* Configure socket w/ desired network endpoint (ip, port), saves
-     * us from needing to provide the endpoint upon every sample write.
+    /* Store the destination endpoint for each datagram sent by write().
     */
-    sockaddr_in endpoint {};
-    endpoint.sin_family = AF_INET;
-    endpoint.sin_port = ::htons(params_.netPort);
-    if(::inet_pton(AF_INET, params_.netAddress.value().c_str(), &endpoint.sin_addr) != 1) {
+    endpoint_.sin_family = AF_INET;
+    endpoint_.sin_port = ::htons(params_.netPort);
+    if(::inet_pton(AF_INET, params_.netAddress.value().c_str(), &endpoint_.sin_addr) != 1) {
         throw std::runtime_error(LOGFMT(
             "failed to create socket for smem {} mudpi sink: invalid address '{}'",
             parentID_, params_.netAddress.value()
-        ));
-    }
-    if(::connect(socketHandle_, reinterpret_cast<sockaddr*>(&endpoint), sizeof(sockaddr_in)) != 0) {
-        throw std::runtime_error(LOGFMT(
-            "failed to configure socket for smem {} mudpi sink: {}", 
-            parentID_, ::strerror(errno)
         ));
     }
 
@@ -146,14 +138,23 @@ void Mudpi1Writer::write(const QueueType& sample)
         std::memcpy(head + 30,  payload,           payloadSize);
         std::memset(head + 30 + payloadSize, 0, sizeof(std::uint16_t)); // disable MUDPI checksum.
 
-        if(::sendto(socketHandle_, datagram_.data(), DatagramSize, 0, nullptr, socklen_t {}) < 0) {
+        payload += payloadSize;
+
+        const auto SendStatus = ::sendto(
+            socketHandle_,
+            datagram_.data(),
+            DatagramSize,
+            0,
+            reinterpret_cast<sockaddr*>(&endpoint_),
+            sizeof(endpoint_)
+        );
+
+        if(SendStatus < 0) {
             throw std::runtime_error(LOGFMT(
                 "[{}] failed to send MUDPI frame ({}/{}) for sample {}: {}",
                 parentID_, frameID, NumFrames_, SampleMetadata.cnt0, ::strerror(errno)
             ));
         }
-
-        payload += payloadSize;
     }
 
     totalSamplesWritten_++;
