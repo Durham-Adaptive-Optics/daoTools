@@ -48,7 +48,9 @@ namespace Dao::DAQ
 
             char const* value = std::getenv(name.c_str());
             if (!value) {
-                throw std::runtime_error(fmt::format("(server.config) environment variable '{}' used in '{}' is not set", name, path));
+                throw std::runtime_error(
+                    fmt::format("(server.config) environment variable '{}' used in '{}' is not set", name, path)
+                );
             }
             out += value;
             i = braced ? end : end - 1;
@@ -108,14 +110,27 @@ namespace Dao::DAQ
     }
 
     void DAQConfiguration::loadSmemParams(YAML::Node const& sourceNode, SmemParameters& params) {
-        loadOptional(params.metadataOnly, "metadata_only", sourceNode);
+        // load smem settings..
         loadOptional(params.nSamples, "samples", sourceNode);
-        loadOptional(params.format, "format", sourceNode);
-        loadOptional(params.fileRollover, "file_rollover", sourceNode);
         loadOptional(params.daqThreadAffinity, "daq_affinity", sourceNode);
         loadOptional(params.sinkThreadAffinity, "sink_affinity", sourceNode);
         loadOptional(params.bufferLimit, "buffer_limit", sourceNode);
         loadOptional(params.eagerStart, "eager_start", sourceNode);
+        loadOptional(params.format, "format", sourceNode);
+        // @TODO add decimation settings..
+
+        // load sink specific settings..
+        switch(params.format.value()) {
+            case SinkFormat::FITS:
+                loadOptional(params.fileRollover, "file_rollover", sourceNode);
+                break;
+
+            case SinkFormat::MUDPI_1:
+                loadRequired(params.netPort, "port", sourceNode);
+                loadRequired(params.topic, "topic", sourceNode);
+                loadOptional(params.netAddress, "ip", sourceNode);
+                break;
+        }
 
         int buffLen {};
         if (DAO_SUCCESS != daoToolsLocalName(params.absPath.c_str(), nullptr, &buffLen)) {

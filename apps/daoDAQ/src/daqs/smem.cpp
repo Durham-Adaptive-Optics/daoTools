@@ -281,20 +281,27 @@ void SmemDAQ::sinkSamples() {
     {
         std::unique_lock lock(cvLock_);
         output = sessionOutputDir_;
+        log_.Debug(LOGFMT("updated output directory to {} for {}", output.string(), resourceID));
     }
-
-    auto writer = std::make_unique<FitsWriter>(params_, output, *smem_.md, log_, resourceID);
-    size_t nSamplesWritten {};
-
-    log_.Debug(LOGFMT("sinking samples for {} ({})", resourceID, output.string()));
-
-    /* note(tom): we avoid logging in the hot-path here as we do not
-     * want to pay the penalty of enqueing and formatting logs etc.
-    */
+    
+    std::unique_ptr<ISampleWriter> writer;
+    switch(params_.format.value()){
+        case SinkFormat::FITS:
+            writer = std::make_unique<FitsWriter>(params_, output, *smem_.md, log_, resourceID);
+            log_.Debug(LOGFMT("Created fits sink for {}", resourceID));
+            break;
+        
+        case SinkFormat::MUDPI_1:
+            writer = std::make_unique<Mudpi1Writer>(params_, resourceID, log_, *smem_.md);
+            log_.Debug(LOGFMT("Created mudpi-1 sink for {}", resourceID));
+            break;
+    }
+    
+    log_.Debug(LOGFMT("sinking samples for {}", resourceID));
     while (runSession_.load()) {
         /* Finish acquiring and report that we're done to the server.
         */
-        if (params_.nSamples && params_.nSamples.value() == nSamplesWritten) {
+        if (params_.nSamples && params_.nSamples.value() == writer->WriteCount()) {
             finishAcquisition();
             doneCallback_(resourceID);
             continue;
@@ -308,20 +315,17 @@ void SmemDAQ::sinkSamples() {
             queue_.pop();
         }
 
-        /* Sink sample from FIFO to datafile on disk in the desired
-         * export format.
+        /* Sink sample from FIFO.
         */
         if (qSample) {
             auto const& sample = qSample.value();
             writer->write(sample);
-            ++nSamplesWritten;
-            log_.Trace(LOGFMT("n({}) samples exported for {}", nSamplesWritten, resourceID)); // @todo remove-me.
         }
     }
 
     log_.Debug(LOGFMT("stopped sinking samples for {}", resourceID));
 
-    if (0 == nSamplesWritten) {
+    if (0 == writer->WriteCount()) {
         log_.Warning(LOGFMT("no samples written to disk for {}", resourceID));
     }
 }

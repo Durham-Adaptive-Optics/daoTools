@@ -1,9 +1,8 @@
-# daoDAQ - recording shared memories to disk
+# daoDAQ - recording and sending shared-memory data
 
-daoDAQ records dao shared-memory (SHM) streams to FITS files. You tell it
-which SHMs to watch, press start, and it writes every new frame of each SHM
-until you stop it or until each SHM has recorded its requested number of
-frames.
+daoDAQ captures dao shared-memory (SHM) streams and sends each new frame to a
+configured sink until you stop it or until each SHM has sent its requested
+number of frames. The supported sinks are FITS files and MUDPI-1 over UDP.
 
 It runs as a server (a daoBase component) that you control over the network
 with:
@@ -54,7 +53,8 @@ sources:
     samples: 10000
 ```
 
-This records the next 10 000 frames of `/tmp/wfs.im.shm` into
+With the default FITS format, this records the next 10 000 frames of
+`/tmp/wfs.im.shm` into
 `$DAOROOT/telemetry/<date>_<time>/wfs.fits`.
 
 ---
@@ -90,14 +90,21 @@ root_storage: ${DAOROOT}/telemetry # required, directory must exist; $VAR / ${VA
 
 sources:                           # required, at least one
   - uri: smem:///tmp/wfs.im.shm    # required, smem://<absolute path of the SHM>
+    format: fits                   # fits (default) or mudpi-1
     samples: 10000                 # stop this source after N frames
     file_rollover: 1000            # start a new FITS file every N frames
     buffer_limit: 500              # max frames queued in RAM before dropping
     daq_affinity: 4                # CPU core for the capture thread
-    sink_affinity: 5               # CPU core for the disk-writer thread
+    sink_affinity: 5               # CPU core for the sink thread
     eager_start: true              # also record the frame already in the SHM at START
 
-  - uri: smem:///tmp/dm.im.shm     # sources are independent of each other
+  - uri: smem:///tmp/dm.im.shm
+    format: mudpi-1                 # send samples as MUDPI-1 UDP datagrams
+    ip: 192.0.2.10                  # optional destination IPv4 address
+    port: 56000                     # required destination UDP port
+    topic: 109                      # required MUDPI topic ID
+
+  - uri: smem:///tmp/ir.im.shm     # sources are independent of each other
 
   - uri: file:///home/ao/calib/im.fits   # copied into the session directory at START
 ```
@@ -116,7 +123,8 @@ fails. When daoDAQ runs on the same machine, `daoDAQCtrl.py` creates it on
 
 There are two kinds of source:
 - **`smem://`** records the frames of a shared memory. All the parameters
-  below apply to it.
+  below apply to it. The default `format: fits` writes FITS files; `format:
+  mudpi-1` sends MUDPI-1 packets to a UDP endpoint instead.
 - **`file://`** copies a file (a calibration, the loop configuration, …)
   into the session directory once, at START. It takes no other parameter,
   and it counts as done as soon as the copy succeeds.
@@ -124,13 +132,26 @@ There are two kinds of source:
 | Parameter | Default | Meaning |
 |---|---|---|
 | `uri` | (required) | `smem://` or `file://` followed by an absolute path, so there are three slashes. Each path may appear only once. |
-| `samples` | unlimited | The source stops after writing this many frames. When **every** `smem://` source has `samples`, the session ends by itself; otherwise it runs until STOP. |
-| `file_rollover` | one file | Frames per FITS file. With rollover, files go to a subdirectory: `<session>/<name>/<name>_0.fits`, `_1.fits`, and so on. |
-| `buffer_limit` | unlimited | Maximum number of frames waiting in RAM between capture and disk. When the queue is full, new frames are **dropped** (with a warning in the log). **Always set it**: without a limit, a disk that can't keep up makes RAM use grow until the machine runs out of memory. |
+| `format` | `fits` | Sink for an `smem://` source: `fits` writes FITS files; `mudpi-1` sends MUDPI-1 UDP datagrams. |
+| `samples` | unlimited | The source stops after sending this many frames to its sink. When **every** `smem://` source has `samples`, the session ends by itself; otherwise it runs until STOP. |
+| `file_rollover` | one FITS file | FITS only: frames per file. With rollover, files go to a subdirectory: `<session>/<name>/<name>_0.fits`, `_1.fits`, and so on. Not used by MUDPI-1. |
+| `buffer_limit` | unlimited | Maximum number of frames waiting in RAM between capture and the sink. When the queue is full, new frames are **dropped** (with a warning in the log). **Always set it**: without a limit, a slow sink makes RAM use grow until the machine runs out of memory. |
 | `daq_affinity`, `sink_affinity` | unpinned | Pin the two threads of this source to CPU cores (Linux only). |
-| `eager_start` | `true` | `true`: the frame already in the SHM when START is pressed is recorded first. `false`: only frames written after START are recorded. |
-| `format` | `fits` | Output format; `fits` is the only one. |
-| `metadata_only` | `false` | Accepted but **not implemented**: full frames are always written. |
+| `eager_start` | `true` | `true`: the frame already in the SHM when START is pressed is sent first. `false`: only frames written after START are sent. |
+| `ip` | `127.0.0.1` | MUDPI-1 only: destination IPv4 address in dotted-decimal form. |
+| `port` | (required for `mudpi-1`) | MUDPI-1 only: destination UDP port (integer 0–65535). |
+| `topic` | (required for `mudpi-1`) | MUDPI-1 only: integer topic ID included in each packet. |
+| `metadata_only` | — | Not used by the daoDAQ server. It is ignored; full frames are sent/written. |
+
+For MUDPI-1, set `format: mudpi-1`, `port`, and `topic` on the `smem://`
+source. `ip` is optional and defaults to the local host (`127.0.0.1`).
+Samples are sent as one or more UDP datagrams, with a maximum datagram size
+of 8,972 bytes and IP fragmentation disabled. MUDPI-1 output is not written
+to the session directory, and cannot be read by daoDAQ's file extractor.
+
+The MUDPI-1 sink configuration is currently available through the YAML
+configuration and command-line/Python clients. `daoDAQCtrl.py` currently
+validates only `format: fits` and does not expose the MUDPI-1 endpoint fields.
 
 **Unknown keys are silently ignored**, so a misspelled parameter name has no
 effect. `daoDAQCtrl.py` warns about them. A wrong value type or a missing SHM
@@ -217,6 +238,8 @@ The Acquire tab has three panels:
     SHM missing, bad value, unknown key, and so on. Select one to edit it in
     the form (`samples`, `file_rollover`, `buffer_limit`, affinities,
     `eager_start`). **Double-click a row, or press *Remove*, to drop it.**
+    The GUI currently accepts FITS sources only; configure MUDPI-1 with YAML
+    and apply it with `daoDAQCli.py` or `daoDAQClient`.
     *Add file…* adds a `file://` source.
 - **YAML tab:** the same configuration as text, for hand editing. Both tabs
   stay in sync. A form edit rewrites the YAML, so comments in a hand-written
@@ -234,9 +257,10 @@ The Acquire tab has three panels:
 - **Release** unloads the configuration and frees the SHMs.
 - **Recover** leaves *Error* using the configuration already uploaded.
 - While recording, the panel shows the session directory, the elapsed time,
-  and the number of FITS files and MB written. **Open folder** opens the
-  directory. Sessions started by another client are followed too, because the
-  state is polled.
+  and FITS file/size counts for file-based output. MUDPI-1 samples are sent
+  over UDP and are not included in those files. **Open folder** opens the
+  session directory. Sessions started by another client are followed too,
+  because the state is polled.
 
 Buttons are enabled only in the states where they can succeed.
 
@@ -292,7 +316,7 @@ expected state.
 ```
 <root_storage>/
 └── 2026-09-23_17-26-17/          one directory per START (local time)
-    ├── wfs.fits                  source without file_rollover
+    ├── wfs.fits                  FITS source without file_rollover
     ├── im.fits                   file:// source, copied as is
     └── dm/                       source with file_rollover
         ├── dm_0.fits
@@ -300,8 +324,9 @@ expected state.
         └── ...
 ```
 
-The file name is the SHM's name without its extension: `/tmp/wfs.im.shm`
-becomes `wfs`.
+The file name for FITS output is the SHM's name without its extension:
+`/tmp/wfs.im.shm` becomes `wfs`. MUDPI-1 sources send samples to their
+configured UDP endpoint and do not create data files in this directory.
 
 **Each frame is its own FITS image (HDU)**: the first frame is the primary
 HDU, and each following frame is an extension. Every HDU carries:
@@ -440,17 +465,20 @@ warns above 4 GB.
 - Each source has **two threads**:
   - the **capture thread** waits for `cnt0` to change, then copies the frame
     into RAM;
-  - the **writer thread** writes the queued frames to disk.
+  - the **sink thread** writes queued frames to FITS or sends them over UDP.
 
   Both threads **poll continuously** instead of sleeping, so **each source
   keeps two CPU cores fully busy while recording**. Pin them with
   `daq_affinity` and `sink_affinity` to cores that the real-time pipeline
   doesn't use.
-- A slow disk doesn't make the capture miss frames: frames wait in RAM
-  instead. Use `buffer_limit` to cap RAM use, at the cost of dropping frames
-  once the queue is full.
+- A slow sink doesn't make the capture miss frames immediately: frames wait
+  in RAM instead. Use `buffer_limit` to cap RAM use, at the cost of dropping
+  frames once the queue is full.
 - FITS files have one HDU per frame, so very long runs make very large
   files. `file_rollover` keeps each file to a manageable size.
+- MUDPI-1 sends UDP datagrams sized to avoid IP fragmentation. Ensure the
+  network path and receiving endpoint are configured for the destination IP
+  and port.
 
 ---
 
@@ -458,7 +486,7 @@ warns above 4 GB.
 
 | Issue | Effect |
 |---|---|
-| `metadata_only` isn't implemented | Full frames are written. |
+| `metadata_only` is ignored by the server | Full frames are written or sent. |
 | Complex data types | SHMs of type complex float or complex double are rejected when applying the configuration. |
 | Session directory name has one-second resolution | Two STARTs within the same second fail: the directory already exists, so the server goes to Error. |
 | Error during Enable | If an SHM is missing, the sources opened before it stay allocated. Recover after fixing the configuration works (tested), but restarting daoDAQ is the cleanest recovery if it behaves oddly afterwards. |
@@ -487,6 +515,7 @@ Source code (`src/`):
 | `configuration.cpp` | YAML parsing |
 | `daqs/smem.cpp` | SHM capture |
 | `sinks/fits.cpp` | FITS writer |
+| `sinks/mudpi1.cpp` | MUDPI-1 UDP writer |
 
 Clients: `daoTools/src/python/daoDAQClient.py`, `daoTools/apps/daoDAQCli.py`,
 `daoTools/gui/daoDAQCtrl.py`. Extraction: `daoTools/src/python/daoDAQExtractor.py`,

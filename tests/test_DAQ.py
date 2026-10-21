@@ -10,8 +10,10 @@
 
 from daoDAQClient import DAQClient, DAQState
 from daoDAQParser import DAODAQParser
-import astropy.io.fits as fits
 import subprocess as sp
+import select
+import socket
+import struct
 import numpy as np
 import pytest
 import shutil
@@ -63,6 +65,103 @@ def expect_error_state(client, timeout=1):
 
 # ================================================================ #
     
+@pytest.mark.parametrize("shape", [
+    (1, 100),   # samples can fit within a single MUDPI packet. 
+    (1, 10_000) # samples require multiple MUDPI packets.
+])
+@pytest.mark.parametrize("dtype", [
+    np.uint8, np.int8, 
+    np.uint16, np.int16, 
+    np.uint32, np.int32, 
+    np.uint64, np.int64, 
+    np.float32, np.float64
+])
+def test_SharedMemoryToMUDPI(tmp_directory, client, tool_inst, shape, dtype):
+    '''Verifies a shared-memory sample is correctly sent over the network via protocol.'''
+    
+    # Generate test sample..
+    limits = np.iinfo(dtype) if np.issubdtype(dtype, np.integer) else np.finfo(dtype)
+    test_sample = np.linspace(limits.min / 2, limits.max / 2, np.prod(shape), dtype=dtype).reshape(shape)
+
+    # Setup shared-memory..
+    shmLocalName = "test_DAQ"
+    smemPath = f"/tmp/{shmLocalName}.im.shm"
+    smem = dao.shm(smemPath, test_sample, depth=1)
+    
+    # MUDPI settings ..
+    NetInterface: str = "127.0.0.1"
+    NetPort: int = 56_000
+    TopicID: int = 109
+    
+    # Retrieve sample metadata from shm for verification..
+    reference_md = {
+        # shm metadata ..
+        "atime": smem.get_meta_data()["atime"]["tsfixed"]["secondlong"],
+        "atype": smem.get_meta_data()["atype"],
+        "cnt0": smem.get_meta_data()["cnt0"],
+        "cnt1": smem.get_meta_data()["cnt1"],
+        "cnt2": smem.get_meta_data()["cnt2"],
+    }
+    
+    # Setup DAQ..
+    daqConfig = {
+        "root_storage": tmp_directory,
+        "sources": [{
+            "uri": f"smem://{smemPath}",
+            "format": "mudpi-1",
+            "ip": NetInterface,
+            "port": NetPort,
+            "topic": TopicID,
+            "samples": 1
+        }]
+    }
+        
+    # Register UDP socket..
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
+        udp_socket.bind((NetInterface, NetPort))
+        
+        # Acquire sample from shm..
+        client.daq_session_configure_upload(yaml.dump(daqConfig))
+        client.daq_session_configure_apply()
+        client.daq_session_begin()
+        client.daq_session_await_finish(timeout=DEFAULT_TIMEOUT)
+
+        MaxMudpiPacketSize: int = 8_972
+        nExpectedMudpiFrames: int = math.ceil(test_sample.nbytes / (MaxMudpiPacketSize - 32))
+        AssembledSample = bytearray()
+        
+        for frameID in range(1, nExpectedMudpiFrames + 1):
+            # Wait for the UDP datagram until the test timeout expires.
+            readable, _, _ = select.select([udp_socket], [], [], DEFAULT_TIMEOUT)
+            if not readable:
+                pytest.fail(f"No UDP packet received on {NetInterface}:{NetPort} within {DEFAULT_TIMEOUT}s")
+                
+            # Verify the UDP payload (ie. the MUDPI packet).
+            packet, _ = udp_socket.recvfrom(65_535) # IPv4 max payload limit.
+            
+            assert len(packet) <= MaxMudpiPacketSize, "MUDPI packet too large"
+            
+            assert struct.unpack_from("!I", packet, 0)[0] == TopicID, "Incorrect topic ID"
+            assert packet[4:6] == b"DU", "Incorrect component ID"
+            assert struct.unpack_from("!H", packet, 10)[0] == 1, "Incorrect version"
+            assert struct.unpack_from("!I", packet, 12)[0] == reference_md["cnt0"], "Incorrect sample ID"
+            assert struct.unpack_from("!d", packet, 16)[0] == np.float64(reference_md["atime"]), "Incorrect timestamp"
+           
+            assert struct.unpack_from("!H", packet, 24)[0] == frameID, "Incorrect frame ID"
+            assert struct.unpack_from("!H", packet, 26)[0] == nExpectedMudpiFrames, "Incorrect number of frames"
+
+            payload_size = struct.unpack_from("!H", packet, 28)[0]
+            payload = packet[30 : 30 + payload_size]
+            AssembledSample.extend(payload)
+            
+            assert struct.unpack_from("!H", packet, 30 + payload_size)[0] == 0, "Incorrect checksum"
+            
+        assert AssembledSample == test_sample.tobytes(), "Sample was corrupt"
+        
+    
+    
+# ================================================================ #
+
 @pytest.mark.parametrize("shape", [(2, 3), (2, 3, 4)])
 @pytest.mark.parametrize("dtype", [
     np.uint8, np.int8, 
@@ -71,7 +170,7 @@ def expect_error_state(client, timeout=1):
     np.uint64, np.int64, 
     np.float32, np.float64
 ])
-def test_SharedMemoryAcquisition(tmp_directory, client, tool_inst, shape, dtype):
+def test_SharedMemoryToFITS(tmp_directory, client, tool_inst, shape, dtype):
     '''
     Verifies that a single sample can be correctly acquired from a shared memory resource and saved to disk.
     Parametrised across all supported dtypes and array shapes to ensure correct data and metadata

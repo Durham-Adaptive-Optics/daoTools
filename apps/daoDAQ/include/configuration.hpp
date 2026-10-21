@@ -21,22 +21,22 @@
 
 /* Supported data formats for saving smem samples to the disk.
 */
-#define FITS_STREP  "fits"
-
 namespace Dao::DAQ
 {
-    enum class SinkFormat { FITS };
+    enum class SinkFormat { FITS, MUDPI_1 };
 
     static
         std::unordered_map<SinkFormat, std::string> const sinkToStr
     {
-        { SinkFormat::FITS, FITS_STREP },
+        { SinkFormat::FITS, "fits" },
+        { SinkFormat::MUDPI_1, "mudpi-1" },
     };
 
     static
         std::unordered_map<std::string, SinkFormat> const strToSink
     {
-        { FITS_STREP, SinkFormat::FITS },
+        { "fits", SinkFormat::FITS },
+        { "mudpi-1", SinkFormat::MUDPI_1 },
     };
 };
 
@@ -98,17 +98,26 @@ namespace Dao::DAQ
     };
 
     struct SmemParameters {
+        // smem general settings..
         Required<std::string> absPath;
-        Optional<bool> metadataOnly { false };
         Optional<size_t> nSamples;
         Optional<SinkFormat> format { SinkFormat::FITS };
-        Optional<size_t> fileRollover;
         Optional<CoreID> sinkThreadAffinity;
         Optional<CoreID> daqThreadAffinity;
         Optional<size_t> bufferLimit;
         Optional<bool> eagerStart { true };
-
         std::string localName; // parsed from absolute path.
+        
+        // sink-specific settings..
+
+        // FITS
+        Optional<size_t> fileRollover;
+
+
+        // MUDPI-1
+        Optional<std::string> netAddress { "127.0.0.1" };
+        Required<std::uint16_t> netPort;
+        Required<std::int32_t> topic;
     };
 
     /* ---------------------------------------------------------------- */
