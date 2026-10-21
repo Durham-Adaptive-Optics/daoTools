@@ -84,19 +84,14 @@ void Mudpi1Writer::CreateNetworkSocket_()
 
 void Mudpi1Writer::InitDatagramBuffer_()
 {
-    /* Allocate a buffer for the largest possible MUDPI packet.
-     * Note the buffer is zero-initialised here.
-    */
-    datagram_.resize(MaxMudpiPacketSize_);
-
     /* Define protocol field values that don't change across samples,
      * encoding them as big-endian as per the MUDPI spec.
     */
-    NumFrames_ = std::ceil((float)SmemSampleSize_ / MaxMudpiPayloadSize_);
-
     const std::uint16_t MudpiVersion = ::htons(1);
     const std::uint16_t ComponentID = ::htons('D' << 8 | 'U'); // DU = Durham University. 
     const std::int32_t TopicID = ::htonl(params_.topic);
+    
+    NumFrames_ = std::ceil((float)SmemSampleSize_ / MaxMudpiPayloadSize_);
     const std::uint16_t NumFrames = ::htons(NumFrames_);
 
     /* Copy static MUDPI fields into datagram buffer.

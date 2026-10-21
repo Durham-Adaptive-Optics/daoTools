@@ -15,6 +15,7 @@
 #include <utility>
 #include <memory>
 #include <dao.h>
+#include <array>
 
 namespace Dao::DAQ
 {
@@ -68,7 +69,7 @@ namespace Dao::DAQ
         void CreateNetworkSocket_();
         void InitDatagramBuffer_();
         
-        std::vector<std::byte> datagram_;
+        std::array<std::byte, MaxMudpiPacketSize_> datagram_ {};
         std::size_t SmemSampleSize_;
         std::uint16_t FrameTotal_ {};
         int socketHandle_;
