@@ -55,15 +55,28 @@ namespace Dao::DAQ
         void write(QueueType const& sample) override;
 
         private:
+        /* MUDPI specification states packets shall not fragment when
+         * sent across a 9000 byte MTU interface, this is the 
+         * max packet size such that the IP packet is 9000 bytes and
+         * does not fragment. 
+        */
+        static inline constexpr std::size_t MaxMudpiPacketSize_ { 8'972 };
+
+        static inline constexpr std::size_t MudpiProtocolOverhead_ { 32 };
+        static inline constexpr std::size_t MaxMudpiPayloadSize_ { MaxMudpiPacketSize_ - MudpiProtocolOverhead_};
+
         void CreateNetworkSocket_();
         void InitDatagramBuffer_();
         
         std::vector<std::byte> datagram_;
-        std::size_t SampleSize_;
+        std::size_t SmemSampleSize_;
         std::uint16_t FrameTotal_ {};
         int socketHandle_;
+        std::uint16_t NumFrames_ {};
 
-        inline static
+        /* Maps from Dao data-type to type-size.
+        */
+        const inline static
         std::unordered_map<std::uint8_t, std::uint8_t> DaoTypeSize_
         {
             {_DATATYPE_UINT8, SIZEOF_DATATYPE_UINT8},

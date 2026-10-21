@@ -315,8 +315,7 @@ void SmemDAQ::sinkSamples() {
             queue_.pop();
         }
 
-        /* Sink sample from FIFO to datafile on disk in the desired
-         * export format.
+        /* Sink sample from FIFO.
         */
         if (qSample) {
             auto const& sample = qSample.value();

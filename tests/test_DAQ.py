@@ -65,7 +65,10 @@ def expect_error_state(client, timeout=1):
 
 # ================================================================ #
     
-@pytest.mark.parametrize("shape", [(2, 3), (2, 3, 4)])
+@pytest.mark.parametrize("shape", [
+    (1, 100),   # samples can fit within a single MUDPI packet. 
+    (1, 10_000) # samples require multiple MUDPI packets.
+])
 @pytest.mark.parametrize("dtype", [
     np.uint8, np.int8, 
     np.uint16, np.int16, 
@@ -74,7 +77,7 @@ def expect_error_state(client, timeout=1):
     np.float32, np.float64
 ])
 def test_SharedMemoryToMUDPI(tmp_directory, client, tool_inst, shape, dtype):
-    '''Verifies daoDAQ correctly exports a shared-memory sample over the network using the MUDPI protocol.'''
+    '''Verifies a shared-memory sample is correctly sent over the network via protocol.'''
     
     # Generate test sample..
     limits = np.iinfo(dtype) if np.issubdtype(dtype, np.integer) else np.finfo(dtype)
@@ -103,7 +106,6 @@ def test_SharedMemoryToMUDPI(tmp_directory, client, tool_inst, shape, dtype):
     # Setup DAQ..
     daqConfig = {
         "root_storage": tmp_directory,
-        "eager_start": True,
         "sources": [{
             "uri": f"smem://{smemPath}",
             "format": "mudpi-1",
@@ -124,29 +126,38 @@ def test_SharedMemoryToMUDPI(tmp_directory, client, tool_inst, shape, dtype):
         client.daq_session_begin()
         client.daq_session_await_finish(timeout=DEFAULT_TIMEOUT)
 
-        # Wait for the UDP datagram until the test timeout expires.
-        readable, _, _ = select.select([udp_socket], [], [], DEFAULT_TIMEOUT)
-        if not readable:
-            pytest.fail(f"No UDP packet received on {NetInterface}:{NetPort} within {DEFAULT_TIMEOUT}s")
+        MaxMudpiPacketSize: int = 8_972
+        nExpectedMudpiFrames: int = math.ceil(test_sample.nbytes / (MaxMudpiPacketSize - 32))
+        AssembledSample = bytearray()
+        
+        for frameID in range(1, nExpectedMudpiFrames + 1):
+            # Wait for the UDP datagram until the test timeout expires.
+            readable, _, _ = select.select([udp_socket], [], [], DEFAULT_TIMEOUT)
+            if not readable:
+                pytest.fail(f"No UDP packet received on {NetInterface}:{NetPort} within {DEFAULT_TIMEOUT}s")
+                
+            # Verify the UDP payload (ie. the MUDPI packet).
+            packet, _ = udp_socket.recvfrom(65_535) # IPv4 max payload limit.
             
-        # Verify the UDP payload (ie. the MUDPI packet).
-        packet, _ = udp_socket.recvfrom(65_535) # IPv4 max payload limit.
-        
-        assert len(packet) == (32 + test_sample.nbytes), "MUDPI packet sized incorrectly"
-        
-        assert struct.unpack_from("!I", packet, 0)[0] == TopicID, "Incorrect topic ID"
-        assert packet[4:6] == b"DU", "Incorrect component ID"
-        assert struct.unpack_from("!H", packet, 10)[0] == 1, "Incorrect version"
-        assert struct.unpack_from("!I", packet, 12)[0] == reference_md["cnt0"], "Incorrect sample ID"
-        assert struct.unpack_from("!d", packet, 16)[0] == np.float64(reference_md["atime"]), "Incorrect timestamp"
-        assert struct.unpack_from("!H", packet, 24)[0] == 1, "Incorrect frame ID"
-        assert struct.unpack_from("!H", packet, 26)[0] == 1, "Incorrect number of frames"
+            assert len(packet) <= MaxMudpiPacketSize, "MUDPI packet too large"
+            
+            assert struct.unpack_from("!I", packet, 0)[0] == TopicID, "Incorrect topic ID"
+            assert packet[4:6] == b"DU", "Incorrect component ID"
+            assert struct.unpack_from("!H", packet, 10)[0] == 1, "Incorrect version"
+            assert struct.unpack_from("!I", packet, 12)[0] == reference_md["cnt0"], "Incorrect sample ID"
+            assert struct.unpack_from("!d", packet, 16)[0] == np.float64(reference_md["atime"]), "Incorrect timestamp"
+           
+            assert struct.unpack_from("!H", packet, 24)[0] == frameID, "Incorrect frame ID"
+            assert struct.unpack_from("!H", packet, 26)[0] == nExpectedMudpiFrames, "Incorrect number of frames"
 
-        payload_size = struct.unpack_from("!H", packet, 28)[0]
-        assert payload_size == test_sample.nbytes, "Incorrect payload size"
-        assert packet[30 : 30 + payload_size] == test_sample.tobytes(), "Incorrect sample data"
-       
-        assert struct.unpack_from("!H", packet, 30 + payload_size)[0] == 0, "Incorrect checksum"
+            payload_size = struct.unpack_from("!H", packet, 28)[0]
+            payload = packet[30 : 30 + payload_size]
+            AssembledSample.extend(payload)
+            
+            assert struct.unpack_from("!H", packet, 30 + payload_size)[0] == 0, "Incorrect checksum"
+            
+        assert AssembledSample == test_sample.tobytes(), "Sample was corrupt"
+        
     
     
 # ================================================================ #
