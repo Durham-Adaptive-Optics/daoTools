@@ -16,6 +16,18 @@ bld.program(
 	install_path = None,
 	)
 
+# OMGI: the pseudo open loop and the modal gain fit (not installed): build/tests/testModalGain
+bld.program(
+	source = 'testModalGain.c',
+	target = 'testModalGain',
+	includes = ['../include', os.getenv('DAOROOT')+'/include/'],
+	linkflags = ['-Lsrc', '-L'+os.getenv('DAOROOT')+'/lib/','-L'+os.getenv('DAOROOT')+'/lib64/'],
+	ldflags = ['-ldao', '-lpthread', '-lm'],
+	use = ['daoTools'],
+	cflags = ['-O2', '-Wall', '-Wextra', '-pipe'],
+	install_path = None,
+	)
+
 # GPU stages vs the CPU daoTools code (not installed): build/tests/testGpuStages
 if bld.env.CUDA_AVAILABLE and platform.system() != "Darwin":
 

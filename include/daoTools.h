@@ -247,6 +247,54 @@ int_fast8_t daoToolsLeakyModalIntegratorDouble(double *command,
                                               double *gain,
                                               double *commandOffset,
                                               double *filteredCommand);
+
+/*
+ * OMGI (optimized modal gain integrator): the integrator is daoToolsLeakyModalIntegrator,
+ * its gains are fitted on the pseudo open loop, what the sensor would see with the DM flat:
+ *
+ *     pol(t) = residual(t) - command(t - delay)
+ *
+ * command(t) is the integrator's output computed from residual(t), applied by the DM
+ * `delay` frames later (delay >= 1).
+ */
+typedef struct
+{
+    int nbVal;
+    int delay;
+    long frames;        /**< commands pushed so far        */
+    float *command;     /**< the last delay+1 commands, a ring of (delay+1) x nbVal */
+} daoToolsPolHistory;
+
+/** @brief Allocate the command history: DAO_SUCCESS, or DAO_ERROR (delay < 1, no memory). */
+int_fast8_t daoToolsPolInit(daoToolsPolHistory *h, int nbVal, int delay);
+void daoToolsPolFree(daoToolsPolHistory *h);
+/**
+ * @brief Push command(t) and compute pol(t) from residual(t). Returns 1 when pol was
+ * written, 0 for the first `delay` frames (no command old enough yet).
+ */
+int daoToolsPseudoOpenLoop(daoToolsPolHistory *h, const float *residual,
+                           const float *command, float *pol);
+/**
+ * @brief Replay, on the pseudo open loop pol (nbFrames x nbModes, frame after frame), a
+ * leaky integrator with the loop delay, mode by mode:
+ *
+ *     command(t + delay) = leak * command(t + delay - 1) + gain * (pol(t) - command(t))
+ *
+ * cost[m]: the mean of (pol(t) - command(t))^2 over t >= skip, the residual it would have
+ * left; +INFINITY when the replay diverges. gain: per mode; leak: per mode, NULL for 1.
+ * skip is at most nbFrames / 3.
+ */
+int_fast8_t daoToolsModalGainCost(const float *pol, int nbModes, int nbFrames, int delay,
+                                  const float *leak, const float *gain, int skip,
+                                  double *cost);
+/**
+ * @brief The best gain of each mode among gains[nbGains]: the one whose replay
+ * (daoToolsModalGainCost) leaves the smallest residual. bestCost (NULL: not wanted) is
+ * that residual; when every gain diverged it is +INFINITY and bestGain[m] is left as it was.
+ */
+int_fast8_t daoToolsModalGainFit(const float *pol, int nbModes, int nbFrames, int delay,
+                                 const float *leak, const float *gains, int nbGains,
+                                 int skip, float *bestGain, double *bestCost);
 /* The centroiders below share two rules, for a subaperture without light:
  *  - no light (nothing above the threshold): its centroid is (0, 0);
  *  - minFlux > 0: a subaperture whose flux (sum of its raw pixels) is below it
