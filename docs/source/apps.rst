@@ -260,6 +260,40 @@ When the per-mode gains are applied before a scalar integrator (``daoApplyGain -
 gain with ``-G``: the gains written are divided by it. ``build/tests/testModalGain`` checks
 both against a closed loop.
 
+daoFastAndFurious.py
+~~~~~~~~~~~~~~~~~~~~
+
+Fast & Furious focal-plane wavefront sensing (Keller 2012, Korkiakoski 2014, Bos 2020):
+sequential phase diversity on a non-coronagraphic PSF, the diversity being F&F's own last
+correction. The odd part of the pupil phase comes from the odd part of the image, the even
+part's magnitude from its even part and its sign from the previous image. Modal: the phase
+is solved on the M2A modes, through a reconstructor from the focal-plane fields of the
+modes, computed once (``daoFastAndFuriousLib.py``).
+
+The correction ``theta`` is written as an offset on the output SHM, ``out = out0 + T theta``,
+``T`` picked from the SHM's size: a modal channel (identity), a DM actuator channel
+(``-z`` M2A) or a WFS reference (``-I`` modal interaction matrix: F&F with the AO loop
+closed, which then puts the correction on the DM).
+
+.. code-block:: bash
+
+    # the pupil phase of the M2A modes: Gaussian influence functions on the DM map
+    daoFastAndFurious.py basis ffBasis.npz -m <dmMap> -z <M2A> -M 50 [-D <pupil in pitches>]
+    # PSF centre, camera orientation (8 transposes/flips), basis sign and scale, from pokes
+    daoFastAndFurious.py calibrate ffCalib.npz -i <camera> -o <output> -B ffBasis.npz \
+                         -q <px per lambda/D> -N 63 -a <poke> [-f]
+    # the loop
+    daoFastAndFurious.py run -i <camera> -o <output> -B ffBasis.npz -C ffCalib.npz \
+                         -N 63 -g 0.3 -l 0.97 [-n <frames>] [-d <skip>] [-e <enable>]
+
+A basis file is an npz with ``pupil`` (nPup x nPup), ``basis`` (nModes x nPup x nPup, rad
+per unit command) and optionally ``pupDiam``: an exact basis (a numerical twin's) can
+replace the Gaussian one. ``daoFastAndFurious.py sim`` is a simulated camera reading a
+modal command SHM, for end-to-end checks. Requirements: unsaturated PSF, sampled at
+FWHM >= 2 pixels (``-q`` >= 2), narrow band, phase below ~1 rad rms, a centrosymmetric
+pupil (its symmetric part is used). ``tests/test_daoFastAndFurious.py`` checks the
+calibration and the loop's convergence on the simulator.
+
 daoClock
 ~~~~~~~~
 
