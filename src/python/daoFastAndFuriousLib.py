@@ -206,8 +206,11 @@ class FastAndFuriousLoop:
 
 def findCenter(frame, box=3):
     '''(row, col) of the PSF's peak, the frame smoothed over box x box pixels.'''
-    from scipy.ndimage import uniform_filter
-    f = uniform_filter(np.asarray(frame, dtype=np.float64), box)
+    frame = np.asarray(frame, dtype=np.float64)
+    pad = (box // 2, box - 1 - box // 2)                  # as scipy's uniform_filter, mode reflect
+    p = np.pad(frame, (pad, pad), mode='symmetric')
+    h, w = frame.shape
+    f = sum(p[i:i + h, j:j + w] for i in range(box) for j in range(box))
     return np.unravel_index(np.argmax(f), f.shape)
 
 
