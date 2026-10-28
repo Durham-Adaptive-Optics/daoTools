@@ -1042,6 +1042,133 @@ int_fast8_t daoToolsLeakyModalIntegratorDouble(double* command, int nbVal, doubl
     return DAO_SUCCESS;
 }
 
+int_fast8_t daoToolsPolInit(daoToolsPolHistory* h, int nbVal, int delay) {
+    memset(h, 0, sizeof *h);
+    if (delay < 1 || nbVal < 1) {
+        daoError("pseudo open loop: delay %d and %d values, at least 1 each\n", delay, nbVal);
+        return DAO_ERROR;
+    }
+    h->command = calloc((size_t)(delay + 1) * nbVal, sizeof(float));
+    if (h->command == NULL) {
+        return DAO_ERROR;
+    }
+    h->nbVal = nbVal;
+    h->delay = delay;
+    return DAO_SUCCESS;
+}
+
+void daoToolsPolFree(daoToolsPolHistory* h) {
+    free(h->command);
+    h->command = NULL;
+}
+
+int daoToolsPseudoOpenLoop(daoToolsPolHistory* h, const float* residual, const float* command, float* pol) {
+    int ring = h->delay + 1;
+    memcpy(h->command + (h->frames % ring) * h->nbVal, command, h->nbVal * sizeof(float));
+    h->frames++;
+    if (h->frames <= h->delay) {
+        return 0;
+    }
+    // command(t - delay): the slot after the one just written
+    const float* applied = h->command + (h->frames % ring) * h->nbVal;
+    int pp;
+    for (pp = 0; pp < h->nbVal; pp++) {
+        pol[pp] = residual[pp] - applied[pp];
+    }
+    return 1;
+}
+
+/* The replay of one mode: polMode[nbFrames] contiguous, ring[delay+1] scratch.
+ * command is the opposite of daoToolsLeakyModalIntegrator's output (the turbulence's sign). */
+static double modalGainReplay(const float* polMode, int nbFrames, int delay, double leak, double gain,
+                              int skip, double* ring) {
+    int ringLen = delay + 1;
+    int t;
+    double cost = 0.0;
+    memset(ring, 0, ringLen * sizeof(double));
+    for (t = 0; t < nbFrames; t++) {
+        double residual = polMode[t] - ring[t % ringLen];
+        double next = leak * ring[(t + delay - 1) % ringLen] + gain * residual;
+        if (!(fabs(next) < 1e30)) {    // diverged (or NaN in pol)
+            return INFINITY;
+        }
+        ring[(t + delay) % ringLen] = next;
+        if (t >= skip) {
+            cost += residual * residual;
+        }
+    }
+    return cost / (nbFrames - skip);
+}
+
+/* Copy mode m of pol (frame after frame) into polMode, contiguous. */
+static void modalGainColumn(const float* pol, int nbModes, int nbFrames, int m, float* polMode) {
+    int t;
+    for (t = 0; t < nbFrames; t++) {
+        polMode[t] = pol[(long)t * nbModes + m];
+    }
+}
+
+int_fast8_t daoToolsModalGainCost(const float* pol, int nbModes, int nbFrames, int delay,
+                                  const float* leak, const float* gain, int skip, double* cost) {
+    if (delay < 1 || nbFrames < 3) {
+        return DAO_ERROR;
+    }
+    if (skip > nbFrames / 3) {
+        skip = nbFrames / 3;
+    }
+    float* polMode = malloc(nbFrames * sizeof(float));
+    double* ring = malloc((delay + 1) * sizeof(double));
+    if (polMode == NULL || ring == NULL) {
+        free(polMode);
+        free(ring);
+        return DAO_ERROR;
+    }
+    int m;
+    for (m = 0; m < nbModes; m++) {
+        modalGainColumn(pol, nbModes, nbFrames, m, polMode);
+        cost[m] = modalGainReplay(polMode, nbFrames, delay, leak ? leak[m] : 1.0, gain[m], skip, ring);
+    }
+    free(polMode);
+    free(ring);
+    return DAO_SUCCESS;
+}
+
+int_fast8_t daoToolsModalGainFit(const float* pol, int nbModes, int nbFrames, int delay,
+                                 const float* leak, const float* gains, int nbGains,
+                                 int skip, float* bestGain, double* bestCost) {
+    if (delay < 1 || nbFrames < 3 || nbGains < 1) {
+        return DAO_ERROR;
+    }
+    if (skip > nbFrames / 3) {
+        skip = nbFrames / 3;
+    }
+    float* polMode = malloc(nbFrames * sizeof(float));
+    double* ring = malloc((delay + 1) * sizeof(double));
+    if (polMode == NULL || ring == NULL) {
+        free(polMode);
+        free(ring);
+        return DAO_ERROR;
+    }
+    int m, g;
+    for (m = 0; m < nbModes; m++) {
+        modalGainColumn(pol, nbModes, nbFrames, m, polMode);
+        double best = INFINITY;
+        for (g = 0; g < nbGains; g++) {
+            double c = modalGainReplay(polMode, nbFrames, delay, leak ? leak[m] : 1.0, gains[g], skip, ring);
+            if (c < best) {
+                best = c;
+                bestGain[m] = gains[g];
+            }
+        }
+        if (bestCost != NULL) {
+            bestCost[m] = best;
+        }
+    }
+    free(polMode);
+    free(ring);
+    return DAO_SUCCESS;
+}
+
 /**
  * @brief Compute spot centroids using center-of-mass with thresholding.
  *

@@ -238,6 +238,28 @@ Standalone leaky integrator: accumulates an input SHM stream with configurable g
 
 - ``daoLeakyIntegratorMap.c`` — Per-actuator gain/leak map variant
 
+OMGI: daoPseudoOpenLoop and daoModalGainOptimizer
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The optimized modal gain integrator: ``daoLeakyIntegrator -m`` (one gain per mode), its
+gains fitted while the loop runs. ``daoPseudoOpenLoop`` rebuilds, every frame, what the
+sensor would see with the DM flat, ``pol(t) = residual(t) - command(t - delay)``;
+``daoModalGainOptimizer`` replays, on batches of it, an integrator with the loop delay for
+every mode and every gain tried, and writes the best gain of each mode to the integrator's
+gain SHM. The fit does not depend on the gains the data was taken with; the loop delay
+(``-k``) must be the real one.
+
+.. code-block:: bash
+
+    daoLeakyIntegrator -S <modes> <offset> <command> <loopCmd> <gain> <leak> -m -P -L
+    daoPseudoOpenLoop -S <modes> <command> <pol> -k <delay> -L
+    daoModalGainOptimizer -S <pol> <gain> -k <delay> [-n 1000] [-K <leak>] -L
+
+When the per-mode gains are applied before a scalar integrator (``daoApplyGain -m`` then
+``daoLeakyIntegrator``), write them to ``daoApplyGain``'s gain SHM and pass the scalar
+gain with ``-G``: the gains written are divided by it. ``build/tests/testModalGain`` checks
+both against a closed loop.
+
 daoClock
 ~~~~~~~~
 

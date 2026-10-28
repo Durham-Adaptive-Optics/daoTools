@@ -54,7 +54,8 @@ AO real-time pipeline, operating directly on `dao.shm` `IMAGE`s:
   FFT round trip instead of a shift search; `daoCentroidPws` for pyramid WFS.
 - **Control loop primitives** — `daoToolsLeakyIntegrator`/`Double` and the
   per-mode `daoToolsLeakyModalIntegrator`/`Double`, `daoToolsHighPassFilter`/
-  `Double`, `daoToolsCommandFilter`.
+  `Double`, `daoToolsCommandFilter`; OMGI (optimized modal gain integrator):
+  `daoToolsPseudoOpenLoop`, `daoToolsModalGainCost`/`Fit`.
 - **Pyramid WFS pixel pipelines** — `daoToolsShmExtract`,
   `daoToolsShmSubstractExtract` and its normalized variants
   (`...Norm`, `...NormA`, `...DualNorm`, plus their `...Finalize` companions).
@@ -103,7 +104,7 @@ image simulator (`pwfsImage`). It predates and is separate from the
 | **Pixel calibration** | `daoPixelCalibrate` / `daoPixelCalibratePws`, `daoTakeBg.py` |
 | **SHM utilities** | `daoShmMonitoring` / `daoShmMonitoring1Value`, `daoShm2Fits`, `daoFits2Shm.py`, `daoSnapshot.py`, `daoShmRate.py`, `daoShmSlice` (copy a range of one SHM into another each frame) |
 | **SHM arithmetic** | `daoShmAdd`, `daoShmCombiner`, `daoShmConcatenate` / `daoShmConcatenateFine`, `daoAvgShm` / `daoAvgDoubleShm`, `daoStatShm`, `daoDownsample`, `daoPixelExtract`, `daoApplyGain` |
-| **Loop & filter** | `daoLeakyIntegrator` / `daoLeakyIntegratorMap`, `daoClock`, `daoHighPassFilter`, `daoModesCutoff` / `daoModesCutoffFull`, `daoCommandFilter` |
+| **Loop & filter** | `daoLeakyIntegrator` / `daoLeakyIntegratorMap`, `daoPseudoOpenLoop` + `daoModalGainOptimizer` (OMGI: the modal integrator's gains fitted while the loop runs), `daoClock`, `daoHighPassFilter`, `daoModesCutoff` / `daoModesCutoffFull`, `daoCommandFilter` |
 | **Timing & latency** | `daoTimeDiff`, `daoTimeDiffNCurse`, `daoTimeDiffStat`, `daoSetLatency`, `daoPlotLatency.py` |
 | **Data conversion & I/O** | `daoNpy2Shm.py`, `daoTakeDataCubeFITS.py`, `daoTakeDataCubeNPY.py`, `daoDescrambleOcam2`, `daoDMSend`, `daoRandImageU16Write`, `daoRandWriter` / `daoRandWriterSync` |
 | **Simulation** | `daoReconstructor.py` (Python MVM reference), `daoTurbulenceSimulator.py`, `daoPwfsSimulator.py`, `daoNoisyPsfGenerator.py` |

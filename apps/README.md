@@ -105,6 +105,8 @@ correlation centroiders).
 |---|---|---|---|
 | `daoLeakyIntegrator` | input, offset, loop-state, leak, gain (all control SHMs) | output | `out(t) = leak*out(t-1) + gain*(in - offset)` when the loop-state SHM is non-zero. `-m`: modal (leak/gain are per-mode arrays). The mean of the output is removed (piston) unless `-P` (e.g. a 2-axis tip/tilt command). `-S <in> <offset> <out> <loopCmd> <leak> <gain>` |
 | `daoLeakyIntegratorMap` | same + an actuator map | output | Same, with a map SHM restricting which actuators are integrated. `-S <in> <offset> <out> <loopCmd> <leak> <gain> <map>` |
+| `daoPseudoOpenLoop` | residual, command | pseudo open loop | `pol(t) = residual(t) - command(t - delay)`: what the sensor would see with the DM flat. `residual`: the modes before any gain; `command`: `daoLeakyIntegrator`'s output (waits on it). `-S <residual> <command> <pol> -k <delay>` |
+| `daoModalGainOptimizer` | pseudo open loop | per-mode gain | OMGI: on each batch of `-n` consecutive pol frames, replays an integrator with the loop delay for every mode and gain tried, writes the best gain of each mode (for `daoLeakyIntegrator -m` or `daoApplyGain -m`). Not real time. `-K <leak>`, `-G <loop gain>` (gains written divided by it), `-e <enable>` (0: hold). `-S <pol> <gain> -k <delay>` |
 | `daoClock` | — | clock counter | Increments a SHM counter at a target frequency; other processes trigger off its semaphore. `-S <clock> <freq> <frequency>` |
 | `daoHighPassFilter` | input, cutoff freq, sample rate, enable | output | Per-pixel temporal high-pass. `-S <in> <out> <fc> <fps> <ena>` |
 | `daoModesCutoff` / `daoModesCutoffFull` | modes | modes (cutoff applied) | Zeroes modes above a cutoff index. `-S <modes> <modesCutoff>` |
