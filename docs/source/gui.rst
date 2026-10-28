@@ -82,6 +82,26 @@ Features:
 UI defined in ``daoDmCtrl.ui`` (Qt Designer).
 
 
+daoFastAndFuriousCtrl
+---------------------
+
+Runs the Fast & Furious focal-plane wavefront sensing (``daoFastAndFurious.py``):
+
+.. code-block:: bash
+
+    python daoFastAndFuriousCtrl.py -i <camera> -o <output> -z <M2A> -m <dmMap>
+
+- Build the basis, calibrate, start / stop the loop; each step runs
+  ``daoFastAndFurious.py`` as a subprocess, its output in the log
+- Gain, leak and hold applied live through control SHMs (``<prefix>Gain``,
+  ``<prefix>Leak``, ``<prefix>Enable``, default prefix ``/tmp/ff``)
+- A test aberration put on a spare DM channel through M2A (Apply / Clear)
+- PSF around the calibrated centre, the Strehl proxy of each iteration, the correction's
+  pupil phase
+- Files (basis, calibration, final theta) in the work directory (``-w``, default
+  ``$DAODATA/fastAndFurious``); the settings are remembered between sessions
+
+
 daoDmDisp / daoDmDispNoMap
 ---------------------------
 
