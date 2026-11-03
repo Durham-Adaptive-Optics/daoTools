@@ -47,7 +47,8 @@ AO real-time pipeline, operating directly on `dao.shm` `IMAGE`s:
 - **Pixel calibration** — `daoToolsShmCalibrate`/`64` (dark-subtract + flat-field,
   float and double precision), `daoToolsShmCalibratePws` (pyramid WFS variant).
 - **Centroiding** — `daoCentroidSpots` (windowed center-of-gravity),
-  `daoCentroidSpotsRelative`/`RelativeRef` (differential centroiding),
+  `daoCentroidSpotsRelative`/`RelativeRef` (differential centroiding;
+  `daoCentroidSpotsRelativeFast`: the same results bit for bit, about 3.4x faster),
   `daoCentroidSpotsCorrelation` (windowed correlation search) and, when FFTW
   is available, its FFT-based counterpart (`src/c/daoToolsCorrFFT.c`,
   `include/daoToolsCorrFFT.h`) which searches the whole sub-aperture via one
@@ -70,6 +71,10 @@ AO real-time pipeline, operating directly on `dao.shm` `IMAGE`s:
   command line), `daoToolsShmOpen` (`daoShmOpen` exiting with an error when the
   SHM cannot be opened), `daoToolsInsertShmNamePrefixN` (derived SHM names with
   a buffer size). Name buffers are `DAO_SHM_NAME_LEN` bytes (`dao.h`).
+
+- **CPU stage plugins** — `daoCpuRegisterStage` / `daoCpuFindStage`
+  (`include/daoCpuStages.h`): stage types written outside daoTools, run by
+  `daoCpuPipeline` (see [CPU pipeline](#cpu-pipeline) below).
 
 Most `apps/*.c` binaries call straight into this library, add SHM
 attach/argument-parsing/real-time-loop boilerplate, and nothing else — the
@@ -100,7 +105,7 @@ image simulator (`pwfsImage`). It predates and is separate from the
 |---|---|
 | **Wavefront sensing & centroiding** | `daoComputeCentroid` (core Shack-Hartmann COG) and its `Pws` / `Relative` / `RelativeRef` / `Correlation` / `CorrelationFFT` variants, `daoComputeCentroids.py` / `daoComputeCentroidsSlow.py` (Python reference), `daoComputeIntensityPws`, `daoPrepCentroidLut.py`, `daoPrepPwfs.py` |
 | **Matrix-vector multiply** | `daoMvM` (CPU, needs BLAS), `daoMvMGPU` (CUDA; uses GPU SHMs in place), `daoMvM.py` (Python reference) |
-| **GPU pipeline** | `daoGpuPipeline` (a chain of GPU stages in one process, one CUDA graph per frame, or one process per stage with `-s`) |
+| **Pipelines** | `daoGpuPipeline` (a chain of GPU stages in one process, one CUDA graph per frame, or one process per stage with `-s`), `daoCpuPipeline` (the same configuration on the CPU, one thread, the libdaoTools functions of the apps, optional workers and plugins) |
 | **Pixel calibration** | `daoPixelCalibrate` / `daoPixelCalibratePws`, `daoTakeBg.py` |
 | **SHM utilities** | `daoShmMonitoring` / `daoShmMonitoring1Value`, `daoShm2Fits`, `daoFits2Shm.py`, `daoSnapshot.py`, `daoShmRate.py`, `daoShmSlice` (copy a range of one SHM into another each frame) |
 | **SHM arithmetic** | `daoShmAdd`, `daoShmCombiner`, `daoShmConcatenate` / `daoShmConcatenateFine`, `daoAvgShm` / `daoAvgDoubleShm`, `daoStatShm`, `daoDownsample`, `daoPixelExtract`, `daoApplyGain` |
@@ -243,6 +248,21 @@ No new platform support is added or removed here -- it only changes how the
 - **Windows**: unaffected either way -- `sched_setscheduler` has no Windows
   equivalent and this codebase was never built/run there.
 
+### Setting up a host for a real-time loop
+
+`docs/source/realtime.rst` covers the rest, with what each step gave on one
+host: locked memory, GPU clocks, one core per real-time process, isolated CPUs,
+interrupts, idle states, real-time throttling. The scripts in `scripts/`:
+
+- `daoRtCheck [-c <cpus>]` reports how the host is set up for the loop CPUs
+  (changes nothing);
+- `daoToolSetCap` gives the real-time binaries the capabilities for
+  `SCHED_FIFO` and `mlockall` (an alternative to `limits.conf`);
+- `daoGpuClocks` sets GPU persistence, locked clocks and the power limit
+  (`-n` dry run, `-u` undo, `-q` query);
+- `daoRtPin` (sourced by start scripts) places each process on its core:
+  `dao_rt_pin`, `dao_rt_cpu`, `dao_rt_core`, `dao_other_pin`.
+
 # DM display
 
 `daoDmDisp.py` lays out the channel displays followed by the combined command
@@ -290,7 +310,21 @@ RAM (tmpfs, e.g. `/dev/shm`) so the GPU can use them in place. The outputs are
 published, and by default timestamped, at the end of the frame; `-T` (or
 `stageTimestamps: true`) timestamps each one when its data was ready on the GPU,
 to measure the latency of each stage, for about 10 µs more per frame. Stages,
-configuration and options: `docs/source/gpu_pipeline.rst`.
+configuration and options: `docs/source/gpu_pipeline.rst`. Large parameters
+(a new reconstructor) can be uploaded in the background while the loop runs
+(`paramUpload: async`) instead of the frame waiting for the copy.
+
+# CPU pipeline
+
+`daoCpuPipeline -c <config.yaml> -L` runs the same configuration on the CPU, in
+one process and one thread: each stage calls the libdaoTools function of its
+application, on the same host SHMs, with the same results bit for bit, but
+without a semaphore wake-up between stages. `-W` spins on the trigger, `-C`
+pins the loop thread, `-w <cpus>` splits the centroiders and the MVM over
+worker threads (still bit for bit), and `plugins:` loads stage types written
+outside daoTools (`include/daoCpuStages.h`). On a small Shack-Hartmann chain it
+is faster than three separate processes and than `daoGpuPipeline`; see
+`docs/source/cpu_pipeline.rst`.
 
 See [the migration regression tests](tests/README.md) for the exact rename
 mapping, before/after numerical checks, and validation limits.

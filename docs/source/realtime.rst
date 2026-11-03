@@ -16,6 +16,11 @@ percentiles (99.9 %, 99.99 %), not at the average: the average hardly moves.
 ``daoRtCheck [-c <cpus>]`` reports how the host is set up for the loop CPUs
 (everything on this page) and changes nothing.
 
+The same applies to :doc:`cpu_pipeline`: its ``-C`` pins the loop thread only;
+its workers (``-w``) spin and need a core each; keep its BLAS to one thread
+(``-N 1``, the default) unless the threads have cores of their own, or the
+kernel's real-time throttling stalls the loop for tens of ms.
+
 .. _rt-priority:
 
 Real-time priority and locked memory

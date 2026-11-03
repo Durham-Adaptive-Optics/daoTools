@@ -14,6 +14,9 @@ Built only when CUDA is found (``daoGpuPipeline`` also needs yaml-cpp); see
 Source: ``apps/daoGpuPipeline.cpp``, ``include/daoGpuStages.h``,
 ``src/gpu/daoGpuStages.cu`` (``libdaoToolsGpu``).
 
+The same configuration also runs on the CPU, with ``daoCpuPipeline``
+(:doc:`cpu_pipeline`); for setting up the host, see :doc:`realtime`.
+
 
 How it works
 ------------
