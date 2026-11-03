@@ -6,6 +6,12 @@
 # since file capabilities live on the binary's inode and are lost when it is
 # replaced.
 #
+# A binary with file capabilities runs in secure mode: the loader ignores
+# LD_LIBRARY_PATH, so $DAOROOT/lib must be known to ldconfig (a file in
+# /etc/ld.so.conf.d/ listing it, then ldconfig), or the binary no longer starts.
+# Without setcap, an rtprio and memlock limit for the user
+# (/etc/security/limits.conf) gives the same.
+#
 # Usage: sudo ./daoToolSetCap
 
 set -e
@@ -18,7 +24,13 @@ fi
 
 : "${DAOROOT:?DAOROOT is not set}"
 
-BINARIES="daoMvM daoMvMGPU daoDescrambleOcam2"
+BINARIES="daoMvM daoMvMGPU daoDescrambleOcam2 daoGpuPipeline"
+
+if ! ldconfig -p | grep -q "libdao.so.0 "; then
+    echo "Warning: libdao.so.0 is not in the ldconfig cache: with capabilities, these"
+    echo "binaries ignore LD_LIBRARY_PATH and will not find it. List $DAOROOT/lib in"
+    echo "/etc/ld.so.conf.d/dao.conf and run ldconfig."
+fi
 
 for bin in $BINARIES; do
     path="$DAOROOT/bin/$bin"
