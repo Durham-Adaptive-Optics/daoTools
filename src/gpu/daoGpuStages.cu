@@ -14,6 +14,11 @@
 #include <linux/magic.h>
 #include "daoGpuStages.h"
 
+/* dao.h's daoLogLevel is a private copy in each source file (left at 0 here), which
+ * daoSetLogLevel (daoGpuPipeline -d) does not reach: this library's messages follow
+ * libdao's level instead. */
+#define daoLogLevel daoGetLogLevel()
+
 /* ============================================================== helpers */
 static size_t elemSize(uint8_t atype)
 {
