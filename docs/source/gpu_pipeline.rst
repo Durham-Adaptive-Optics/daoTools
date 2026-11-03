@@ -35,6 +35,10 @@ How it works
   SHM to be in RAM, i.e. on a ``tmpfs`` filesystem (``/dev/shm``, or ``/tmp``
   when it is mounted as tmpfs); otherwise the pipeline copies the SHM each
   frame and says so at start-up. See the daoBase GPU SHM documentation.
+  Mapping pays off when a stage reads a small part of the SHM; a stage that
+  reads all of it is faster with ``hostAccess: copy`` (one DMA transfer instead
+  of many small PCIe reads): on a 160x160 uint16 camera frame calibrated by
+  ``pixelCalibrate``, the frame's latency went from 30.6 to 23.5 µs (median).
 - **Parameter SHMs** (flat, background, matrices, gains, references,
   thresholds, masks) stay host SHMs: a stage uploads them again between two
   frames when their ``cnt0`` changes, so they can be updated live.
@@ -171,7 +175,9 @@ Running
   develop and tune stage by stage before running it as one process. Several
   processes on one GPU need NVIDIA MPS (daoBase's ``daoGpuMps start``), or each
   hand-over costs about 100 µs.
-- ``-C <cpu>`` pins the loop to a CPU core.
+- ``-C <cpu>`` pins the loop thread to a CPU core (the process's other threads,
+  CUDA's, keep its CPUs: see :ref:`rt-core-layout` for placing the whole chain,
+  and :doc:`realtime` for the rest of the host setup).
 - ``-T`` turns on the stage timestamps (as ``stageTimestamps: true``), see
   below.
 - ``-W`` waits for the trigger by **spinning** on its ``cnt0`` instead of a

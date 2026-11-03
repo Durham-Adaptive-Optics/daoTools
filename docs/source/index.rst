@@ -127,6 +127,7 @@ daoTools Documentation
 
    apps
    gpu_pipeline
+   realtime
    gui
 
 .. toctree::
