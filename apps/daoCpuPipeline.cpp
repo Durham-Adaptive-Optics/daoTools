@@ -21,7 +21,11 @@
  *
  * Configuration: the daoGpuPipeline one (see daoGpuPipeline.cpp), host SHMs only;
  * device, hostAccess and stageTimestamps are ignored (each output is timestamped
- * when published, i.e. when its data is ready), plugins (GPU stages) are refused.
+ * when published, i.e. when its data is ready).
+ *   plugins: [/path/to/libmyStages.so]  # CPU stage plugins (daoCpuStages.h): each exports
+ *                                      # daoCpuPluginRegister(), which registers its stage
+ *                                      # types; a stage of such a type runs on the loop
+ *                                      # thread, its output published by the pipeline
  *   trigger: {shm: /tmp/shIm.im.shm}  # sem: N, wait: spin (as -W), as daoGpuPipeline
  *   blasThreads: 1                     # mvm: BLAS threads (as -N; default 1, 0: the library's
  *                                      # default). More threads are real time too and spin
@@ -67,6 +71,7 @@
  * silent stage is not run (as in daoGpuPipeline).
  */
 #include <yaml-cpp/yaml.h>
+#include <dlfcn.h>
 #include <cblas.h>
 #include <pthread.h>
 #include <sched.h>
@@ -86,6 +91,7 @@
 extern "C" {
 #include "daoTools.h"      /* C header without extern "C" guards */
 }
+#include "daoCpuStages.h"
 #ifdef DAO_CPU_PIPELINE_FFT                         /* libdaoTools built with FFTW */
 #include "daoToolsCorrFFT.h"
 #endif
@@ -372,8 +378,108 @@ static int partsOf(Pipeline &p, const YAML::Node &a)
 
 typedef std::shared_ptr<std::function<void(int, int)>> Job;
 
+/* ---------------------------------------------------------------- plugins */
+/* A plugin stage's arguments (daoCpuStageArgs): its YAML keys, the pipeline's SHMs. */
+struct PluginArgs {
+    Pipeline *p;
+    YAML::Node node;
+    std::map<std::string, std::string> values;       // keeps the returned strings alive
+};
+
+static const char *pluginValue(void *ctx, const char *key)
+{
+    PluginArgs *a = (PluginArgs *) ctx;
+    if (!key || !a->node[key])
+        return nullptr;
+    std::string v = a->node[key].IsScalar() ? a->node[key].as<std::string>() : YAML::Dump(a->node[key]);
+    return (a->values[key] = v).c_str();
+}
+
+static IMAGE *pluginShm(void *ctx, const char *key)
+{
+    const char *name = pluginValue(ctx, key);
+    try {
+        return name ? ((PluginArgs *) ctx)->p->shm(name) : nullptr;
+    } catch (const std::exception &e) {
+        daoError("%s\n", e.what());
+        return nullptr;
+    }
+}
+
+/* plugins: [..]: each library registers its stage types */
+static void loadPlugins(const YAML::Node &cfg)
+{
+    if (!cfg["plugins"])
+        return;
+    for (const auto &item : cfg["plugins"]) {
+        std::string path = item.as<std::string>();
+        void *h = dlopen(path.c_str(), RTLD_NOW | RTLD_GLOBAL);
+        if (!h)
+            throw std::runtime_error("plugin " + path + ": " + dlerror());
+        auto reg = (void (*)(void)) dlsym(h, "daoCpuPluginRegister");
+        if (!reg)
+            throw std::runtime_error("plugin " + path + ": no daoCpuPluginRegister() (a daoGpuPipeline plugin?)");
+        reg();
+        daoInfo("plugin %s loaded\n", path.c_str());
+    }
+}
+
+/* A stage of a registered type: its factory says what it reads and writes and does;
+ * the pipeline publishes its output. */
+static Stage pluginStage(Pipeline &p, const std::string &type, const YAML::Node &a, daoCpuStageFactory factory)
+{
+    PluginArgs pa{&p, a, {}};
+    daoCpuStageArgs args{DAO_CPU_STAGE_API, type.c_str(), &pa, pluginValue, pluginShm};
+    daoCpuStageDesc d;
+    memset(&d, 0, sizeof d);
+    if (factory(&args, &d) != 0)
+        throw std::runtime_error(type + ": could not be created");
+    if (!d.in || !d.out || !d.run)
+        throw std::runtime_error(type + ": its factory gave no in, out or run");
+    Stage s;
+    s.type = type;
+    s.in = d.in;
+    s.out = d.out;
+    s.run = [d]() {
+        int r = d.run(d.self);
+        if (r < 0)
+            return -1;
+        if (r == 0)
+            return 0;
+        if (d.cnt2FromIn)
+            d.out->md[0].cnt2 = d.in->md[0].cnt2;
+        daoShmSetDataPartFinalize(d.out);
+        return 1;
+    };
+    if (d.post)
+        s.post = [d]() { d.post(d.self); };
+    if (d.destroy)
+        s.destroy = [d]() { d.destroy(d.self); };
+    return s;
+}
+
+static bool builtIn(const std::string &type)
+{
+    static const char *const types[] = {
+        "pixelCalibrate", "pixelExtract", "pixelSubstractExtract", "centroid", "centroidRelative",
+        "centroidRelativeRef", "centroidCorrelation", "centroidCorrelationFFT", "centroidWindows", "mvm",
+        "applyGain", "leakyIntegrator", "slice",
+        // daoGpuPipeline's, not here yet (a clear message below)
+        "calIntensity", "calIntensityNorm", "pixelSubstractExtractNorm", "pixelSubstractExtractNormImage",
+        "descrambleOcam2"};
+    for (const char *t : types)
+        if (type == t)
+            return true;
+    return false;
+}
+
 static Stage makeStage(Pipeline &p, const std::string &type, const YAML::Node &a)
 {
+    if (!builtIn(type)) {                            // built-in types first, then the plugins'
+        if (daoCpuStageFactory factory = daoCpuFindStage(type.c_str()))
+            return pluginStage(p, type, a, factory);
+        throw std::runtime_error("unknown stage type '" + type + "' (a plugin missing under plugins:?)");
+    }
     Workers *W = &p.workers;
     auto shm = [&](const char *key) { return p.shm(need(a, key, type)); };
     auto optShm = [&](const char *key) { return a[key] ? shm(key) : (IMAGE *) nullptr; };
@@ -787,8 +893,7 @@ static Stage makeStage(Pipeline &p, const std::string &type, const YAML::Node &a
 
 static void build(Pipeline &p, const YAML::Node &cfg)
 {
-    if (cfg["plugins"])
-        throw std::runtime_error("plugins are GPU stages: daoGpuPipeline only");
+    loadPlugins(cfg);
     for (const char *k : {"device", "hostAccess", "stageTimestamps"})
         if (cfg[k])
             daoInfo("%s: ignored (daoGpuPipeline only)\n", k);
@@ -971,7 +1076,8 @@ static void help(const char *argv0)
 {
     printf("usage: %s -c <config.yaml> [-C <cpu>] [-W] [-w <cpus>] [-N <n>] [-p] [-d <level>] -L\n"
            "  -h  display this message and exit\n"
-           "  -c  pipeline configuration (see the header of daoCpuPipeline.cpp)\n"
+           "  -c  pipeline configuration (see the header of daoCpuPipeline.cpp);\n"
+           "      plugins: CPU stage plugins (daoCpuStages.h)\n"
            "  -C  pin the loop thread to this CPU core\n"
            "  -W  wait for the trigger by polling its cnt0, not on a semaphore\n"
            "      (also trigger: {..., wait: spin})\n"

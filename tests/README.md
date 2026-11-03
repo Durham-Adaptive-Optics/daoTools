@@ -136,6 +136,11 @@ Built when CUDA is found (see `docs/source/gpu_pipeline.rst`).
   `--workers 4,6,8,10` splits the pipelines' stages over workers on those CPUs.
   `bench_sh_pipeline.py` also times `daoCpuPipeline` (`--modes`,
   `--blas-threads`, `--spin`, `--workers`, `--cpu`).
+- `test_cpu_plugin.py` loads the example CPU plugin (`cpuPluginExample.c`,
+  stage type `scale`) in `daoCpuPipeline` between two built-in stages: its
+  output and `cnt2`, the stage after it, a silent frame (nothing published
+  downstream), and the error for a library without `daoCpuPluginRegister`
+  (a GPU plugin).
 - `bench_param_upload.py` rewrites a 200 MB matrix while `daoGpuPipeline` runs,
   with `paramUpload: sync` and `async`: the latencies around each reload, and
   which matrix every output came from (exit code: outputs from no matrix, or

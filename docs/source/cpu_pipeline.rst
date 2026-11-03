@@ -66,8 +66,9 @@ applications take. Not yet: ``calIntensity``, ``calIntensityNorm``,
 ``pixelSubstractExtractNorm``, ``pixelSubstractExtractNormImage``,
 ``descrambleOcam2``; run their applications next to the pipeline.
 
-``device``, ``hostAccess`` and ``stageTimestamps`` are ignored; ``plugins``
-(GPU stages) are refused, and so are GPU SHMs.
+``device``, ``hostAccess`` and ``stageTimestamps`` are ignored, and GPU SHMs are
+refused. ``plugins`` lists CPU stage plugins (see :ref:`cpu-pipeline-plugins`):
+``daoGpuPipeline``'s plugins are GPU stages, which this pipeline cannot run.
 
 
 Running
@@ -120,6 +121,47 @@ A stage with much to compute can be split over several cores:
   spinning on other performance cores slowed the loop's core (its turbo clock
   drops with the number of busy cores) by about 5 µs on a 21 µs chain; on the
   efficiency cores, not at all. Measure where to put them.
+
+
+.. _cpu-pipeline-plugins:
+
+Plugins
+-------
+
+Stage types written outside daoTools are loaded from shared libraries
+(``include/daoCpuStages.h``):
+
+.. code-block:: yaml
+
+    plugins: [/path/to/libmyStages.so]
+    stages:
+      - pixelCalibrate: {...}
+      - myStage: {in: /tmp/a.im.shm, out: /tmp/b.im.shm, gain: /tmp/g.im.shm}
+
+- The library exports ``void daoCpuPluginRegister(void)``, which registers its
+  stage types: ``daoCpuRegisterStage("myStage", factory)``. It links with
+  ``-ldaoTools -ldao`` (the registry is in libdaoTools).
+- For each stage of that type, the pipeline calls the factory with the stage's
+  arguments (``daoCpuStageArgs``): ``value(key)``, its YAML value as text, and
+  ``shm(key)``, the SHM that key names, opened by the pipeline (the same handle
+  the other stages get for that name). The factory fills a ``daoCpuStageDesc``:
+  ``in`` and ``out`` (from ``shm``), ``cnt2FromIn``, ``run`` and, optional,
+  ``post`` and ``destroy``.
+- ``run`` computes one frame, on the loop thread, in the stage's place in the
+  list. It returns 1: the pipeline publishes ``out`` (``cnt0``, timestamp,
+  semaphores, ``cnt2`` from ``in`` if asked); 0: silent, nothing published and
+  the stages reading ``out`` not run; < 0: an error, the rest of the frame
+  skipped. ``post`` runs after the whole frame, ``destroy`` at exit. The stage
+  is timed by ``-p`` like the others; it is not split over the workers.
+- ``in`` decides which stage feeds this one (the last one before it writing
+  that SHM): it must come from ``shm``. The stage may open, close and reopen
+  its own parameter SHMs (e.g. with a new shape).
+- The built-in stage types keep their names: a plugin cannot replace them. A
+  library without ``daoCpuPluginRegister`` (a ``daoGpuPipeline`` plugin) is
+  refused.
+
+``tests/cpuPluginExample.c`` is an example (``scale``: out = k * in), used by
+``tests/test_cpu_plugin.py``.
 
 
 Measured
