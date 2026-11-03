@@ -1,0 +1,100 @@
+#!/bin/bash
+#
+# daoGpuClocks -- set the GPUs up for a real-time loop: persistence mode on, GPU
+# clocks locked at their maximum, power limit at its maximum.
+#
+# A GPU left to itself lowers its clocks between frames and takes time to raise
+# them again, and unloads its driver state when no process uses it: the first
+# kernels of a frame then run slower, a latency jitter of tens of us. With the
+# clocks locked the GPU runs at full speed all the time (it still slows down if
+# it gets too hot: watch its temperature, nvidia-smi -q -d PERFORMANCE).
+#
+#   -i <gpu>   only this GPU (index, as nvidia-smi -L); default: every GPU
+#   -n         dry run: print the nvidia-smi commands, change nothing
+#   -u         undo: clocks back to their defaults (-rgc, -rac), power limit back
+#              to its default; persistence mode is left on (nvidia-smi -pm 0
+#              turns it off)
+#   -q         print the current state and exit
+#
+# The clocks are locked with nvidia-smi -lgc (Volta and later) at clocks.max.sm,
+# or, where -lgc is not supported, with the application clocks (-ac) at their
+# maximum. The settings last until the next reboot or driver reload: run this
+# from the start script of the loop, or a systemd unit.
+#
+# Needs root (except -n and -q).
+#
+# Usage: sudo daoGpuClocks [-i <gpu>] [-n] [-u]
+#        daoGpuClocks -q
+
+gpus=""
+dry=0
+undo=0
+query=0
+while getopts "i:nuqh" opt; do
+    case $opt in
+        i) gpus=$OPTARG ;;
+        n) dry=1 ;;
+        u) undo=1 ;;
+        q) query=1 ;;
+        h) sed -n '3,27p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) sed -n '3,27p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+    esac
+done
+
+if ! command -v nvidia-smi >/dev/null 2>&1; then
+    echo "daoGpuClocks: nvidia-smi not found"
+    exit 1
+fi
+[ -z "$gpus" ] && gpus=$(nvidia-smi --query-gpu=index --format=csv,noheader)
+
+if [ $query -eq 1 ]; then
+    nvidia-smi -i "$(echo $gpus | tr ' ' ,)" --format=csv \
+        --query-gpu=index,name,persistence_mode,clocks.sm,clocks.max.sm,clocks.mem,clocks.max.mem,power.limit,power.default_limit,power.max_limit,temperature.gpu
+    exit 0
+fi
+
+if [ $dry -eq 0 ] && [ "$(id -u)" -ne 0 ]; then
+    echo "daoGpuClocks must be run as root (or -n for a dry run), e.g.:"
+    echo "  sudo $0 $*"
+    exit 1
+fi
+
+# run (or print) one nvidia-smi command; its output on failure
+smi() {
+    echo "nvidia-smi $*"
+    [ $dry -eq 1 ] && return 0
+    local out
+    out=$(nvidia-smi "$@" 2>&1) && return 0
+    echo "  $out" | head -3
+    return 1
+}
+
+value() {                       # value <gpu> <query field>: the number, without its unit
+    nvidia-smi -i "$1" --query-gpu="$2" --format=csv,noheader,nounits | tr -d ' '
+}
+
+status=0
+for g in $gpus; do
+    echo "GPU $g: $(nvidia-smi -i "$g" --query-gpu=name --format=csv,noheader)"
+    if [ $undo -eq 1 ]; then
+        smi -i "$g" -rgc || true
+        smi -i "$g" -rac || true
+        pl=$(value "$g" power.default_limit)
+        [[ "$pl" =~ ^[0-9.]+$ ]] && { smi -i "$g" -pl "$pl" || status=1; }
+        continue
+    fi
+    smi -i "$g" -pm 1 || status=1
+    sm=$(value "$g" clocks.max.sm)
+    if ! smi -i "$g" -lgc "$sm,$sm"; then
+        mem=$(value "$g" clocks.max.mem)
+        echo "  -lgc not supported: application clocks instead"
+        smi -i "$g" -ac "$mem,$sm" || status=1
+    fi
+    pl=$(value "$g" power.max_limit)
+    if [[ "$pl" =~ ^[0-9.]+$ ]]; then
+        smi -i "$g" -pl "$pl" || status=1
+    else
+        echo "  power limit not settable on this GPU"
+    fi
+done
+exit $status
