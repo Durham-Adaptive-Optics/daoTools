@@ -41,7 +41,20 @@ How it works
   ``pixelCalibrate``, the frame's latency went from 30.6 to 23.5 µs (median).
 - **Parameter SHMs** (flat, background, matrices, gains, references,
   thresholds, masks) stay host SHMs: a stage uploads them again between two
-  frames when their ``cnt0`` changes, so they can be updated live.
+  frames when their ``cnt0`` changes, so they can be updated live. The frame
+  waits for that copy: about 12 ms for a 200 MB matrix, 10 frames at 800 Hz.
+  With ``paramUpload: async``, a parameter of 1 MB or more is copied in the
+  background instead (its SHM pinned, into a second GPU buffer) while the
+  frames go on with the old values; the first frame after the copy uses the
+  new ones, and the graph is captured again then (about 0.1 ms, once). The copy
+  goes 1 MB at a time, so that a frame's own copies (the camera frame with
+  ``hostAccess: copy``) never wait for more than one piece. It takes twice the
+  GPU memory for those parameters; smaller ones are still copied between
+  frames. With a 200 MB matrix rewritten while the frames ran
+  (``tests/bench_param_upload.py``, a 0.5 ms frame): the frame of each reload
+  took 12.9 ms in sync mode, none over 2.1 ms in async mode; the frames during
+  a background copy took 10 % longer, and the new matrix was used about 180
+  frames after it was written.
 
 
 Configuration
@@ -56,6 +69,7 @@ A YAML file lists the device, the trigger and the stages, in order:
                                             # wait: spin polls its cnt0 instead, see Running)
     hostAccess: map                         # host SHMs: map (zero copy, default) or copy
     stageTimestamps: false                  # true: each output timestamped when its data was ready
+    paramUpload: sync                       # async: large parameters uploaded in the background
     stages:
       - calIntensityNorm: {in: /tmp/wfsIm.im.shm, ff: /tmp/wfsFf.im.shm, bg: /tmp/wfsBg.im.shm,
                            ref: /tmp/wfsRef.im.shm, validPix: /tmp/wfsPup.im.shm,

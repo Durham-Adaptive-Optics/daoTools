@@ -136,5 +136,9 @@ Built when CUDA is found (see `docs/source/gpu_pipeline.rst`).
   `--workers 4,6,8,10` splits the pipelines' stages over workers on those CPUs.
   `bench_sh_pipeline.py` also times `daoCpuPipeline` (`--modes`,
   `--blas-threads`, `--spin`, `--workers`, `--cpu`).
+- `bench_param_upload.py` rewrites a 200 MB matrix while `daoGpuPipeline` runs,
+  with `paramUpload: sync` and `async`: the latencies around each reload, and
+  which matrix every output came from (exit code: outputs from no matrix, or
+  from an older one than the frame before).
 - `bench_mvm_gpu.py` (with `benchMvMGPU.cu`) times `daoMvMGPU` with host SHMs
   and GPU SHMs.

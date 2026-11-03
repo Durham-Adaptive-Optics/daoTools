@@ -104,40 +104,141 @@ extern "C" void daoGpuPortDownload(daoGpuPort *p, cudaStream_t s)
         cudaMemcpyAsync(p->shm->array.V, p->d, p->bytes, cudaMemcpyDeviceToHost, s);
 }
 
-/* A parameter SHM kept on the GPU: uploaded again when its cnt0 changes. */
+/* A parameter SHM kept on the GPU: uploaded again when its cnt0 changes.
+ *
+ * By default between two frames, the frame waiting for the copy (12 ms for 200 MB).
+ * With daoGpuSetParamUpload(1, minBytes), a parameter of at least minBytes is copied
+ * in the background instead: its SHM is pinned, the copy goes on a stream of its
+ * own into a second buffer while the frames go on, and the buffers are swapped
+ * between two frames once it is done. The copy goes 1 MB at a time, the next piece
+ * queued (at the next update) once the last one is done: a frame's own copies (the
+ * camera frame with hostAccess: copy) share the copy engine, and wait at most for
+ * one piece (tens of us) instead of the whole copy. The kernels then read another buffer: the
+ * stage's update says DAO_GPU_RECAPTURE (daoGpuStageUpdate), the runner captures
+ * its graph again (about 0.1 ms, once). */
+static int gAsyncUpload = 0;
+static size_t gAsyncMinBytes = (size_t) 1 << 20;
+static const size_t gAsyncChunk = (size_t) 1 << 20;  /* bytes queued at a time */
+static cudaStream_t gUploadStream = NULL;            /* the background copies, lowest priority */
+static unsigned long gParamSwaps = 0;                 /* buffers swapped: a graph to capture again */
+
+extern "C" void daoGpuSetParamUpload(int async, size_t minBytes)
+{
+    gAsyncUpload = async;
+    gAsyncMinBytes = minBytes;
+}
+
 struct Param {
     IMAGE *im;
-    uint64_t c0;
-    void *d;
+    uint64_t c0;                                      /* the cnt0 of what d holds */
+    void *d;                                          /* what the kernels read */
     size_t bytes;
+    int loaded;                                       /* d holds a copy (the first one is synchronous) */
+    /* background upload */
+    int async, pinned;
+    void *next;                                       /* the buffer being filled */
+    cudaEvent_t done;
+    int copying;
+    uint64_t pending;                                 /* the cnt0 being copied */
+    size_t queued;                                    /* bytes of it queued so far */
 };
+
+/* queue the next piece of the background copy */
+static int paramQueue(Param *p)
+{
+    size_t n = p->bytes - p->queued < gAsyncChunk ? p->bytes - p->queued : gAsyncChunk;
+    if (cudaMemcpyAsync((char *) p->next + p->queued, (const char *) p->im->array.V + p->queued, n,
+                        cudaMemcpyHostToDevice, gUploadStream) != cudaSuccess
+        || cudaEventRecord(p->done, gUploadStream) != cudaSuccess) {
+        daoError("upload %s: %s\n", p->im->name, cudaGetErrorString(cudaGetLastError()));
+        return -1;
+    }
+    p->queued += n;
+    p->copying = 1;
+    return 0;
+}
 
 static int paramInit(Param *p, IMAGE *im, size_t bytes)
 {
+    memset(p, 0, sizeof *p);
     p->im = im;
     p->bytes = bytes;
-    p->c0 = cnt0(im) - 1;                            /* force the first upload */
     CUDA_OK(cudaMalloc(&p->d, bytes), "cudaMalloc");
+    if (!gAsyncUpload || bytes < gAsyncMinBytes)
+        return 1;
+    cudaError_t e = cudaHostRegister(im->array.V, bytes, cudaHostRegisterPortable);
+    if (e != cudaSuccess && e != cudaErrorHostMemoryAlreadyRegistered) {
+        cudaGetLastError();
+        daoWarning("%s: cannot pin it: uploaded between frames (the frame waits)\n", im->name);
+        return 1;
+    }
+    cudaGetLastError();
+    p->pinned = e == cudaSuccess;                     /* ours to unpin */
+    if (!gUploadStream) {
+        int lo = 0, hi = 0;
+        cudaDeviceGetStreamPriorityRange(&lo, &hi);
+        CUDA_OK(cudaStreamCreateWithPriority(&gUploadStream, cudaStreamNonBlocking, lo), "upload stream");
+    }
+    CUDA_OK(cudaMalloc(&p->next, bytes), "cudaMalloc");
+    CUDA_OK(cudaEventCreateWithFlags(&p->done, cudaEventDisableTiming), "cudaEventCreate");
+    p->async = 1;
+    daoInfo("%s (%.1f MB): uploaded in the background when it changes\n", im->name, bytes / 1048576.0);
     return 1;
 }
 
-/* 1: reloaded, 0: unchanged, -1: error */
+/* 1: reloaded (d holds the new values), 0: unchanged (or still copying), -1: error */
 static int paramSync(Param *p)
 {
-    if (p->c0 == cnt0(p->im))
+    if (p->async && p->copying) {
+        cudaError_t e = cudaEventQuery(p->done);
+        if (e == cudaErrorNotReady)
+            return 0;
+        p->copying = 0;
+        if (e != cudaSuccess) {
+            daoError("upload %s: %s\n", p->im->name, cudaGetErrorString(cudaGetLastError()));
+            return -1;
+        }
+        if (cnt0(p->im) == p->pending && p->queued < p->bytes)
+            return paramQueue(p);                     /* the next piece */
+        if (cnt0(p->im) == p->pending) {              /* not written again meanwhile: use it */
+            void *t = p->d;
+            p->d = p->next;
+            p->next = t;
+            p->c0 = p->pending;
+            gParamSwaps++;
+            daoInfo("%s: new values in use\n", p->im->name);
+            return 1;
+        }                                             /* written again during the copy: once more */
+    }
+    if (p->loaded && p->c0 == cnt0(p->im))
         return 0;
+    if (p->async && p->loaded) {                      /* a new copy, from its start */
+        p->pending = cnt0(p->im);
+        p->queued = 0;
+        return paramQueue(p);
+    }
     p->c0 = cnt0(p->im);
     if (cudaMemcpy(p->d, p->im->array.V, p->bytes, cudaMemcpyHostToDevice) != cudaSuccess) {
         daoError("upload %s: %s\n", p->im->name, cudaGetErrorString(cudaGetLastError()));
         return -1;
     }
+    p->loaded = 1;
     return 1;
 }
 
 static void paramFree(Param *p)
 {
+    if (p->copying)
+        cudaEventSynchronize(p->done);
     cudaFree(p->d);
     p->d = NULL;
+    if (p->async) {
+        cudaFree(p->next);
+        cudaEventDestroy(p->done);
+        if (p->pinned)
+            cudaHostUnregister(p->im->array.V);
+        cudaGetLastError();
+    }
 }
 
 static bool isFloat(const daoGpuPort *p) { return p->shm->md[0].atype == _DATATYPE_FLOAT; }
@@ -246,7 +347,12 @@ extern "C" long long daoGpuStageOutputCnt2(const daoGpuStage *s)
 {
     return s->cnt2FromIn ? (long long) s->in->shm->md[0].cnt2 : -1;
 }
-extern "C" int daoGpuStageUpdate(daoGpuStage *s, cudaStream_t st) { return s->update(s, st); }
+extern "C" int daoGpuStageUpdate(daoGpuStage *s, cudaStream_t st)
+{
+    unsigned long swaps = gParamSwaps;
+    int r = s->update(s, st);
+    return r >= 0 && gParamSwaps != swaps ? DAO_GPU_RECAPTURE : r;   /* its kernels read new buffers */
+}
 extern "C" int daoGpuStageRun(daoGpuStage *s, cudaStream_t st) { return s->run(s, st); }
 extern "C" int daoGpuStagePost(daoGpuStage *s, cudaStream_t st) { return s->post ? s->post(s, st) : 1; }
 extern "C" void daoGpuStageDestroy(daoGpuStage *s)
@@ -589,9 +695,8 @@ extern "C" daoGpuStage *daoGpuSliceCreate(daoGpuPort *in, long offset, long coun
 struct MvmStage {
     daoGpuStage base;
     IMAGE *matrix;
-    uint64_t c0;
     int nIn, nOut;
-    float *dM;
+    Param M;
     cublasHandle_t h;
 };
 
@@ -599,13 +704,10 @@ static int mvmUpdate(daoGpuStage *b, cudaStream_t st)
 {
     MvmStage *m = (MvmStage *) b;
     (void) st;
-    if (m->c0 == cnt0(m->matrix))
-        return 0;
-    CUDA_OK(cudaMemcpy(m->dM, m->matrix->array.F, (size_t) m->nIn * m->nOut * sizeof(float),
-                       cudaMemcpyHostToDevice), "upload matrix");
-    m->c0 = cnt0(m->matrix);
-    daoInfo("mvm: matrix %s (re)loaded\n", m->matrix->name);
-    return 1;
+    int r = paramSync(&m->M);
+    if (r > 0)
+        daoInfo("mvm: matrix %s (re)loaded\n", m->matrix->name);
+    return r;
 }
 
 static int mvmRun(daoGpuStage *b, cudaStream_t st)
@@ -613,7 +715,7 @@ static int mvmRun(daoGpuStage *b, cudaStream_t st)
     MvmStage *m = (MvmStage *) b;
     const float one = 1.f, zero = 0.f;
     cublasSetStream(m->h, st);
-    return cublasSgemv(m->h, CUBLAS_OP_T, m->nIn, m->nOut, &one, m->dM, m->nIn,
+    return cublasSgemv(m->h, CUBLAS_OP_T, m->nIn, m->nOut, &one, (const float *) m->M.d, m->nIn,
                        (const float *) b->in->d, 1, &zero, (float *) b->out->d, 1)
            == CUBLAS_STATUS_SUCCESS;
 }
@@ -622,7 +724,7 @@ static void mvmDestroy(daoGpuStage *b)
 {
     MvmStage *m = (MvmStage *) b;
     cublasDestroy(m->h);
-    cudaFree(m->dM);
+    paramFree(&m->M);
     free(m);
 }
 
@@ -651,10 +753,12 @@ extern "C" daoGpuStage *daoGpuMvmCreate(daoGpuPort *in, IMAGE *matrix, daoGpuPor
         free(m);
         return NULL;
     }
-    cudaMalloc(&m->dM, (size_t) m->nIn * m->nOut * sizeof(float));
+    if (!paramInit(&m->M, matrix, (size_t) m->nIn * m->nOut * sizeof(float))) {
+        free(m);
+        return NULL;
+    }
     cublasCreate(&m->h);
     cublasSetPointerMode(m->h, CUBLAS_POINTER_MODE_HOST);
-    m->c0 = cnt0(matrix) - 1;
     daoInfo("mvm: %s (%d x %d) . %s -> %s\n", matrix->name, m->nOut, m->nIn, in->shm->name, out->shm->name);
     return &m->base;
 }
