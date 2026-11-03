@@ -128,5 +128,13 @@ Built when CUDA is found (see `docs/source/gpu_pipeline.rst`).
   writes each frame and times its output), and check the outputs.
   `--shm-dir` sets the SHM folder (tmpfs for zero copy); the pyramid benchmark
   also runs with and without MPS.
+- `test_cpu_pipeline.py` runs two chains (calibration, centroids, slice, MVM,
+  gain, integrator; extractions, centroiders reading the frame) as their daoTools
+  apps and as `daoCpuPipeline`, on two copies of the SHMs, and checks every
+  output and its `cnt2` for the same bits, frame by frame, also while the flat
+  changes and the integrator is disabled, in open loop and closed again;
+  `--workers 4,6,8,10` splits the pipelines' stages over workers on those CPUs.
+  `bench_sh_pipeline.py` also times `daoCpuPipeline` (`--modes`,
+  `--blas-threads`, `--spin`, `--workers`, `--cpu`).
 - `bench_mvm_gpu.py` (with `benchMvMGPU.cu`) times `daoMvMGPU` with host SHMs
   and GPU SHMs.
