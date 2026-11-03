@@ -82,7 +82,7 @@ static void ShowHelp(void)
     printf("                    lpCmdEnable.im.shm)\n");
     printf("   -L               start the real-time loop (after the other options)\n");
     printf("   usage:\n");
-    printf("   -S <in SHM> <offset SHM> <out SHM> <loopCmd SHM> <leak SHM> <gain SHM> [-s <semNb>] [-c <clipping>] [-e <enableShm>] -m -L\n");
+    printf("   -S <in SHM> <offset SHM> <out SHM> <loopCmd SHM> <gain SHM> <leak SHM> [-s <semNb>] [-c <clipping>] [-e <enableShm>] -m -L\n");
     printf("\n");
     printf("   -e lets an external SHM enable/disable the integrator independently of\n");
     printf("   the loopCmd open/close state: when the enable SHM reads 0, the output is\n");
