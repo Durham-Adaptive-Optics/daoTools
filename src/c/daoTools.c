@@ -27,6 +27,22 @@
 #endif
 #include "daoTools.h"
 
+/* Strict IEEE floating point for a region of functions, whatever the flags of
+ * the library (-Ofast / -ffast-math): no reassociation, no reciprocal, no fused
+ * multiply-add, so the results follow the source order exactly and are the same
+ * on every CPU (amd64, arm64). Used by daoCentroidSpotsRelative and
+ * daoCentroidSpotsRelativeFast, which must give identical results. */
+#if defined(__clang__)
+#define DAO_STRICT_FP_BEGIN _Pragma("float_control(precise, on, push)") _Pragma("STDC FP_CONTRACT OFF")
+#define DAO_STRICT_FP_END   _Pragma("float_control(pop)")
+#elif defined(__GNUC__)
+#define DAO_STRICT_FP_BEGIN _Pragma("GCC push_options") _Pragma("GCC optimize(\"no-fast-math\", \"fp-contract=off\", \"no-trapping-math\", \"no-math-errno\")")
+#define DAO_STRICT_FP_END   _Pragma("GCC pop_options")
+#else
+#define DAO_STRICT_FP_BEGIN
+#define DAO_STRICT_FP_END
+#endif
+
 /* @brief Extracts the local name from a shared memory absolute path
  * (format: '/.../<localName>.im.shm'). Pass NULL for 'localName' with
  * valid 'len' to query required buffer size; then re-invoke with a
@@ -1340,6 +1356,7 @@ int_fast8_t daoCentroidSpots(float* image,
  *
  * @return DAO_SUCCESS on success
  */
+DAO_STRICT_FP_BEGIN
 int_fast8_t daoCentroidSpotsRelative(float* image,
     int imageSizeX,
     int imageSizeY,
@@ -1441,6 +1458,172 @@ int_fast8_t daoCentroidSpotsRelative(float* image,
 
     return DAO_SUCCESS;
 }
+
+/**
+ * @brief daoCentroidSpotsRelative, faster: same arguments, same outputs, bit for bit.
+ *
+ * Computes exactly what daoCentroidSpotsRelative computes (same box
+ * round(ref) +- boxSize/2, local maximum, relative threshold, moments, minimum
+ * flux, outputs and SoA layouts: see it), with the same floating-point
+ * operations in the same order for each subaperture (x outer, y inner), so the
+ * results are identical to the last bit -- as long as the compiler keeps that
+ * order in both functions: both are compiled in a DAO_STRICT_FP region (no
+ * reassociation, no reciprocal, no fused multiply-add), whatever the flags of
+ * the library (-Ofast), on amd64 and arm64 alike.
+ *
+ * Faster because it processes DAO_CENTROID_LANES subapertures at a time (8 with
+ * AVX, else 4: one vector register): their
+ * boxes are copied once into a small tile laid out [pixel][lane], then both
+ * passes (local max, moments) run on contiguous lanes, independent of each
+ * other, that the compiler vectorises (SSE / AVX / AVX-512 on amd64, NEON / SVE
+ * on arm64). Plain portable C, no intrinsics: correct on any CPU, vectorised or
+ * not. Boxes larger than DAO_CENTROID_MAX_BOX px use daoCentroidSpotsRelative.
+ */
+/* lanes = one vector register of floats: 8 with AVX (amd64), 4 otherwise (SSE, arm64 NEON) */
+#if defined(__AVX__)
+#define DAO_CENTROID_LANES 8
+#else
+#define DAO_CENTROID_LANES 4
+#endif
+#define DAO_CENTROID_MAX_BOX 32
+int_fast8_t daoCentroidSpotsRelativeFast(float* image,
+    int imageSizeX,
+    int imageSizeY,
+    float* ref,
+    int boxSize,
+    int nSuba,
+    float threshold,
+    float minFlux,
+    float* cent) {
+    daoTrace("\n");
+    enum { NL = DAO_CENTROID_LANES };
+    const int span = 2 * (boxSize / 2);   /* x2 - x1, as daoCentroidSpotsRelative: box of span + 1 px */
+    const int w = span + 1;
+    if (w > DAO_CENTROID_MAX_BOX)
+        return daoCentroidSpotsRelative(image, imageSizeX, imageSizeY, ref, boxSize, nSuba, threshold, minFlux, cent);
+
+    const float* refX = ref;
+    const float* refY = ref + nSuba;
+    float* cxOut = cent;
+    float* cyOut = cent + nSuba;
+    float* fluxOut = cent + 2 * nSuba;
+    float* wOut = cent + 3 * nSuba;
+
+    /* the boxes of one group, [x offset][y offset][lane] (x outer, y inner: the order of the sums) */
+    float tile[DAO_CENTROID_MAX_BOX * DAO_CENTROID_MAX_BOX][NL] __attribute__((aligned(64)));
+
+    for (int s0 = 0; s0 < nSuba; s0 += NL) {
+        const int nl = (nSuba - s0 < NL) ? nSuba - s0 : NL;
+        float rx[NL], ry[NL], localMax[NL], relativeThreshold[NL], xf[NL], yf[NL];
+        float xNumerator[NL], yNumerator[NL], denominator[NL], flux[NL];
+        int x1[NL], y1[NL];
+
+        /* Lanes past the last subaperture repeat the last one (valid memory,
+         * results not stored). Bounds computed as in daoCentroidSpotsRelative. */
+        for (int l = 0; l < NL; l++) {
+            const int s = s0 + (l < nl ? l : nl - 1);
+            rx[l] = refX[s];
+            ry[l] = refY[s];
+            x1[l] = (unsigned int)roundf(rx[l]) - boxSize / 2;
+            y1[l] = (unsigned int)roundf(ry[l]) - boxSize / 2;
+        }
+        for (int dx = 0; dx < w; dx++)
+            for (int dy = 0; dy < w; dy++)
+                for (int l = 0; l < NL; l++)
+                    tile[dx * w + dy][l] = image[(y1[l] + dy) * imageSizeX + x1[l] + dx];
+
+#if defined(__GNUC__)
+        /* GCC / clang vector extensions (portable C, not intrinsics): AVX on
+         * amd64, NEON on arm64, scalar elsewhere. Element-wise IEEE operations
+         * only, nothing across lanes: each lane does exactly the sequence below. */
+        typedef float vlf __attribute__((vector_size(4 * DAO_CENTROID_LANES)));
+        typedef int   vli __attribute__((vector_size(4 * DAO_CENTROID_LANES)));
+        vlf lm = { 0 };
+        for (int k = 0; k < w * w; k++) {
+            vlf px;
+            memcpy(&px, tile[k], sizeof(px));
+            vli gt = px > lm;                                   /* max: pixel > localMax ? pixel : localMax */
+            lm = (vlf)(((vli)px & gt) | ((vli)lm & ~gt));
+        }
+        const vlf thr = threshold * lm;
+        vlf vflux = { 0 }, vden = { 0 }, vxn = { 0 }, vyn = { 0 };
+        vli vx1, vy1;
+        memcpy(&vx1, x1, sizeof(vx1));
+        memcpy(&vy1, y1, sizeof(vy1));
+        for (int dx = 0; dx < w; dx++) {
+            const vlf vxf = __builtin_convertvector(vx1 + dx, vlf);
+            for (int dy = 0; dy < w; dy++) {
+                const vlf vyf = __builtin_convertvector(vy1 + dy, vlf);
+                vlf px;
+                memcpy(&px, tile[dx * w + dy], sizeof(px));
+                vflux += px;
+                vli below = px < thr;                           /* pixel < thr ? 0 : pixel - thr */
+                vlf pt = (vlf)((vli)(px - thr) & ~below);
+                vden += pt;
+                vxn += pt * vxf;
+                vyn += pt * vyf;
+            }
+        }
+        memcpy(flux, &vflux, sizeof(vflux));
+        memcpy(denominator, &vden, sizeof(vden));
+        memcpy(xNumerator, &vxn, sizeof(vxn));
+        memcpy(yNumerator, &vyn, sizeof(vyn));
+        (void)localMax; (void)relativeThreshold; (void)xf; (void)yf;
+#else
+        /* Local max of the raw pixels (the order does not matter for a max) */
+        for (int l = 0; l < NL; l++)
+            localMax[l] = 0.0f;
+        for (int k = 0; k < w * w; k++)
+            for (int l = 0; l < NL; l++)
+                localMax[l] = (tile[k][l] > localMax[l]) ? tile[k][l] : localMax[l];
+
+        for (int l = 0; l < NL; l++) {
+            relativeThreshold[l] = threshold * localMax[l];
+            xNumerator[l] = 0.0f;
+            yNumerator[l] = 0.0f;
+            denominator[l] = 0.0f;
+            flux[l] = 0.0f;
+        }
+
+        /* Moments: for each lane, the operations of daoCentroidSpotsRelative in
+         * its order (x outer, y inner). Its weight and denominator are the same
+         * sum of the same values: one accumulator here, stored in both. */
+        for (int dx = 0; dx < w; dx++) {
+            for (int l = 0; l < NL; l++)
+                xf[l] = (float)(x1[l] + dx);
+            for (int dy = 0; dy < w; dy++) {
+                const float* pix = tile[dx * w + dy];
+                for (int l = 0; l < NL; l++) {
+                    yf[l] = (float)(y1[l] + dy);
+                    float pixel = pix[l];
+                    flux[l] += pixel;
+                    pixel = (pixel < relativeThreshold[l]) ? 0.0f : pixel - relativeThreshold[l];
+                    denominator[l] += pixel;
+                    xNumerator[l] += pixel * xf[l];
+                    yNumerator[l] += pixel * yf[l];
+                }
+            }
+        }
+#endif
+
+        for (int l = 0; l < nl; l++) {
+            const int s = s0 + l;
+            if (denominator[l] != 0.0f && !(minFlux > 0.0f && flux[l] < minFlux)) {
+                cxOut[s] = xNumerator[l] / denominator[l] - rx[l];
+                cyOut[s] = yNumerator[l] / denominator[l] - ry[l];
+            }
+            else {
+                cxOut[s] = 0.0f;
+                cyOut[s] = 0.0f;
+            }
+            fluxOut[s] = flux[l];
+            wOut[s] = denominator[l];
+        }
+    }
+
+    return DAO_SUCCESS;
+}
+DAO_STRICT_FP_END
 
 /**
  * @brief Compute centroids relative to reference positions using a *relative* threshold.

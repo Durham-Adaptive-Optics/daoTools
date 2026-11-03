@@ -128,7 +128,8 @@ static int realTimeLoop()
             centroidShm[0].md[0].cnt2 = inShm[0].md[0].cnt2;
 
             //usleep(10000);
-            daoCentroidSpotsRelative(inShm[0].array.F,
+            // same outputs as daoCentroidSpotsRelative, bit for bit, ~3x faster
+            daoCentroidSpotsRelativeFast(inShm[0].array.F,
                              inShm[0].md[0].size[1],
                              inShm[0].md[0].size[0],
                              refShm[0].array.F,
