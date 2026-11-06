@@ -30,6 +30,97 @@ SHM Latency tab
 Pick any two SHMs from the existing file list, then Start: this launches the real ``daoTimeDiff`` binary in its own named ``tmux`` session (it waits on a semaphore of its own, so it never takes frames from the pipeline's readers). The tab does not re-measure anything itself — it purely reads ``daoTimeDiff``'s own ``Array``/``Avg``/``Rms`` SHMs and renders a small scatter plot (with AVG/RMS reference lines) plus a histogram. Stop kills the tmux session.
 
 
+daoShmWebViewer
+---------------
+
+The SHM viewer in a web browser: from the RTC itself, or from any machine that can reach it.
+
+.. code-block:: bash
+
+    daoShmWebViewer.py                        # http://localhost:8090, the SHMs of /tmp, read-only
+    daoShmWebViewer.py --write                # also set / load / create SHMs from the page
+    daoShmWebViewer.py --dir /tmp --dir /dev/shm/loop --port 8091
+    ssh -L 8090:localhost:8090 rtc            # from a laptop, then http://localhost:8090
+
+- **Several SHMs at once**, side by side: click an SHM to show it in the selected panel,
+  Ctrl-click (or **+**) to open it in another. ↑ ↓ in the list step through the SHMs.
+  The panels and their settings are kept in the browser, and ``?open=shmA,shmB`` opens given
+  SHMs (a link to share).
+- **Views**: image (colour maps, linear / sqrt / log / asinh, range min–max, percentile, ±max,
+  manual or locked, rotation and flips, zoom and pan, the values drawn in the pixels once
+  zoomed in), line or bars for vectors, a table (editable with ``--write``), a big number for
+  a scalar. Cubes: a slice; complex SHMs: modulus, real part, imaginary part or phase.
+- **Processing in the page**: average of the last N frames, difference to a reference frame.
+- **Strip** under each view: the trend of the mean, std, min / max, sum, a picked pixel, or the
+  frames skipped; or the histogram of the frame.
+- **Status**: cnt0, the SHM's update rate, the frames shown, the delay from the write to the
+  read, min / max / mean / std. An SHM that stopped updating is flagged.
+- **Inspector** (ⓘ): every metadata field, the semaphores and the processes waiting on them
+  (as the Qt viewer's tab), and the frame saved as ``.npy``, ``.fits``, ``.csv`` or ``.png``;
+  with ``--write``: set all to a value, random values, load a ``.npy`` / ``.fits`` file.
+- **Quick record** (inspector, Record): N consecutive frames with their ``cnt0``, ``cnt2`` and
+  timestamps, downloaded as ``.npy``, ``.npz`` or ``.fits`` (or saved on the server with
+  ``--write``). Missed frames show as gaps in ``cnt0`` and are counted. A CPU SHM wakes the
+  recorder with a semaphore of its own, released at the end; a GPU SHM's host copy is polled.
+  At most ``--record-max`` MB (2048).
+- **Tools** (header, or ``o``):
+
+  - *Latency*: ``daoTimeDiff -S`` between two SHMs in its own tmux session, the same session
+    name as daoShmViewer's tab (``daoLatency_<a>_<b>``), its AVG / RMS, scatter and histogram;
+    the sessions started by either viewer are listed.
+  - *Snapshots*: ``daoSnapshot.py create`` / ``load``, files in ``--snapshot-dir``
+    (``$DAODATA/daoSnapshots``), downloadable. Only files already on the server can be loaded.
+  - *tmux*: the sessions, the output of each pane (read-only, refreshed every second), the
+    ``ssh -t <host> tmux attach -t <session>`` line; with ``--write`` and a display on the
+    server, a terminal attached to it, as the Qt viewer's Connect.
+  - *DAQ*: the daoShmViewer DAQ tab: root storage, SHM and file sources with their options,
+    YAML import / export, Start / Finish (and Recover) through ``DAQClient``.
+
+The server (Python, Tornado) maps the SHM files read-only: it takes no semaphore, never writes
+an SHM it only shows, and never attaches a GPU SHM (it reads its ``/tmp`` host copy when the
+SHM keeps one, ``DAO_GPU_MIRROR``). Each panel gets a frame when ``cnt0`` changes, at most at
+its fps (20 by default), and only once the browser took the previous one: a slow link drops
+frames, it never slows the loop. Frames larger than 4 M elements are decimated. Writes go
+through libdao, as the Qt viewer's.
+
+``--write`` allows every change from the page: SHMs (set, load, create), processes (latency
+measurements, snapshot loads, DAQ sessions, terminals) and files (snapshots, saved recordings).
+Without it the page only reads: views, metadata, semaphores, recordings downloaded, tmux output,
+DAQ state.
+
+It listens on localhost by default. ``--host 0.0.0.0`` opens it to the network; add
+``--token <secret>`` (then ``http://rtc:8090/?token=<secret>`` once). The page loads nothing
+from the internet.
+
+
+daoShmTui
+---------
+
+The SHM viewer in a terminal (Rust, ratatui, ``gui/daoShmTui``): over ssh, in tmux, without a
+display.
+
+.. code-block:: bash
+
+    daoShmTui                         # the SHMs of /tmp
+    daoShmTui -d /tmp -d /dev/shm/loop shIm
+
+The list of SHMs (shape, type, update rate; filter, sort) next to the selected one: an image in
+half blocks (two pixels per character cell, true colour or 256 colours) with colour maps,
+scales, ranges, rotation, flips, zoom on a cursor and the values drawn in large pixels; a line or
+bars for vectors, a large number for a scalar, a table; cube slices and complex parts; averages
+and a reference frame; a trend or histogram strip; the metadata and the semaphores' readers
+(``i``); the frame saved as ``.npy`` (``w``). Tabs ``1``–``7``, as daoShmViewer's: view,
+semaphores (who waits, PID and command), quick record (``.npy`` / ``.npz`` with cnt0, cnt2,
+timestamps), SHM-to-SHM latency (``daoTimeDiff`` in tmux), snapshots (``daoSnapshot.py``), tmux
+sessions (output, attach) and DAQ (``daoDAQCli.py``). ``--write``: set, random, edit a value, load
+a ``.npy``, create an SHM (through libdao, loaded at run time), start measurements, load
+snapshots, run DAQ sessions. ``waf build install`` builds and installs it when
+``cargo`` and ``rustc`` >= 1.75 are found (``waf configure --without-rust``: never); a failed cargo
+build only warns. Without ``--write``, read-only as daoShmWebViewer: the files are mapped
+read-only, no semaphore is taken, libdao is not loaded. ``?`` lists the keys;
+``gui/daoShmTui/README.md`` has the rest.
+
+
 SHM Pipeline and Process Monitor
 --------------------------------
 

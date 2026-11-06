@@ -32,6 +32,8 @@ def cuda_hook(self, node):
 
 def options(opt):
 	opt.load('compiler_c compiler_cxx gnu_dirs')
+	opt.add_option('--without-rust', dest='without_rust', default=False, action='store_true',
+	               help='do not build the Rust tools (daoShmTui) even when cargo is found')
 
 def configure(conf):
 	conf.load('compiler_c compiler_cxx gnu_dirs')
@@ -140,6 +142,28 @@ int main() {
 	except:
 		print("FFTW not found (need both fftw3f and fftw3): skipping FFT correlation centroider.")
 
+	# Rust tools (gui/<name>/Cargo.toml: daoShmTui), built by cargo when it is found and recent
+	# enough; never required.
+	conf.env.RUST_AVAILABLE = False
+	if not conf.options.without_rust:
+		cargo = conf.find_program('cargo', var='CARGO', mandatory=False)
+		rustc = conf.find_program('rustc', var='RUSTC', mandatory=False)
+		if cargo and rustc:
+			try:
+				out = conf.cmd_and_log(conf.env.RUSTC + ['--version'], quiet=Context.BOTH)   # "rustc 1.75.0 (...)"
+				ver = tuple(int(x) for x in out.split()[1].split('-')[0].split('.')[:2])
+				ok = ver >= RUST_MIN
+				conf.msg('Checking for rustc >= %d.%d' % RUST_MIN, '.'.join(map(str, ver)), color='GREEN' if ok else 'YELLOW')
+				conf.env.RUST_AVAILABLE = ok
+			except Exception as e:
+				conf.msg('Checking the rustc version', str(e), color='YELLOW')
+		if conf.env.RUST_AVAILABLE:
+			print("Rust found: building daoShmTui (gui/daoShmTui).")
+		else:
+			print("Rust (cargo, rustc >= %d.%d) not found: skipping daoShmTui." % RUST_MIN)
+	else:
+		print("--without-rust: skipping daoShmTui.")
+
 def build(bld):
 	bld.env.DEFINES=['WAF=1']
 	bld.recurse('src')
@@ -171,6 +195,10 @@ def build(bld):
 	files = glob.glob('gui/*.py')
 	for file in files:
 		bld.install_files(bld.env.PREFIX+'/bin', file, chmod=0o0755, relative_trick=False)
+	# daoShmWebViewer.py's page
+	files = glob.glob('gui/web/daoShmViewer/*')
+	for file in files:
+		bld.install_files(bld.env.PREFIX+'/data/web/daoShmViewer', file, relative_trick=False)
 	# config
 	files = glob.glob('config/daq/*.yaml')
 	for file in files:
@@ -182,6 +210,51 @@ def build(bld):
 	files = glob.glob('scripts/*')
 	for file in files:
 		bld.install_files(bld.env.PREFIX+'/bin', file, chmod=0o0755, relative_trick=False)
+	# Rust tools: cargo builds them (its own incremental build: nothing to do when nothing
+	# changed); a failed cargo build (offline, crates never fetched) warns, it does not stop
+	# the rest. Installed after the build, when built.
+	if bld.env.RUST_AVAILABLE and bld.cmd in ('build', 'install'):
+		for name in RUST_TOOLS:
+			bld(rule=cargo_build, name=name, always=True, rust_tool=name)
+		if bld.cmd == 'install':
+			bld.add_post_fun(install_rust_tools)
+
+RUST_MIN = (1, 75)              # gui/<name>/Cargo.toml rust-version
+RUST_TOOLS = ['daoShmTui']      # gui/<name>, binary <name>
+
+def rust_target_dir(ctx):
+	return os.path.join(ctx.bldnode.abspath(), 'cargo')
+
+def cargo_build(task):
+	gen = task.generator
+	name = gen.rust_tool
+	manifest = os.path.join(gen.bld.srcnode.abspath(), 'gui', name, 'Cargo.toml')
+	cmd = gen.env.CARGO + ['build', '--release', '--locked', '--manifest-path', manifest,
+	                       '--target-dir', rust_target_dir(gen.bld)]
+	try:
+		gen.bld.cmd_and_log(cmd, quiet=Context.BOTH, output=Context.BOTH)
+	except Exception as e:
+		tail = '\n'.join((getattr(e, 'stderr', '') or str(e)).strip().splitlines()[-6:])
+		Logs.warn('%s not built (cargo failed; offline? build it later with: cd gui/%s && '
+		          'cargo build --release --locked):\n%s' % (name, name, tail))
+	return 0
+
+def install_rust_tools(ctx):
+	import shutil
+	from waflib import Options
+	bindir = os.path.join(ctx.env.PREFIX, 'bin')
+	if Options.options.destdir:
+		bindir = os.path.join(Options.options.destdir, bindir.lstrip(os.sep))
+	for name in RUST_TOOLS:
+		src = os.path.join(rust_target_dir(ctx), 'release', name)
+		if not os.path.isfile(src):
+			continue                    # not built (said why during the build)
+		os.makedirs(bindir, exist_ok=True)
+		dst = os.path.join(bindir, name)
+		shutil.copy2(src, dst + '.tmp')
+		os.chmod(dst + '.tmp', 0o755)
+		os.replace(dst + '.tmp', dst)   # replaces a running binary safely
+		Logs.info('+ install %s (from %s)' % (dst, src))
 
 def make_telemetry_dir(ctx):
 	from waflib import Options
