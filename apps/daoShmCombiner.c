@@ -24,7 +24,6 @@
 #include <semaphore.h>
 #include <sys/time.h>
 #include <termios.h>
-#include <ncurses.h>
 
 // DAO header
 #include "dao.h" 

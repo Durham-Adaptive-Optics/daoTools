@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DAO SHM Viewer</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%233a7bd5'/%3E%3Crect x='3' y='3' width='4' height='4' fill='%23fff'/%3E%3Crect x='9' y='3' width='4' height='4' fill='%23fff' opacity='.6'/%3E%3Crect x='3' y='9' width='4' height='4' fill='%23fff' opacity='.6'/%3E%3Crect x='9' y='9' width='4' height='4' fill='%23fff' opacity='.3'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header id="top">
+  <div class="brand">DAO SHM Viewer</div>
+  <span id="conn" class="pill off">connecting…</span>
+  <span id="hostinfo" class="muted"></span>
+  <span class="spacer"></span>
+  <label class="muted">Layout
+    <select id="layout" title="Panel grid">
+      <option value="auto">auto</option><option value="1">1 column</option><option value="2">2 columns</option>
+      <option value="3">3 columns</option><option value="4">4 columns</option><option value="rows">1 row</option>
+    </select>
+  </label>
+  <button id="btnCreate" hidden title="Create an SHM">Create SHM</button>
+  <button id="btnTools" title="Latency, snapshots, tmux, DAQ (o)">Tools</button>
+  <button id="btnTheme" title="Dark / light">Theme</button>
+  <button id="btnHelp" title="Shortcuts (?)">?</button>
+</header>
+
+<main id="main">
+  <aside id="side">
+    <div class="sidehead">
+      <input id="filter" type="search" placeholder="Filter SHMs  ( / )" autocomplete="off" spellcheck="false">
+    </div>
+    <div id="listHead" class="row head">
+      <span data-sort="name" class="c-name">Name</span>
+      <span data-sort="shape" class="c-shape">Shape</span>
+      <span data-sort="dtype" class="c-dtype">Type</span>
+      <span data-sort="rate" class="c-rate">Hz</span>
+      <span class="c-add"></span>
+    </div>
+    <div id="list" tabindex="0"></div>
+    <div id="listFoot" class="muted"></div>
+  </aside>
+  <div id="resizer" title="Drag to resize"></div>
+
+  <section id="panels">
+    <div id="empty">
+      <h2>No SHM shown</h2>
+      <p>Click an SHM on the left to show it here. <kbd>Ctrl</kbd>-click, or <b>+</b>, opens it in another
+        panel. <kbd>↑</kbd> <kbd>↓</kbd> in the list step through the SHMs in the selected panel.</p>
+      <p class="muted">Wheel: zoom · drag: pan · double-click: reset · click: pick a pixel (its trend below)</p>
+    </div>
+  </section>
+
+  <aside id="inspector" hidden>
+    <div class="insphead">
+      <div class="tabs">
+        <button data-tab="info" class="on">Info</button>
+        <button data-tab="sems">Semaphores</button>
+        <button data-tab="data">Data</button>
+        <button data-tab="rec">Record</button>
+      </div>
+      <button id="inspClose" class="icon" title="Close (i)">✕</button>
+    </div>
+    <div id="inspTitle" class="insptitle"></div>
+    <div id="tab-info" class="tab"></div>
+    <div id="tab-sems" class="tab" hidden></div>
+    <div id="tab-data" class="tab" hidden>
+      <h4>Save the current frame</h4>
+      <div class="btnrow">
+        <button data-dl="npy">.npy</button><button data-dl="fits">.fits</button>
+        <button data-dl="csv">.csv</button><button id="dlPng">.png (as shown)</button>
+      </div>
+      <div id="writeTools">
+        <h4>Write <span class="warn">changes the SHM</span></h4>
+        <div class="form">
+          <label>Set all to <input id="setValue" type="number" value="0" step="any"></label>
+          <button id="btnSetValue">Set</button>
+        </div>
+        <div class="form">
+          <label>Random in <input id="rndMin" type="number" value="0" step="any"></label>
+          <label>to <input id="rndMax" type="number" value="1" step="any"></label>
+          <button id="btnRandom">Set</button>
+        </div>
+        <div class="form">
+          <label>Load .npy / .fits <input id="loadFile" type="file" accept=".npy,.fits,.fit,.fts"></label>
+          <label class="chk"><input id="loadCast" type="checkbox"> convert type</label>
+        </div>
+        <p class="muted">Table view: double-click a cell to edit it.</p>
+      </div>
+      <p id="readOnlyNote" class="muted">The server is read-only: start it with <code>--write</code> to set,
+        load or create SHMs.</p>
+      <div id="dataMsg" class="msg"></div>
+    </div>
+    <div id="tab-rec" class="tab" hidden>
+      <h4>Quick record</h4>
+      <p class="muted">N consecutive frames of this SHM, with their cnt0, cnt2 and timestamps: missed frames
+        show as gaps in cnt0. A CPU SHM wakes the recorder with a semaphore of its own (released at the end);
+        a GPU SHM's host copy is polled.</p>
+      <div class="form">
+        <label>Frames <input id="recN" type="number" min="1" value="100" style="width:90px"></label>
+        <label>Timeout <input id="recTimeout" type="number" min="0.1" step="any" value="5" style="width:56px"> s</label>
+        <button id="recStart">Record</button><button id="recCancel" hidden>Cancel</button>
+      </div>
+      <div id="recBar" class="bar" hidden><div></div></div>
+      <div id="recMsg" class="msg"></div>
+      <div id="recDone" hidden>
+        <div class="btnrow">
+          <button data-rdl="npy" title="the frames">.npy</button>
+          <button data-rdl="npz" title="frames, cnt0, cnt2, timestamp">.npz</button>
+          <button data-rdl="fits" title="frames + a table of cnt0, cnt2, timestamp">.fits</button>
+        </div>
+        <div id="recSaveRow" class="form">
+          <input id="recFile" type="text" style="flex:1; min-width:180px" placeholder="/path/on/server/file.npy (.npz, .fits)">
+          <button id="recSave" title="Save on the server's disk">Save on server</button>
+        </div>
+      </div>
+      <h4>Recordings</h4>
+      <div id="recList" class="muted">none yet</div>
+    </div>
+  </aside>
+
+  <aside id="tools" hidden>
+    <div class="insphead">
+      <div class="tabs">
+        <button data-ttab="lat" class="on">Latency</button>
+        <button data-ttab="snap">Snapshots</button>
+        <button data-ttab="tmux">tmux</button>
+        <button data-ttab="daq">DAQ</button>
+      </div>
+      <button id="toolsClose" class="icon" title="Close">✕</button>
+    </div>
+
+    <div id="ttab-lat" class="tab">
+      <h4>SHM to SHM latency</h4>
+      <p class="muted">Runs <code>daoTimeDiff -S</code> in its own tmux session (the same session as
+        daoShmViewer's tab): it waits on a semaphore of its own, so it never takes frames from the pipeline's
+        readers. Its Avg / Rms / Array SHMs are shown here.</p>
+      <div class="form"><label class="grow">Start <select id="latA"></select></label><button class="icon" data-latpick="latA" title="The selected panel's SHM">◎</button></div>
+      <div class="form"><label class="grow">End <select id="latB"></select></label><button class="icon" data-latpick="latB" title="The selected panel's SHM">◎</button></div>
+      <div class="form">
+        <label>Window (-n) <input id="latN" type="number" min="2" value="100" style="width:80px"></label>
+        <button id="latStart">Start</button>
+      </div>
+      <div id="latMsg" class="msg"></div>
+      <h4>Running</h4>
+      <div id="latList" class="muted">none</div>
+      <div id="latView" hidden>
+        <div id="latStats" class="semsum"></div>
+        <div class="latplots"><canvas id="latScatter"></canvas><canvas id="latHist"></canvas></div>
+        <div class="btnrow"><button id="latShow">Show the Array SHM in a panel</button><button id="latStop">Stop</button></div>
+        <p id="latCmd" class="muted mono"></p>
+      </div>
+    </div>
+
+    <div id="ttab-snap" class="tab" hidden>
+      <h4>Snapshots</h4>
+      <p class="muted"><code>daoSnapshot.py</code>: <b>create</b> saves every SHM of /tmp and the commands of the
+        tmux sessions; <b>load</b> recreates those SHMs (overwriting the current ones) and starts those
+        commands again. Files in <code id="snapDir"></code>.</p>
+      <div class="form">
+        <input id="snapName" type="text" style="flex:1; min-width:160px" placeholder="name (default: a time stamp)">
+        <button id="snapCreate">Create</button>
+      </div>
+      <div id="snapMsg" class="msg"></div>
+      <pre id="snapOut" class="code" hidden></pre>
+      <h4>Files</h4>
+      <div id="snapList" class="muted">none</div>
+    </div>
+
+    <div id="ttab-tmux" class="tab" hidden>
+      <h4>tmux sessions <span class="muted" id="tmuxCount"></span></h4>
+      <div id="tmuxList" class="muted">none</div>
+      <div id="tmuxView" hidden>
+        <div class="form">
+          <b id="tmuxName"></b><select id="tmuxPane" title="Pane"></select>
+          <label class="chk"><input id="tmuxFollow" type="checkbox" checked>follow</label>
+          <span class="spacer"></span>
+          <button id="tmuxTerm" title="Open a terminal attached to it, on the server's display">Terminal</button>
+        </div>
+        <pre id="tmuxOut" class="code term"></pre>
+        <div class="form"><code id="tmuxAttach" class="grow"></code><button id="tmuxCopy">Copy</button></div>
+      </div>
+    </div>
+
+    <div id="ttab-daq" class="tab" hidden>
+      <h4>DAQ <span id="daqState" class="pill">?</span></h4>
+      <div class="form"><label class="grow">Root storage <input id="daqRoot" type="text" style="flex:1"></label></div>
+      <h4>Sources</h4>
+      <div id="daqSources" class="muted">none</div>
+      <div class="form">
+        <select id="daqAddShm" class="grow" title="An SHM"></select><button id="daqAddShmBtn">Add SHM</button>
+      </div>
+      <div class="form">
+        <button id="daqAddPanels" title="Every SHM shown in a panel">Add the panels' SHMs</button>
+      </div>
+      <div class="form">
+        <input id="daqFile" type="text" class="grow" placeholder="/file/on/server"><button id="daqAddFile">Add file</button>
+      </div>
+      <div class="btnrow">
+        <button id="daqClear">Clear</button>
+        <label class="btnlike">Import YAML<input id="daqImport" type="file" accept=".yaml,.yml" hidden></label>
+        <button id="daqExport">Export YAML</button>
+        <span class="spacer"></span>
+        <button id="daqRecover" hidden>Recover</button>
+        <button id="daqGo" class="primary">Start DAQ</button>
+      </div>
+      <div id="daqMsg" class="msg"></div>
+    </div>
+  </aside>
+</main>
+
+<template id="panelTpl">
+  <div class="panel">
+    <div class="ptitle">
+      <span class="dot"></span>
+      <span class="pname"></span>
+      <span class="pinfo muted"></span>
+      <span class="spacer"></span>
+      <button class="icon b-pause" title="Pause (space)">❚❚</button>
+      <button class="icon b-insp" title="Info, semaphores, data (i)">ⓘ</button>
+      <button class="icon b-max" title="Maximize (f)">⤢</button>
+      <button class="icon b-close" title="Close">✕</button>
+    </div>
+    <div class="ptools">
+      <select class="o-mode" title="View">
+        <option value="auto">auto</option><option value="image">image</option><option value="plot">line</option>
+        <option value="bar">bars</option><option value="table">table</option><option value="value">value</option>
+      </select>
+      <span class="g g-img">
+        <select class="o-cmap" title="Colour map (c)"></select>
+        <label class="chk" title="Reverse the colour map"><input type="checkbox" class="o-rev">rev</label>
+        <select class="o-scale" title="Scale">
+          <option value="lin">linear</option><option value="sqrt">sqrt</option><option value="log">log</option>
+          <option value="asinh">asinh</option>
+        </select>
+      </span>
+      <select class="o-range" title="Range (l: lock)">
+        <option value="minmax">min–max</option><option value="p99.9">99.9 %</option><option value="p99.5">99.5 %</option>
+        <option value="p99">99 %</option><option value="p95">95 %</option><option value="sym">±max</option>
+        <option value="manual">manual</option><option value="lock">locked</option>
+      </select>
+      <span class="g g-manual">
+        <input class="o-lo" type="number" step="any" title="Min">
+        <input class="o-hi" type="number" step="any" title="Max">
+      </span>
+      <span class="g g-img">
+        <select class="o-rot" title="Rotate">
+          <option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option>
+        </select>
+        <label class="chk" title="Flip left-right"><input type="checkbox" class="o-fliph">⇋</label>
+        <label class="chk" title="Flip up-down"><input type="checkbox" class="o-flipv">⇵</label>
+      </span>
+      <span class="g g-slice">slice <input class="o-slice" type="number" min="0" value="0"><span class="o-depth muted"></span></span>
+      <span class="g g-cplx"><select class="o-part" title="Complex: part shown">
+        <option value="abs">|z|</option><option value="real">real</option><option value="imag">imag</option><option value="phase">phase</option>
+      </select></span>
+      <label title="Average of the last N frames received">avg <input class="o-avg" type="number" min="1" max="200" value="1"></label>
+      <span class="g">
+        <button class="b-ref" title="Show frame − this frame">ref</button>
+        <button class="b-noref" title="Back to the frames">×ref</button>
+      </span>
+      <select class="o-strip" title="Strip under the view">
+        <option value="off">no strip</option><option value="trend">trend</option><option value="hist">histogram</option>
+      </select>
+      <select class="o-trend g-trend" title="Trend of">
+        <option value="mean">mean</option><option value="std">std</option><option value="minmax">min / mean / max</option>
+        <option value="sum">sum</option><option value="pixel">picked pixel</option><option value="cnt">frames (Δcnt0)</option>
+      </select>
+      <select class="o-fps" title="Most frames per second sent to this view">
+        <option value="2">2 fps</option><option value="5">5 fps</option><option value="10">10 fps</option>
+        <option value="20">20 fps</option><option value="30">30 fps</option><option value="60">60 fps</option>
+      </select>
+    </div>
+    <div class="pbody">
+      <canvas class="cv"></canvas>
+      <div class="cbar"><span class="cb-hi"></span><canvas></canvas><span class="cb-lo"></span></div>
+      <div class="tablewrap" hidden></div>
+      <div class="valuebox" hidden></div>
+      <div class="overlay" hidden></div>
+    </div>
+    <div class="pstrip" hidden><canvas></canvas></div>
+    <div class="pstatus">
+      <span class="s-cnt"></span><span class="s-rate"></span><span class="s-age"></span>
+      <span class="s-stats"></span><span class="spacer"></span><span class="s-cursor"></span>
+    </div>
+  </div>
+</template>
+
+<dialog id="dlgCreate">
+  <form method="dialog">
+    <h3>Create an SHM</h3>
+    <label>Name <input id="cName" required pattern="[A-Za-z0-9_.\-]+" placeholder="myShm"></label>
+    <label>Directory <select id="cDir"></select></label>
+    <label>Shape <input id="cShape" required placeholder="128,128" pattern="\s*\d+(\s*,\s*\d+){0,2}\s*"></label>
+    <label>Type <select id="cType">
+      <option>float32</option><option>float64</option><option>uint8</option><option>int8</option>
+      <option>uint16</option><option>int16</option><option>uint32</option><option>int32</option>
+      <option>uint64</option><option>int64</option><option>complex64</option><option>complex128</option>
+    </select></label>
+    <p id="cMsg" class="msg"></p>
+    <div class="btnrow"><button value="cancel" formnovalidate>Cancel</button><button id="cOk" value="ok">Create</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlgHelp">
+  <form method="dialog">
+    <h3>Shortcuts</h3>
+    <table class="kv">
+      <tr><td><kbd>/</kbd></td><td>filter the SHMs</td></tr>
+      <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>in the list: next / previous SHM in the selected panel</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td>in the list: open in a new panel</td></tr>
+      <tr><td>click, <kbd>Ctrl</kbd>-click</td><td>show in the selected panel, in a new panel</td></tr>
+      <tr><td><kbd>space</kbd></td><td>pause / resume the selected panel</td></tr>
+      <tr><td><kbd>r</kbd></td><td>reset zoom</td></tr>
+      <tr><td><kbd>l</kbd></td><td>lock / unlock the range</td></tr>
+      <tr><td><kbd>c</kbd></td><td>next colour map</td></tr>
+      <tr><td><kbd>t</kbd></td><td>strip: off / trend / histogram</td></tr>
+      <tr><td><kbd>f</kbd></td><td>maximize the panel</td></tr>
+      <tr><td><kbd>i</kbd></td><td>info, semaphores, data, record</td></tr>
+      <tr><td><kbd>o</kbd></td><td>tools: latency, snapshots, tmux, DAQ</td></tr>
+      <tr><td>wheel, drag</td><td>zoom, pan; double-click resets</td></tr>
+      <tr><td>click on image</td><td>pick a pixel (trend: picked pixel); <kbd>Shift</kbd>-click: drop it</td></tr>
+    </table>
+    <p class="muted">Frames are sent when the SHM changes, at most at the panel's fps; a slow link drops
+      frames, it never slows the loop. Hz in the list: the SHM's update rate, measured on the server.</p>
+    <div class="btnrow"><button value="ok">Close</button></div>
+  </form>
+</dialog>
+
+<div id="toast" hidden></div>
+<script src="/static/app.js"></script>
+<script src="/static/tools.js"></script>
+</body>
+</html>
