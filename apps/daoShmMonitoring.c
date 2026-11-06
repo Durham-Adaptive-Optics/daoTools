@@ -11,7 +11,6 @@
 #include <string.h>
 #include <math.h>
 #include <semaphore.h>
-#include <sched.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -22,12 +21,9 @@
 #include <limits.h>
 #include <sys/file.h>
 #include <errno.h>
-#include <sys/mman.h>
-#include <sched.h>
 #include <semaphore.h>
 #include <sys/time.h>
 #include <termios.h>
-#include <pthread.h>
 #include <ncurses.h>
 
 // DAO header
@@ -60,7 +56,7 @@ char shmName[DAO_SHM_NAME_LEN];
 float frequency;
 
 // Thread
-pthread_t controllerThread;
+daoThread *controllerThread;
 int threadIdCtrl = 0;
 
 // termination flag
@@ -155,13 +151,13 @@ static int realTimeLoop()
     fflush(stdout);
 
     int camThreadVal=0;
-    camThreadVal = pthread_create(&controllerThread, NULL, displayRealTimeLoop, (void *)&threadIdCtrl);
+    camThreadVal = daoThreadCreate(&controllerThread, NULL, displayRealTimeLoop, (void *)&threadIdCtrl);
     if (camThreadVal != 0)
     {
         daoError("Cannot create thread, err\n");
         return DAO_ERROR;
     }
-    pthread_join(controllerThread, NULL);
+    daoThreadJoin(controllerThread, NULL);
     daoToolsShmRelease(&shm);
     return DAO_SUCCESS;
 }
@@ -234,7 +230,7 @@ int main(int argc, char **argv)
      */
 {
     // r = seteuid(euid_called); //This goes up to maximum privileges
-    daoToolsSetRtPriority(93); //any number from 0-99; falls back + warns if not permitted
+    daoThreadSetRtPriority(NULL, 93); //any number from 0-99; falls back + warns if not permitted
     // r = seteuid(euid_real);//Go back to normal privileges
 
     sArgv0 = *argv;

@@ -73,10 +73,7 @@
 #include <yaml-cpp/yaml.h>
 #include <dlfcn.h>
 #include <cblas.h>
-#include <pthread.h>
-#include <sched.h>
 #include <signal.h>
-#include <sys/mman.h>
 #include <string.h>
 #include <time.h>
 #include <algorithm>
@@ -152,7 +149,7 @@ struct Stage {
  * spin (no wake-up when the next job comes): each needs a core of its own. A job is
  * f(part, parts), part 0 being the loop thread's. */
 struct Workers {
-    std::vector<pthread_t> threads;
+    std::vector<daoThread *> threads;
     std::vector<int> cpus;
     std::atomic<uint64_t> gen{0};                    // one more per job
     std::atomic<int> done{0};                        // workers done with the current job
@@ -193,15 +190,11 @@ struct Workers {
         threads.resize(cpus.size());
         for (size_t k = 0; k < cpus.size(); k++) {
             args[k] = {this, (int) k + 1};
-            pthread_attr_t attr;
-            pthread_attr_init(&attr);                // inherits the loop's real-time priority
-            cpu_set_t set;
-            CPU_ZERO(&set);
-            CPU_SET(cpus[k], &set);
-            pthread_attr_setaffinity_np(&attr, sizeof set, &set);
-            if (pthread_create(&threads[k], &attr, loop, &args[k]) != 0)
+            daoThreadAttr a = DAO_THREAD_ATTR_DEFAULT;   // inherits the loop's real-time priority
+            a.cpu = cpus[k];                             // pinned from its first instruction
+            a.name = "daoCpuWorker";
+            if (daoThreadCreate(&threads[k], &a, loop, &args[k]) != DAO_SUCCESS)
                 throw std::runtime_error("cannot start the worker on CPU " + std::to_string(cpus[k]));
-            pthread_attr_destroy(&attr);
         }
     }
 
@@ -223,8 +216,8 @@ struct Workers {
     void stop()
     {
         quit = true;
-        for (pthread_t t : threads)
-            pthread_join(t, nullptr);
+        for (daoThread *t : threads)
+            daoThreadJoin(t, nullptr);
         threads.clear();
     }
 };
@@ -949,13 +942,8 @@ static int run(const char *configPath, int cpu, bool spin, int blasThreads, bool
     }
     if (blasThreads < 0)                             // no -N
         blasThreads = cfg["blasThreads"] ? cfg["blasThreads"].as<int>() : 1;
-    if (cpu >= 0) {                                  // the loop thread (BLAS's threads keep the process's CPUs)
-        cpu_set_t set;
-        CPU_ZERO(&set);
-        CPU_SET(cpu, &set);
-        if (pthread_setaffinity_np(pthread_self(), sizeof set, &set) != 0)
-            daoWarning("could not pin to CPU %d\n", cpu);
-    }
+    if (cpu >= 0)                                    // the loop thread (BLAS's threads keep the process's CPUs)
+        daoThreadPin(NULL, cpu);                     // says why when it cannot
     if (blasThreads > 0)
         openblas_set_num_threads(blasThreads);
     daoToolsEnableFTZ();                             // no subnormal stalls in the loop
@@ -967,8 +955,9 @@ static int run(const char *configPath, int cpu, bool spin, int blasThreads, bool
     for (int c : workerCpus) {
         if (c == cpu)
             throw std::runtime_error("worker CPU " + std::to_string(c) + " is the loop's (-C)");
-        if (c < 0 || c >= CPU_SETSIZE)
-            throw std::runtime_error("worker CPU " + std::to_string(c) + "?");
+        if (c < 0 || c >= daoCpuCount())
+            throw std::runtime_error("worker CPU " + std::to_string(c) + ": this machine has "
+                                     + std::to_string(daoCpuCount()) + " CPUs");
     }
     if (!workerCpus.empty()) {
         if (blasThreads != 1)
@@ -1145,9 +1134,8 @@ int main(int argc, char **argv)
         help(argv[0]);
         return 2;
     }
-    daoToolsSetRtPriority(93);
-    if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0)
-        daoWarning("mlockall failed: run scripts/daoToolSetCap to grant RT capabilities\n");
+    daoThreadSetRtPriority(NULL, 93);
+    daoMemLock();
     try {
         return run(config, cpu, spin, blasThreads, profile, workers);
     } catch (const std::exception &e) {

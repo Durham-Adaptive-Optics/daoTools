@@ -26,7 +26,6 @@
  #include <string.h>
  #include <math.h>
  #include <semaphore.h>
- #include <sched.h>
  #include <errno.h>
  #include <fcntl.h>
  #include <signal.h>
@@ -36,9 +35,7 @@
  #include <sys/stat.h>
  #include <limits.h>
  #include <sys/file.h>
- #include <sys/mman.h>
  #include <sys/time.h>
- #include <pthread.h>
  
  #include "dao.h"
  #include "daoTools.h"
@@ -301,7 +298,7 @@
  /*==========================================================================*/
  int main(int argc, char **argv)
  {
-     daoToolsSetRtPriority(93);
+     daoThreadSetRtPriority(NULL, 93);
 
      sArgv0 = *argv;
      if (argc < 2)

@@ -11,7 +11,6 @@
 #include <string.h>
 #include <math.h>
 #include <semaphore.h>
-#include <sched.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -22,12 +21,9 @@
 #include <limits.h>
 #include <sys/file.h>
 #include <errno.h>
-#include <sys/mman.h>
-#include <sched.h>
 #include <semaphore.h>
 #include <sys/time.h>
 #include <termios.h>
-#include <pthread.h>
 #include <ncurses.h>
 
 // DAO header
@@ -68,7 +64,7 @@ float frequency;
 int removePiston = 0;
 double clipping = 1.0;
 // Thread
-pthread_t controllerThread[COMBINE_MAX];
+daoThread *controllerThread[COMBINE_MAX];
 int threadIdCtrl = 0;
 
 struct arg_struct {
@@ -202,7 +198,7 @@ static int prepRealTime()
         for (threadCounter=0; threadCounter<nbShm; threadCounter++)
         {
             args[threadCounter].shmId = threadCounter;
-            threadVal[threadCounter] = pthread_create(&controllerThread[threadCounter],
+            threadVal[threadCounter] = daoThreadCreate(&controllerThread[threadCounter],
                                                          NULL,
                                                          shmNRealTimeLoop,
                                                          (void *)&args[threadCounter]);
@@ -214,13 +210,13 @@ static int prepRealTime()
         }
         for (k = 0; k < nbShm; k++)
         {
-            pthread_join(controllerThread[k], NULL);
+            daoThreadJoin(controllerThread[k], NULL);
         }
     }
     else
     {
         args[masterChannel].shmId = masterChannel;
-        threadVal[masterChannel] = pthread_create(&controllerThread[masterChannel],
+        threadVal[masterChannel] = daoThreadCreate(&controllerThread[masterChannel],
                                                      NULL,
                                                      shmNRealTimeLoop,
                                                      (void *)&args[masterChannel]);
@@ -229,7 +225,7 @@ static int prepRealTime()
             daoError("Cannot create thread %d\n", masterChannel);
             return DAO_ERROR;
         }
-        pthread_join(controllerThread[masterChannel], NULL);
+        daoThreadJoin(controllerThread[masterChannel], NULL);
     }
 
     printf("\n");
@@ -318,7 +314,7 @@ int main(int argc, char **argv)
      */
 {
     // r = seteuid(euid_called); //This goes up to maximum privileges
-    daoToolsSetRtPriority(93); //any number from 0-99; falls back + warns if not permitted
+    daoThreadSetRtPriority(NULL, 93); //any number from 0-99; falls back + warns if not permitted
     // r = seteuid(euid_real);//Go back to normal privileges
 
     sArgv0 = *argv;

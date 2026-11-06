@@ -11,7 +11,6 @@
 #include <string.h>
 #include <math.h>
 #include <semaphore.h>
-#include <sched.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -22,11 +21,8 @@
 #include <limits.h>
 #include <sys/file.h>
 #include <errno.h>
-#include <sys/mman.h>
-#include <sched.h>
 #include <semaphore.h>
 #include <sys/time.h>
-#include <pthread.h>
 
 #include "dao.h"
 #include "daoTools.h"
@@ -216,16 +212,16 @@ static int realTimeLoop()
     fflush(stdout);
 
     // Thread
-    pthread_t controllerThread;
+    daoThread *controllerThread;
     int threadIdCtrl = 0;
     int statThreadVal=0;
-    statThreadVal = pthread_create(&controllerThread, NULL, statRealTimeLoop, (void *)&threadIdCtrl);
+    statThreadVal = daoThreadCreate(&controllerThread, NULL, statRealTimeLoop, (void *)&threadIdCtrl);
     if (statThreadVal != 0)
     {
         daoError("Cannot create thread, err\n");
         return DAO_ERROR;
     }
-    pthread_join(controllerThread, NULL);
+    daoThreadJoin(controllerThread, NULL);
     return DAO_SUCCESS;
 
     return 0;
@@ -302,7 +298,7 @@ int main(int argc, char **argv)
      */
 {
     // r = seteuid(euid_called); //This goes up to maximum privileges
-    daoToolsSetRtPriority(93); //any number from 0-99; falls back + warns if not permitted
+    daoThreadSetRtPriority(NULL, 93); //any number from 0-99; falls back + warns if not permitted
     // r = seteuid(euid_real);//Go back to normal privileges
 
     sArgv0 = *argv;

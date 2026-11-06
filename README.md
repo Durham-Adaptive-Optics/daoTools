@@ -64,8 +64,8 @@ AO real-time pipeline, operating directly on `dao.shm` `IMAGE`s:
   `daoDescrambleOcam2Image` (OCAM2K scrambled-readout reordering),
   `daoToolsImgNormalize`, `daoComputeChecksum`, `daoRtSetup`/`daoToolsEnableFTZ`
   (real-time process setup, denormal flush-to-zero), `daoToolsSetRtPriority`
-  (request `SCHED_FIFO` real-time priority with a safe, logged fallback --
-  see [Real-time scheduling priority](#real-time-scheduling-priority) below),
+  (deprecated: `daoThreadSetRtPriority` from daoBase's `daoThread.h` -- see
+  [Real-time scheduling priority](#real-time-scheduling-priority) below),
   and `daoLogToFile` (throttled, size-rotated file logging).
 - **Tool helpers** — `daoToolsArgName` (bounded copy of a SHM name given on the
   command line), `daoToolsShmOpen` (`daoShmOpen` exiting with an error when the
@@ -186,24 +186,20 @@ pip install magicPlot
 # Real-time scheduling priority
 
 Every real-time loop in `apps/` requests `SCHED_FIFO` scheduling once at
-startup via `daoToolsSetRtPriority(priority)` (`daoTools.h`, e.g. priority
-93), so the OS doesn't preempt it for ordinary processes.
+startup via `daoThreadSetRtPriority(NULL, priority)` (e.g. priority 93), so the
+OS doesn't preempt it for ordinary processes. Threads, CPU pinning, memory
+locking, mutexes and timed waits all go through daoBase's `daoThread.h`
+(`daoThreadCreate`, `daoThreadPin`, `daoMemLock`, `daoMutex`, `daoSleepUntilNs`):
+the programs no longer call pthread, `sched_setscheduler`, `mlockall` or
+`clock_nanosleep` themselves, so the same code builds where those don't exist
+(Windows). `daoToolsSetRtPriority` is kept, deprecated, as a call to it.
 
-That request can be silently denied: Linux caps how high a priority a given
-user may request (the `rtprio` resource limit), and it defaults to **0** on
-most distros. Before `daoToolsSetRtPriority` existed, every tool called
-`sched_setscheduler()` directly with no check on its return value -- if the
-request was denied (`EPERM`), the loop just kept running at normal priority
-with no indication at all. That's dangerous for a control loop with little
-stability margin: it becomes vulnerable to timing jitter from anything else
-that uses the CPU, even a lightweight, read-only monitor GUI.
-
-`daoToolsSetRtPriority` still tries for the requested priority first --
-identical behaviour to before when it succeeds -- and only on failure checks
-this user's actual `rtprio` limit and falls back to the highest priority
-currently allowed. Either way it logs which priority it actually got
-(`daoInfo` on success, `daoWarning` on fallback/failure), so the operator
-always knows.
+That request can be denied: Linux caps how high a priority a given user may
+request (the `rtprio` resource limit), and it defaults to **0** on most distros.
+`daoThreadSetRtPriority` tries the requested priority first, then the highest
+this user's `rtprio` limit allows, and logs which one it got (`daoInfo` on
+success, `daoWarning` on fallback or failure), so the operator always knows; it
+returns the priority set (0: normal).
 
 ### Raising the limit (Linux)
 
@@ -227,26 +223,19 @@ Confirm it applied with:
 ulimit -r
 ```
 
-### Does this affect Windows or macOS?
+### Windows and macOS
 
-No new platform support is added or removed here -- it only changes how the
-*existing*, Linux-oriented real-time code behaves:
+`daoThread.h` has one implementation per platform (`daoThreadPosix.c`,
+`daoThreadWin32.c` in daoBase):
 
-- `sched_setscheduler()`/`SCHED_FIFO` are POSIX real-time scheduling calls;
-  none of `apps/`'s real-time-priority code has ever been guarded for
-  Windows, so real-time scheduling in this codebase has always been
-  Linux-only in practice (same as `mlockall()` and the
-  `pthread_setaffinity_np` CPU-pinning code used elsewhere in the tree).
-- **macOS**: `RLIMIT_RTPRIO` (the fallback-limit lookup) doesn't exist on
-  macOS/BSD, so `daoToolsSetRtPriority` guards that part behind
-  `#ifdef RLIMIT_RTPRIO`. This means the code now *compiles* cleanly on
-  macOS (a plain, unconditional `RLIMIT_RTPRIO` would have been a hard
-  compile error there) and logs a clear warning if `sched_setscheduler`
-  fails, instead of silently running non-real-time as before. Functionally
-  unchanged from before this fix -- just no silent failure and no compile
-  break.
-- **Windows**: unaffected either way -- `sched_setscheduler` has no Windows
-  equivalent and this codebase was never built/run there.
+- **Linux**: everything above.
+- **macOS**: no CPU pinning (a warning); `SCHED_FIFO` within the system's
+  range. The macOS stand-ins for `clock_nanosleep` / `sched_setscheduler` in
+  `daoTools.c` are kept, deprecated, for the programs of other repositories
+  still calling them.
+- **Windows**: a priority above 0 is `THREAD_PRIORITY_TIME_CRITICAL` in the
+  HIGH priority class; pinning with `SetThreadGroupAffinity`; no whole-process
+  memory lock (a warning).
 
 ### Setting up a host for a real-time loop
 

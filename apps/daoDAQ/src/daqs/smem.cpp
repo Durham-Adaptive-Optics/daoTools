@@ -7,6 +7,7 @@
  */
 
 #include <daqs.hpp>
+#include <daoThread.h>
 
 using namespace Dao::DAQ;
 
@@ -78,20 +79,11 @@ void SmemDAQ::configureThread(Optional<CoreID> const& core) {
     if (!core)
         return;
 
-#ifdef __linux__
-    // pin thread to desired cpu core.
-    cpu_set_t affinitySet;
-    CPU_ZERO(&affinitySet);
-    CPU_SET(core.value(), &affinitySet);
-    if (pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &affinitySet)) {
-        log_.Error(LOGFMT("failed to pin smem resource thread ({})", strerror(errno)));
+    // pin thread to desired cpu core (daoThreadPin says why when it cannot: no such CPU,
+    // or a platform without pinning)
+    if (daoThreadPin(NULL, (int) core.value()) != DAO_SUCCESS) {
+        log_.Error(LOGFMT("failed to pin smem resource thread to core {}", core.value()));
     }
-#else
-    // cpu_set_t/pthread_setaffinity_np are Linux (glibc) extensions with no
-    // macOS equivalent; thread pinning is a real-time performance tweak, so
-    // just log and continue unpinned rather than failing the build/run.
-    log_.Warning(LOGFMT("thread pinning is not supported on this platform, ignoring requested core {}", core.value()));
-#endif
 }
 
 /* Signals both the DAQ and sink threads of this resource to begin a new DAQ

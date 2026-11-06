@@ -218,7 +218,7 @@ static void DecodeArgs(int argc, char **argv)
 /*==========================================================================*/
 int main(int argc, char **argv)
 {
-    daoToolsSetRtPriority(93);                       /* falls back + warns if not permitted */
+    daoThreadSetRtPriority(NULL, 93);                       /* falls back + warns if not permitted */
     sArgv0 = *argv;
     if (argc < 2) {
         ShowHelp();
