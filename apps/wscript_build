@@ -532,6 +532,22 @@ if bld.env.CUDA_AVAILABLE and bld.env.YAMLCPP_AVAILABLE and platform.system() !=
 else:
 	print("Skipping daoGpuPipeline build (needs CUDA and yaml-cpp).")
 
+# One process running a chain of CPU stages (libdaoTools), same YAML as daoGpuPipeline.
+# Same flags as the C apps it replaces: same results, bit for bit.
+if bld.env.BLAS_AVAILABLE and bld.env.YAMLCPP_AVAILABLE:
+	daoCpuPipeline = bld.program(
+		source = 'daoCpuPipeline.cpp',
+		target = 'daoCpuPipeline',
+		includes = ['../include', os.getenv('DAOROOT')+'/include/'],
+		linkflags = my_link_flags,
+		ldflags = ['-ldao', '-lpthread', '-lm'] + my_ld_flags,
+		use = ['daoTools', 'BLAS', 'YAMLCPP'],
+		defines = ['DAO_CPU_PIPELINE_FFT'] if bld.env.FFTW_AVAILABLE else [],
+		cxxflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
+		)
+else:
+	print("Skipping daoCpuPipeline build (needs BLAS and yaml-cpp).")
+
 daoShmConcatenate = bld.program(
 	source = 'daoShmConcatenate.c',
 	target = 'daoShmConcatenate',

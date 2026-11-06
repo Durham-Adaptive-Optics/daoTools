@@ -14,6 +14,9 @@ Built only when CUDA is found (``daoGpuPipeline`` also needs yaml-cpp); see
 Source: ``apps/daoGpuPipeline.cpp``, ``include/daoGpuStages.h``,
 ``src/gpu/daoGpuStages.cu`` (``libdaoToolsGpu``).
 
+The same configuration also runs on the CPU, with ``daoCpuPipeline``
+(:doc:`cpu_pipeline`); for setting up the host, see :doc:`realtime`.
+
 
 How it works
 ------------
@@ -35,9 +38,26 @@ How it works
   SHM to be in RAM, i.e. on a ``tmpfs`` filesystem (``/dev/shm``, or ``/tmp``
   when it is mounted as tmpfs); otherwise the pipeline copies the SHM each
   frame and says so at start-up. See the daoBase GPU SHM documentation.
+  Mapping pays off when a stage reads a small part of the SHM; a stage that
+  reads all of it is faster with ``hostAccess: copy`` (one DMA transfer instead
+  of many small PCIe reads): on a 160x160 uint16 camera frame calibrated by
+  ``pixelCalibrate``, the frame's latency went from 30.6 to 23.5 µs (median).
 - **Parameter SHMs** (flat, background, matrices, gains, references,
   thresholds, masks) stay host SHMs: a stage uploads them again between two
-  frames when their ``cnt0`` changes, so they can be updated live.
+  frames when their ``cnt0`` changes, so they can be updated live. The frame
+  waits for that copy: about 12 ms for a 200 MB matrix, 10 frames at 800 Hz.
+  With ``paramUpload: async``, a parameter of 1 MB or more is copied in the
+  background instead (its SHM pinned, into a second GPU buffer) while the
+  frames go on with the old values; the first frame after the copy uses the
+  new ones, and the graph is captured again then (about 0.1 ms, once). The copy
+  goes 1 MB at a time, so that a frame's own copies (the camera frame with
+  ``hostAccess: copy``) never wait for more than one piece. It takes twice the
+  GPU memory for those parameters; smaller ones are still copied between
+  frames. With a 200 MB matrix rewritten while the frames ran
+  (``tests/bench_param_upload.py``, a 0.5 ms frame): the frame of each reload
+  took 12.9 ms in sync mode, none over 2.1 ms in async mode; the frames during
+  a background copy took 10 % longer, and the new matrix was used about 180
+  frames after it was written.
 
 
 Configuration
@@ -52,6 +72,7 @@ A YAML file lists the device, the trigger and the stages, in order:
                                             # wait: spin polls its cnt0 instead, see Running)
     hostAccess: map                         # host SHMs: map (zero copy, default) or copy
     stageTimestamps: false                  # true: each output timestamped when its data was ready
+    paramUpload: sync                       # async: large parameters uploaded in the background
     stages:
       - calIntensityNorm: {in: /tmp/wfsIm.im.shm, ff: /tmp/wfsFf.im.shm, bg: /tmp/wfsBg.im.shm,
                            ref: /tmp/wfsRef.im.shm, validPix: /tmp/wfsPup.im.shm,
@@ -171,7 +192,9 @@ Running
   develop and tune stage by stage before running it as one process. Several
   processes on one GPU need NVIDIA MPS (daoBase's ``daoGpuMps start``), or each
   hand-over costs about 100 µs.
-- ``-C <cpu>`` pins the loop to a CPU core.
+- ``-C <cpu>`` pins the loop thread to a CPU core (the process's other threads,
+  CUDA's, keep its CPUs: see :ref:`rt-core-layout` for placing the whole chain,
+  and :doc:`realtime` for the rest of the host setup).
 - ``-T`` turns on the stage timestamps (as ``stageTimestamps: true``), see
   below.
 - ``-W`` waits for the trigger by **spinning** on its ``cnt0`` instead of a

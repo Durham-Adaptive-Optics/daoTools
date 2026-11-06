@@ -14,6 +14,30 @@
 # The command is printed unchanged when there is nothing to pin with: no
 # taskset (macOS...), or no CPU (DAO_RT_CPUS=none, see daoRtCpus), and when it
 # already starts with taskset (a CPU set chosen by hand wins).
+#
+#   dao_rt_cpu <index>                the <index>-th CPU alone, for an option
+#                                     such as daoGpuPipeline -C
+#   dao_rt_core <index>               the CPUs of its physical core (it and its
+#                                     hyperthreads), as a taskset -c list
+#   dao_other_pin <nRt> "<command>"   <command> pinned to the other CPUs: every
+#                                     CPU but the physical cores of the first
+#                                     <nRt> real-time CPUs (their hyperthreads
+#                                     too), for what is not real time (GUIs,
+#                                     telemetry, displays)
+#
+# A process of several threads pinned with taskset keeps them all on that CPU.
+# Two real-time threads of the same priority on one CPU take turns only when
+# one sleeps: a reader that polls (never sleeps) next to its driver's receive
+# thread (an Aravis camera reader...) starves it, and gets no frame at all.
+# Give such a process its whole core, taskset -c $(dao_rt_core <index>).
+# daoGpuPipeline pins only its loop thread (-C): started with dao_other_pin and
+# -C $(dao_rt_cpu <index>), its other threads (CUDA's) stay off the real-time
+# cores, e.g. for a camera reader (0), the pipeline (1) and the DM driver (2):
+#
+#   daoTmux cam  "$(dao_rt_pin 0 "<camera reader>")"   # or "taskset -c $(dao_rt_core 0) <camera reader>"
+#   daoTmux loop "$(dao_other_pin 3 "daoGpuPipeline -c loop.yaml -C $(dao_rt_cpu 1) -L")"
+#   daoTmux dm   "$(dao_rt_pin 2 "<DM driver>")"
+#   daoTmux tel  "$(dao_other_pin 3 "<telemetry>")"
 DAO_RT_CPUS_LIST=()
 if command -v taskset >/dev/null 2>&1; then
     DAO_RT_CPUS_LIST=($(daoRtCpus 2>/dev/null || true))
@@ -32,4 +56,59 @@ dao_rt_pin() {
         return
     fi
     printf '%staskset -c %s %s' "$env" "${DAO_RT_CPUS_LIST[$((index % n))]}" "$cmd"
+}
+
+dao_rt_cpu() {
+    local n=${#DAO_RT_CPUS_LIST[@]}
+    [ "$n" -gt 0 ] && printf '%s' "${DAO_RT_CPUS_LIST[$(($1 % n))]}"
+}
+
+dao_rt_core() {
+    local c
+    c=$(dao_rt_cpu "$1") || return 0
+    cat /sys/devices/system/cpu/cpu$c/topology/thread_siblings_list 2>/dev/null || printf '%s' "$c"
+}
+
+# The CPUs of no physical core of the first $1 real-time CPUs, comma-separated
+# (nothing if that leaves none, or without topology information).
+dao_other_cpus() {
+    local sys=/sys/devices/system/cpu nrt=$1 i c key out=""
+    local n=${#DAO_RT_CPUS_LIST[@]}
+    [ "$n" -eq 0 ] || [ ! -r $sys/online ] && return 0
+    declare -A rt
+    for ((i = 0; i < nrt && i < n; i++)); do
+        c=${DAO_RT_CPUS_LIST[$i]}
+        rt["$(cat $sys/cpu$c/topology/physical_package_id 2>/dev/null):$(cat $sys/cpu$c/topology/core_id 2>/dev/null)"]=1
+    done
+    for c in $(dao_rt_expand "$(cat $sys/online)"); do
+        key="$(cat $sys/cpu$c/topology/physical_package_id 2>/dev/null):$(cat $sys/cpu$c/topology/core_id 2>/dev/null)"
+        [ -n "${rt[$key]:-}" ] || out+="${out:+,}$c"
+    done
+    printf '%s' "$out"
+}
+
+dao_rt_expand() {             # "0-3,8" -> "0 1 2 3 8"
+    local part
+    for part in ${1//,/ }; do
+        if [[ "$part" =~ ^([0-9]+)-([0-9]+)$ ]]; then
+            seq -s ' ' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+        else
+            echo "$part"
+        fi
+    done
+}
+
+dao_other_pin() {
+    local nrt="$1" cmd="$2" env="" cpus
+    cmd="${cmd#"${cmd%%[![:space:]]*}"}"              # leading spaces
+    while [[ "$cmd" =~ ^([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)(.*)$ ]]; do
+        env+="${BASH_REMATCH[1]}"
+        cmd="${BASH_REMATCH[2]}"
+    done
+    cpus=$(dao_other_cpus "$nrt")
+    if [ -z "$cpus" ] || [[ "$cmd" == taskset[[:space:]]* ]]; then
+        printf '%s%s' "$env" "$cmd"
+        return
+    fi
+    printf '%staskset -c %s %s' "$env" "$cpus" "$cmd"
 }

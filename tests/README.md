@@ -128,5 +128,22 @@ Built when CUDA is found (see `docs/source/gpu_pipeline.rst`).
   writes each frame and times its output), and check the outputs.
   `--shm-dir` sets the SHM folder (tmpfs for zero copy); the pyramid benchmark
   also runs with and without MPS.
+- `test_cpu_pipeline.py` runs two chains (calibration, centroids, slice, MVM,
+  gain, integrator; extractions, centroiders reading the frame) as their daoTools
+  apps and as `daoCpuPipeline`, on two copies of the SHMs, and checks every
+  output and its `cnt2` for the same bits, frame by frame, also while the flat
+  changes and the integrator is disabled, in open loop and closed again;
+  `--workers 4,6,8,10` splits the pipelines' stages over workers on those CPUs.
+  `bench_sh_pipeline.py` also times `daoCpuPipeline` (`--modes`,
+  `--blas-threads`, `--spin`, `--workers`, `--cpu`).
+- `test_cpu_plugin.py` loads the example CPU plugin (`cpuPluginExample.c`,
+  stage type `scale`) in `daoCpuPipeline` between two built-in stages: its
+  output and `cnt2`, the stage after it, a silent frame (nothing published
+  downstream), and the error for a library without `daoCpuPluginRegister`
+  (a GPU plugin).
+- `bench_param_upload.py` rewrites a 200 MB matrix while `daoGpuPipeline` runs,
+  with `paramUpload: sync` and `async`: the latencies around each reload, and
+  which matrix every output came from (exit code: outputs from no matrix, or
+  from an older one than the frame before).
 - `bench_mvm_gpu.py` (with `benchMvMGPU.cu`) times `daoMvMGPU` with host SHMs
   and GPU SHMs.

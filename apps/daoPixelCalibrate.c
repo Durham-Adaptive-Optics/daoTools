@@ -79,6 +79,29 @@ static void calSetRtAffinity(int cpu)
 }
 
 /*--------------------------------------------------------------------------*/
+/* Read one byte of each page of an SHM's data: the pages are mapped in before the
+ * first frame, and nothing is written or published. */
+static void faultIn(IMAGE *shm)
+{
+    size_t es;
+    switch (shm[0].md[0].atype)
+    {
+        case _DATATYPE_UINT8: case _DATATYPE_INT8: es = 1; break;
+        case _DATATYPE_UINT16: case _DATATYPE_INT16: es = 2; break;
+        case _DATATYPE_UINT64: case _DATATYPE_INT64: case _DATATYPE_DOUBLE: es = 8; break;
+        default: es = 4; break;
+    }
+    const volatile char *p = (const volatile char *) shm[0].array.V;
+    size_t bytes = (size_t) shm[0].md[0].nelement * es;
+    char acc = 0;
+    for (size_t i = 0; i < bytes; i += 4096)
+        acc ^= p[i];
+    if (bytes > 0)
+        acc ^= p[bytes - 1];
+    (void) acc;
+}
+
+/*--------------------------------------------------------------------------*/
 static char	*sArgv0=NULL;					/* name of executable */
 
 static void ShowHelp(void)
@@ -123,13 +146,14 @@ static int realTimeLoop()
     fflush(stdout);
     usleep(2000000);
 
-    // Fault in the in/ff/bg/cal buffers and run the calibration once so the
-    // first real frame doesn't pay page-fault / lazy-init jitter (same
-    // reasoning as daoMvM's matrix fault-in before its loop).
-    if (calShm[0].md[0].atype == _DATATYPE_FLOAT)
-        daoToolsShmCalibrate(inShm, ffShm, bgShm, calShm);
-    else
-        daoToolsShmCalibrate64(inShm, ffShm, bgShm, calShm);
+    // Fault in the in/ff/bg/cal buffers so the first real frame doesn't pay
+    // page-fault jitter (as daoMvM's matrix fault-in before its loop). Read
+    // only: a calibration here would publish a frame of the stale image, which
+    // the processes already waiting downstream would take for a real one.
+    faultIn(inShm);
+    faultIn(ffShm);
+    faultIn(bgShm);
+    faultIn(calShm);
 
 
     daoToolsLoopStatus status;

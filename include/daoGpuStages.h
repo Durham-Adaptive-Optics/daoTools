@@ -131,6 +131,15 @@ daoGpuStage *daoGpuApplyGainCreate(daoGpuPort *in, IMAGE *gain, daoGpuPort *out,
 daoGpuStage *daoGpuLeakyIntegratorCreate(daoGpuPort *in, IMAGE *loop, IMAGE *gain, IMAGE *leak, IMAGE *enable,
                                          IMAGE *offset, int modal, int keepPiston, float clip, daoGpuPort *out);
 
+/* How changed parameter SHMs are uploaded, for the stages created afterwards.
+ * async 0 (default): between two frames, the frame waiting for the copy (about
+ * 12 ms for 200 MB). async 1: a parameter of at least minBytes is copied in the
+ * background (its SHM pinned, a second GPU buffer) while the frames go on, and used
+ * from the first update after the copy ends, which then returns DAO_GPU_RECAPTURE
+ * (the kernels read the other buffer: the graph is captured again, once). Twice the
+ * GPU memory for those parameters. */
+void daoGpuSetParamUpload(int async, size_t minBytes);
+
 const char *daoGpuStageName(const daoGpuStage *s);
 daoGpuPort *daoGpuStageOutput(daoGpuStage *s);
 /* cnt2 to give the output when published, from the stage's input (-1: keep) */

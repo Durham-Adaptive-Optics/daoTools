@@ -318,6 +318,17 @@ int_fast8_t daoCentroidSpotsRelative(float *image,
                                      float minFlux,
                                      float *cent);
 
+/* Same arguments and outputs as daoCentroidSpotsRelative, bit for bit, faster */
+int_fast8_t daoCentroidSpotsRelativeFast(float *image,
+                                         int imageSizeX,
+                                         int imageSizeY,
+                                         float *ref,
+                                         int boxSize,
+                                         int nSuba,
+                                         float threshold,
+                                         float minFlux,
+                                         float *cent);
+
 int_fast8_t daoCentroidSpotsRelativeRef(float *image,
                                      int imageSizeX,
                                      int imageSizeY,

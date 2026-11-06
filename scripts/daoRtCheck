@@ -1,0 +1,169 @@
+#!/bin/bash
+#
+# daoRtCheck -- report how this host is set up for real-time loops (changes nothing).
+#
+# For the loop CPUs: isolated (isolcpus, nohz_full, rcu_nocbs), frequency
+# governor, idle states (C-states) allowed, interrupts landing on them, and
+# the processes allowed on them. For the host: irqbalance, tuned profile, the
+# real-time throttling limit, this user's rtprio and memlock limits, GPU
+# persistence mode and clocks. See the "Real-time host setup" page of the
+# daoTools documentation for what to set and how.
+#
+#   -c <cpus>  the loop CPUs (e.g. "2,6,10" or "2-5"); default: the first 3 of
+#              daoRtCpus
+#
+# Usage: daoRtCheck [-c <cpus>]
+
+cpus=""
+while getopts "c:h" opt; do
+    case $opt in
+        c) cpus=$OPTARG ;;
+        h) sed -n '3,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) sed -n '3,15p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+    esac
+done
+
+if [ "$(uname -s)" != Linux ]; then
+    echo "daoRtCheck: Linux only"
+    exit 0
+fi
+
+expand() {                      # "0-3,8" -> "0 1 2 3 8"
+    local part out=""
+    for part in ${1//,/ }; do
+        if [[ "$part" =~ ^([0-9]+)-([0-9]+)$ ]]; then
+            out+=" $(seq -s ' ' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}")"
+        elif [[ "$part" =~ ^[0-9]+$ ]]; then
+            out+=" $part"
+        fi
+    done
+    echo $out
+}
+in_list() { [[ " $2 " == *" $1 "* ]]; }
+ok() { printf '  [ok]   %s\n' "$*"; }
+warn() { printf '  [warn] %s\n' "$*"; }
+info() { printf '  [info] %s\n' "$*"; }
+
+if [ -z "$cpus" ]; then
+    rt=$(daoRtCpus 2>/dev/null || "$(dirname "$0")/daoRtCpus" 2>/dev/null)
+    cpus=$(echo $rt | cut -d' ' -f1-3)
+fi
+cpus=$(expand "$cpus")
+[ -z "$cpus" ] && { echo "daoRtCheck: no loop CPU (-c)"; exit 2; }
+sys=/sys/devices/system/cpu
+echo "Loop CPUs: $cpus"
+
+echo "Kernel command line"
+cmdline=$(cat /proc/cmdline)
+for p in isolcpus nohz_full rcu_nocbs irqaffinity; do
+    v=$(echo "$cmdline" | tr ' ' '\n' | grep "^$p=" | cut -d= -f2-)
+    if [ -z "$v" ]; then
+        [ $p = irqaffinity ] && info "$p not set" || warn "$p not set"
+        continue
+    fi
+    list=$(expand "$(echo "$v" | tr ',' '\n' | grep -E '^[0-9]' | tr '\n' ',')")
+    missing=""
+    for c in $cpus; do in_list "$c" "$list" || missing+=" $c"; done
+    if [ $p = irqaffinity ]; then
+        clash=""
+        for c in $cpus; do in_list "$c" "$list" && clash+=" $c"; done
+        [ -z "$clash" ] && ok "$p=$v (no loop CPU)" || warn "$p=$v includes loop CPU(s)$clash"
+    elif [ -z "$missing" ]; then
+        ok "$p=$v"
+    else
+        warn "$p=$v does not include$missing"
+    fi
+done
+for p in processor.max_cstate intel_idle.max_cstate idle; do
+    v=$(echo "$cmdline" | tr ' ' '\n' | grep "^$p=" | cut -d= -f2-)
+    [ -n "$v" ] && info "$p=$v"
+done
+
+echo "CPU frequency and idle states"
+for c in $cpus; do
+    gov=$(cat $sys/cpu$c/cpufreq/scaling_governor 2>/dev/null || echo "?")
+    epp=$(cat $sys/cpu$c/cpufreq/energy_performance_preference 2>/dev/null)
+    [ "$gov" = performance ] && ok "CPU $c governor $gov" \
+                             || warn "CPU $c governor $gov${epp:+ (EPP $epp)}, performance recommended"
+    deep=""
+    for s in $sys/cpu$c/cpuidle/state*; do
+        [ -r "$s/latency" ] || continue
+        lat=$(cat $s/latency)
+        [ "$(cat $s/disable)" = 0 ] && [ "$lat" -gt 10 ] && deep+=" $(cat $s/name)(${lat}us)"
+    done
+    [ -z "$deep" ] && ok "CPU $c: no idle state slower than 10 us to leave" \
+                   || warn "CPU $c idle states allowed:$deep"
+done
+if [ -r /dev/cpu_dma_latency ]; then
+    info "/dev/cpu_dma_latency is readable: a process holding it open with 0 keeps the CPUs out of deep idle states"
+fi
+
+echo "Interrupts"
+if systemctl is-active --quiet irqbalance 2>/dev/null; then
+    banned=$(grep -h "^IRQBALANCE_BANNED_CPULIST\|^IRQBALANCE_BANNED_CPUS" /etc/default/irqbalance /etc/sysconfig/irqbalance 2>/dev/null)
+    warn "irqbalance is running${banned:+ ($banned)}: it may move interrupts onto the loop CPUs"
+else
+    ok "irqbalance not running"
+fi
+nirq=0
+hits=""
+for d in /proc/irq/[0-9]*; do
+    irq=$(basename $d)
+    list=$(expand "$(cat $d/effective_affinity_list 2>/dev/null || cat $d/smp_affinity_list 2>/dev/null)")
+    for c in $cpus; do
+        if in_list "$c" "$list"; then
+            name=$(grep -E "^ *$irq:" /proc/interrupts | awk '{print $NF}')
+            hits+="    IRQ $irq ($name) -> CPU $c"$'\n'
+            nirq=$((nirq + 1))
+            break
+        fi
+    done
+done
+if [ $nirq -eq 0 ]; then
+    ok "no interrupt handled on the loop CPUs"
+else
+    warn "$nirq interrupt(s) handled on the loop CPUs:"
+    printf '%s' "$hits" | head -20
+fi
+
+echo "Processes allowed on the loop CPUs"
+n=0
+for p in /proc/[0-9]*; do
+    pid=$(basename $p)
+    list=$(awk '/^Cpus_allowed_list/ {print $2}' $p/status 2>/dev/null)
+    [ -z "$list" ] && continue
+    for c in $cpus; do
+        if in_list "$c" "$(expand "$list")"; then
+            n=$((n + 1))
+            break
+        fi
+    done
+done
+info "$n processes and kernel threads may run on them (taskset, CPUAffinity= or isolcpus restrict this)"
+
+echo "Scheduler and limits"
+rtr=$(cat /proc/sys/kernel/sched_rt_runtime_us)
+[ "$rtr" = -1 ] && info "sched_rt_runtime_us -1 (no real-time throttling: a spinning loop must have its core alone)" \
+                || info "sched_rt_runtime_us $rtr: real-time tasks get at most $((rtr / 10000))% of a CPU when others wait on it"
+tl=$(cat /proc/sys/kernel/timer_migration 2>/dev/null)
+[ -n "$tl" ] && info "timer_migration $tl"
+r=$(ulimit -r); l=$(ulimit -l)
+[ "$r" != 0 ] && ok "rtprio limit $r" || warn "rtprio limit 0: no SCHED_FIFO (limits.conf rtprio, or daoToolSetCap)"
+[ "$l" = unlimited ] && ok "memlock limit $l" || warn "memlock limit $l KB: mlockall may fail (limits.conf memlock, or daoToolSetCap)"
+if command -v tuned-adm >/dev/null 2>&1; then
+    info "tuned: $(tuned-adm active 2>/dev/null | head -1)"
+else
+    info "tuned not installed"
+fi
+
+echo "GPUs"
+if command -v nvidia-smi >/dev/null 2>&1; then
+    nvidia-smi --query-gpu=index,name,persistence_mode,clocks.sm,clocks.max.sm,power.limit,power.max_limit \
+        --format=csv,noheader | while IFS=, read -r i name pm sm smmax pl plmax; do
+        [ "${pm// /}" = Enabled ] && ok "GPU $i:$name persistence on" \
+                                  || warn "GPU $i:$name persistence off (daoGpuClocks)"
+        info "GPU $i clock$sm (max$smmax), power limit$pl (max$plmax)"
+    done
+else
+    info "no nvidia-smi"
+fi

@@ -69,7 +69,14 @@
  *   plugins: [/path/to/libmyStages.so]    # each exports daoGpuPluginRegister()
  *
  * Parameter SHMs (ff, bg, ref, masks, matrix, gain, ...) are reloaded to the GPU
- * when their cnt0 changes, between frames.
+ * when their cnt0 changes, between frames: the frame waits for the copy (about 12 ms
+ * for a 200 MB matrix, 10 frames at 800 Hz). With
+ *   paramUpload: async                 # (default: sync)
+ * a parameter of 1 MB or more is copied in the background instead, into a second GPU
+ * buffer, while the frames go on with the old values; the first frame after the copy
+ * uses the new ones (the graph captured again then, about 0.1 ms once). The copy goes
+ * 1 MB at a time: a frame's own copies wait for one piece at most. Twice the GPU
+ * memory for those parameters; smaller ones are still copied between frames.
  *
  * A stage can be silent for a frame (e.g. a disabled integrator): its output is not
  * published. A stage whose input comes from a silent stage is silent too, and is not
@@ -580,6 +587,12 @@ static int run(const char *configPath, int cpu, int onlyStage, bool stageTimesta
         p.mapHost = mode == "map";
     }
     stamps.on = stageTimestamps || (cfg["stageTimestamps"] && cfg["stageTimestamps"].as<bool>());
+    if (cfg["paramUpload"]) {
+        std::string mode = cfg["paramUpload"].as<std::string>();
+        if (mode != "sync" && mode != "async")
+            throw std::runtime_error("paramUpload: 'sync' or 'async'");
+        daoGpuSetParamUpload(mode == "async", (size_t) 1 << 20);
+    }
 
     // device and spin scheduling before any CUDA context exists in this process
     if (cudaSetDevice(p.device) != cudaSuccess || cudaSetDeviceFlags(cudaDeviceScheduleSpin) != cudaSuccess)

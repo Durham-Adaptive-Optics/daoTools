@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Shack-Hartmann chain: separate daoTools processes vs daoGpuPipeline, same SHMs, same frames.
+Shack-Hartmann chain: separate daoTools processes vs daoCpuPipeline vs daoGpuPipeline, same SHMs,
+same frames.
 
     shIm (camera, uint16 160x160: 8x8 sub-apertures of 20 px, 52 in the pupil)
       -> pixelCalibrate (shFf, shBg)                    -> shImCal (float 160x160)
@@ -10,13 +11,17 @@ Shack-Hartmann chain: separate daoTools processes vs daoGpuPipeline, same SHMs, 
 with zonal reconstruction, for three centroiders:
 relative (default), correlation (--search-range 5) and correlationFFT.
 
-"cpu": 3 processes (daoPixelCalibrate, daoComputeCentroid*, daoMvM), host SHMs.
-"gpu": daoGpuPipeline, one process; shImCal and shCentroids are mirrored GPU SHMs.
+"cpu"    : 3 processes (daoPixelCalibrate, daoComputeCentroid*, daoMvM), host SHMs.
+"cpupipe": daoCpuPipeline, one process, the same functions on the same host SHMs.
+"gpu"    : daoGpuPipeline, one process; shImCal and shCentroids are mirrored GPU SHMs.
 
-Each frame is timed from writing shIm to dmResWf being published; the GPU outputs
-are compared with the CPU chain's, frame by frame.
+Each frame is timed from writing shIm to dmResWf being published; the outputs of the
+pipelines are compared with the processes', frame by frame (daoCpuPipeline: the same
+bits).
 
-    python3 tests/bench_sh_pipeline.py [--frames 1000] [--pipeline PATH] [--shm-dir /dev/shm/...]
+    python3 tests/bench_sh_pipeline.py [--frames 1000] [--modes cpu,cpupipe,gpu] [--pipeline PATH]
+                                       [--cpu-pipeline PATH] [--spin] [--workers 4,6,8] [--cpu 2]
+                                       [--shm-dir /dev/shm/...]
 """
 import argparse
 import os
@@ -105,7 +110,7 @@ def create_shms(d, centroider, gpu, device):
             host("dmResWf", np.zeros((NACT, 1), np.float32))]
 
 
-def cpu_chain(centroider, n):
+def cpu_chain(centroider, n, blas):
     """The chain as separate daoTools processes (zonal)."""
     cent = {"relative": ["daoComputeCentroidRelative", "-S", path("shImCal"), path("shCentroids"),
                          path("shReferences"), path("shThreshold"), str(BOX), str(n), "-L"],
@@ -117,7 +122,7 @@ def cpu_chain(centroider, n):
                                "-L"]}[centroider]
     return [["daoPixelCalibrate", "-S", path("shIm"), path("shFf"), path("shBg"), path("shImCal"), "-s", "1", "-L"],
             cent,
-            ["daoMvM", "-S", path("shCentroids"), path("shRecon"), path("dmResWf"), "-s", "1", "-L"]]
+            ["daoMvM", "-S", path("shCentroids"), path("shRecon"), path("dmResWf"), "-s", "1", "-N", str(blas), "-L"]]
 
 
 def gpu_config(centroider, n, device):
@@ -152,6 +157,13 @@ def main():
     ap.add_argument("--frames", type=int, default=1000)
     ap.add_argument("--device", type=int, default=0)
     ap.add_argument("--pipeline", default=os.path.join(APPS, "daoGpuPipeline"))
+    ap.add_argument("--cpu-pipeline", default=os.path.join(APPS, "daoCpuPipeline"))
+    ap.add_argument("--modes", default="cpu,cpupipe,gpu", help="which chains, in order (cpu first: the reference)")
+    ap.add_argument("--blas-threads", type=int, default=1,
+                    help="BLAS threads of daoMvM and daoCpuPipeline (-N); 0: the library's default")
+    ap.add_argument("--spin", action="store_true", help="the pipelines spin on shIm's cnt0 (-W)")
+    ap.add_argument("--workers", default="", help="daoCpuPipeline -w: its workers' CPUs, e.g. 4,6,8")
+    ap.add_argument("--cpu", type=int, default=-1, help="the pipelines' loop thread on this CPU (-C)")
     ap.add_argument("--shm-dir", default="/dev/shm/daoShBench",
                     help="folder of the SHMs; /dev/shm is RAM (tmpfs), needed for zero copy")
     ap.add_argument("--setup", nargs=2, metavar=("CENTROIDER", "MODE"), help=argparse.SUPPRESS)
@@ -177,10 +189,10 @@ def main():
                    + os.path.join(ROOT, "build", "src") + ":" + os.environ.get("LD_LIBRARY_PATH", ""))
 
         print(f"{d['n']} sub-apertures, {args.frames} frames; us from shIm written to dmResWf published")
-        print(f"{'centroider':>15} {'chain':>22} {'median':>8} {'p99':>8} {'max':>8}   GPU vs CPU output")
+        print(f"{'centroider':>15} {'chain':>22} {'median':>8} {'p99':>8} {'max':>8}   output vs the processes'")
         for centroider in CENTROIDERS:
             outs = {}
-            for mode in ("cpu", "gpu"):
+            for mode in args.modes.split(","):
                 for s in SHMS:
                     if os.path.exists(path(s)):
                         os.remove(path(s))
@@ -189,12 +201,17 @@ def main():
                                 "--device", str(args.device), "--shm-dir", args.shm_dir],
                                env=env, check=True, capture_output=True)
                 if mode == "cpu":
-                    cmds = cpu_chain(centroider, d["n"])
-                else:
+                    cmds = cpu_chain(centroider, d["n"], args.blas_threads)
+                else:                                     # the same configuration for both pipelines
                     cfg = os.path.join(tmp, f"{centroider}.yaml")
                     with open(cfg, "w") as f:
                         f.write(gpu_config(centroider, d["n"], args.device))
-                    cmds = [[args.pipeline, "-c", cfg, "-L"]]
+                    cmds = [[args.pipeline, "-c", cfg] if mode == "gpu" else
+                            [args.cpu_pipeline, "-c", cfg, "-N", str(args.blas_threads)]
+                            + (["-w", args.workers] if args.workers else [])]
+                    cmds[0] += ["-C", str(args.cpu)] if args.cpu >= 0 else []
+                    cmds[0] += ["-W"] if args.spin else []
+                    cmds[0] += ["-L"]
                 procs = [subprocess.Popen(c, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                          for c in cmds]
                 time.sleep(3)                             # the CPU tools sleep 2 s before their loop
@@ -202,7 +219,7 @@ def main():
                 r = subprocess.run([driver, path("shIm"), path("dmResWf"), frames_file, str(args.frames), out_file],
                                    env=env, capture_output=True, text=True, timeout=600)
                 stop(procs)
-                label = {"cpu": "3 processes (CPU)", "gpu": "daoGpuPipeline"}[mode]
+                label = {"cpu": "3 processes (CPU)", "cpupipe": "daoCpuPipeline", "gpu": "daoGpuPipeline"}[mode]
                 lat_line = [l for l in r.stdout.splitlines() if l.startswith("LAT ")]
                 if not lat_line:
                     print(f"{centroider:>15} {label:>22}  ERROR {r.stdout[-300:]}")
@@ -210,9 +227,9 @@ def main():
                 lat = np.array([float(x) for x in lat_line[0].split()[1:]])
                 outs[mode] = np.fromfile(out_file, np.float32).reshape(args.frames, NACT)
                 cmp = ""
-                if mode == "gpu" and "cpu" in outs:
-                    diff = np.abs(outs["gpu"] - outs["cpu"]).max() / (np.abs(outs["cpu"]).max() + 1e-12)
-                    cmp = f"max rel. difference {diff:.1e}"
+                if mode != "cpu" and "cpu" in outs:
+                    diff = np.abs(outs[mode] - outs["cpu"]).max() / (np.abs(outs["cpu"]).max() + 1e-12)
+                    cmp = "identical" if np.array_equal(outs[mode], outs["cpu"]) else f"max rel. difference {diff:.1e}"
                 print(f"{centroider:>15} {label:>22} {np.median(lat):8.1f} {np.percentile(lat, 99):8.1f} "
                       f"{lat.max():8.1f}   {cmp}")
         for s in SHMS:

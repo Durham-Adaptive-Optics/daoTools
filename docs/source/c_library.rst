@@ -6,8 +6,10 @@ The ``daoTools`` C library (``daoTools.h`` / ``daoTools.c``) provides low-level 
 Source locations:
 
 - ``include/daoTools.h``
+- ``include/daoCpuStages.h``
 - ``include/daoProfile.hpp``
 - ``src/c/daoTools.c``
+- ``src/c/daoCpuStages.c``
 
 
 daoTools Core (C)
@@ -87,6 +89,24 @@ Constants:
 
 - ``RES_MAX_VAL`` = 8192 — maximum actuator/subaperture count
 - ``FILTER_ORDER`` = 3 — IIR filter order
+
+
+CPU Stage Plugins
+-----------------
+
+``daoCpuStages.h`` is the interface of the stage types written outside daoTools
+and run by ``daoCpuPipeline``; the registry is in libdaoTools, so a plugin links
+with ``-ldaoTools -ldao``.
+
+.. code-block:: c
+
+   int daoCpuRegisterStage(const char *type, daoCpuStageFactory factory);
+   daoCpuStageFactory daoCpuFindStage(const char *type);
+
+A plugin exports ``void daoCpuPluginRegister(void)``, which registers its types.
+The factory gets the stage's arguments (``daoCpuStageArgs``: its YAML values, the
+SHMs they name) and fills a ``daoCpuStageDesc`` (its input and output SHMs, its
+``run``, ``post`` and ``destroy`` functions). See :ref:`cpu-pipeline-plugins`.
 
 
 daoProfile (C++ Header-Only)
