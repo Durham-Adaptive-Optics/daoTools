@@ -12,7 +12,6 @@
 #include <string.h>
 #include <math.h>
 #include <semaphore.h>
-#include <sched.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -23,13 +22,10 @@
 #include <limits.h>
 #include <sys/file.h>
 #include <errno.h>
-#include <sys/mman.h>
-#include <sched.h>
 #include <semaphore.h>
 #include <sys/time.h>
 #include <termios.h>
 #include <gsl/gsl_blas.h>
-#include <pthread.h>
 
 // DAO header
 #include "dao.h"
@@ -55,7 +51,7 @@ IMAGE *outputShm;
 char outputShmName[DAO_SHM_NAME_LEN];
 
 // Thread
-pthread_t controllerThread;
+daoThread *controllerThread;
 int threadIdCtrl = 0;
 
 // termination flag
@@ -78,17 +74,8 @@ extern void openblas_set_num_threads(int num_threads);
 
 static void mvmSetRtAffinity(int cpu)
 {
-#ifdef __linux__
-    cpu_set_t cpuset;
-    CPU_ZERO(&cpuset);
-    CPU_SET(cpu, &cpuset);
-    if (pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset) != 0)
-        daoError("pthread_setaffinity_np(cpu=%d) failed\n", cpu);
-    else
+    if (daoThreadPin(NULL, cpu) == DAO_SUCCESS)    /* says why when it cannot */
         daoInfo("RT thread pinned to CPU %d\n", cpu);
-#else
-    daoInfo("CPU affinity not supported on this platform (cpu=%d ignored)\n", cpu);
-#endif
 }
 
 /*--------------------------------------------------------------------------*/
@@ -226,14 +213,14 @@ static int realTimeLoopPrep()
     fflush(stdout);
 
     int threadVal=0;
-    threadVal = pthread_create(&controllerThread, NULL,
+    threadVal = daoThreadCreate(&controllerThread, NULL,
                                realTimeLoop, (void*)&threadIdCtrl);
     if (threadVal != 0)
     {
         daoError("Cannot create thread, err\n");
         return DAO_ERROR;
     }
-    pthread_join(controllerThread, NULL);
+    daoThreadJoin(controllerThread, NULL);
     daoToolsShmRelease(&inputShm);
     daoToolsShmRelease(&matrixShm);
     daoToolsShmRelease(&outputShm);
@@ -317,12 +304,11 @@ int main(int argc, char **argv)
      */
 {
     // r = seteuid(euid_called); //This goes up to maximum privileges
-    daoToolsSetRtPriority(93); //any number from 0-99; falls back + warns if not permitted
+    daoThreadSetRtPriority(NULL, 93); //any number from 0-99; falls back + warns if not permitted
     // r = seteuid(euid_real);//Go back to normal privileges
 
     // Lock the address space in RAM: a page fault inside the loop is unbounded jitter.
-    if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0)
-        daoWarning("mlockall failed: run scripts/daoToolSetCap to grant RT capabilities. Continuing, but not optimized for real-time.\n");
+    daoMemLock();
 
     sArgv0 = *argv;
     if (argc < 2)

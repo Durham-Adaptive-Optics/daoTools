@@ -26,8 +26,6 @@
 #include <errno.h>
 #include <signal.h>
 #include <time.h>
-#include <pthread.h>
-#include <sched.h>
 
 /* DAO header */
 #include "dao.h"
@@ -60,8 +58,8 @@ static char gShmInName[NB_SHM][DAO_SHM_NAME_LEN];
 static int  gMasterChannel = -1;  /* -1 => finalize on any update, 1 => shm1, 2 => shm2 */
 static int  gNbVal = 0;
 
-static pthread_t gThread[NB_SHM];
-static pthread_mutex_t gOutMutex = PTHREAD_MUTEX_INITIALIZER;
+static daoThread *gThread[NB_SHM];
+static daoMutex gOutMutex = DAO_MUTEX_INIT;
 
 struct arg_struct {
     int shmId; /* 0 or 1 */
@@ -162,14 +160,14 @@ static void *shmThreadLoop(void *thread_data)
         {
             if (shmId == (gMasterChannel == 2 ? 1 : 0))   /* one thread reports the waits */
             {
-                pthread_mutex_lock(&gOutMutex);
+                daoMutexLock(&gOutMutex);
                 daoToolsLoopStatusWait(&gStatus);
-                pthread_mutex_unlock(&gOutMutex);
+                daoMutexUnlock(&gOutMutex);
             }
             continue;
         }
 
-        pthread_mutex_lock(&gOutMutex);
+        daoMutexLock(&gOutMutex);
         daoToolsLoopStatusStart(&gStatus);
 
         /* Recompute out using latest in1 and in2 */
@@ -185,7 +183,7 @@ static void *shmThreadLoop(void *thread_data)
             daoShmSetDataPartFinalize(&gShmOut[0]);
 
         daoToolsLoopStatusEnd(&gStatus, NULL);
-        pthread_mutex_unlock(&gOutMutex);
+        daoMutexUnlock(&gOutMutex);
     }
 
     daoInfo("Thread shm%d EXITING LOOP\n", shmId + 1);
@@ -236,7 +234,7 @@ static int prepRealTime(void)
     for (i = 0; i < NB_SHM; i++)
     {
         args[i].shmId = i;
-        threadVal[i] = pthread_create(&gThread[i], NULL, shmThreadLoop, (void *)&args[i]);
+        threadVal[i] = daoThreadCreate(&gThread[i], NULL, shmThreadLoop, (void *)&args[i]);
         if (threadVal[i] != 0)
         {
             daoError("Cannot create thread %d\n", i);
@@ -244,8 +242,8 @@ static int prepRealTime(void)
         }
     }
 
-    pthread_join(gThread[0], NULL);
-    pthread_join(gThread[1], NULL);
+    daoThreadJoin(gThread[0], NULL);
+    daoThreadJoin(gThread[1], NULL);
 
     printf("\n");
     daoToolsShmRelease(&gShmOut);
@@ -317,7 +315,7 @@ static void DecodeArgs(int argc, char **argv)
 int main(int argc, char **argv)
 {
     /* Try to go RT (OK if it fails due to perms) */
-    daoToolsSetRtPriority(93);
+    daoThreadSetRtPriority(NULL, 93);
 
     sArgv0 = *argv;
     if (argc < 2)

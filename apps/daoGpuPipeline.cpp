@@ -87,7 +87,6 @@
 #include <cuda_runtime.h>
 #include <dlfcn.h>
 #include <signal.h>
-#include <sys/mman.h>
 #include <string.h>
 #include <time.h>
 #include <map>
@@ -597,13 +596,8 @@ static int run(const char *configPath, int cpu, int onlyStage, bool stageTimesta
     // device and spin scheduling before any CUDA context exists in this process
     if (cudaSetDevice(p.device) != cudaSuccess || cudaSetDeviceFlags(cudaDeviceScheduleSpin) != cudaSuccess)
         daoWarning("could not select GPU %d with spin scheduling\n", p.device);
-    if (cpu >= 0) {
-        cpu_set_t set;
-        CPU_ZERO(&set);
-        CPU_SET(cpu, &set);
-        if (pthread_setaffinity_np(pthread_self(), sizeof set, &set) != 0)
-            daoWarning("could not pin to CPU %d\n", cpu);
-    }
+    if (cpu >= 0)
+        daoThreadPin(NULL, cpu);                     // says why when it cannot
 
     loadPlugins(cfg);
     build(p, cfg);
@@ -841,9 +835,8 @@ int main(int argc, char **argv)
     // With -s it does: the stages are separate processes again.
     if (stage < 0)
         setenv("DAO_GPU_NO_MPS_WARNING", "1", 0);
-    daoToolsSetRtPriority(93);
-    if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0)
-        daoWarning("mlockall failed: run scripts/daoToolSetCap to grant RT capabilities\n");
+    daoThreadSetRtPriority(NULL, 93);
+    daoMemLock();
     try {
         return run(config, cpu, stage, stageTimestamps, spin);
     } catch (const std::exception &e) {

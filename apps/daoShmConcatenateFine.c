@@ -11,7 +11,6 @@
 #include <string.h>
 #include <math.h>
 #include <semaphore.h>
-#include <sched.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -22,12 +21,9 @@
 #include <limits.h>
 #include <sys/file.h>
 #include <errno.h>
-#include <sys/mman.h>
-#include <sched.h>
 #include <semaphore.h>
 #include <sys/time.h>
 #include <termios.h>
-#include <pthread.h>
 #include <ncurses.h>
 
 // DAO header
@@ -70,7 +66,7 @@ int shmPos[CONCATENATE_MAX];
 float frequency;
 
 // Thread
-pthread_t controllerThread[CONCATENATE_MAX];
+daoThread *controllerThread[CONCATENATE_MAX];
 int threadIdCtrl = 0;
 
 struct arg_struct {
@@ -106,7 +102,7 @@ static void ShowHelp(void)
 /*--------------------------------------------------------------------------*/
 // The inputs' updates, counted under a mutex: the output is published when each input
 // was updated once since the last publication (an input updated twice starts over).
-static pthread_mutex_t concatMutex = PTHREAD_MUTEX_INITIALIZER;
+static daoMutex concatMutex = DAO_MUTEX_INIT;
 static daoToolsLoopStatus loopStatus;
 
 void * shmNRealTimeLoop(void *thread_data)
@@ -122,13 +118,13 @@ void * shmNRealTimeLoop(void *thread_data)
         {
             if (id == 0)                          /* one thread reports the waits */
             {
-                pthread_mutex_lock(&concatMutex);
+                daoMutexLock(&concatMutex);
                 daoToolsLoopStatusWait(&loopStatus);
-                pthread_mutex_unlock(&concatMutex);
+                daoMutexUnlock(&concatMutex);
             }
             continue;
         }
-        pthread_mutex_lock(&concatMutex);
+        daoMutexLock(&concatMutex);
         daoToolsLoopStatusStart(&loopStatus);
         daoShmCopyToPosition(shmIn[id], shmOut, nbVal, shmPos[id], 0);
         if (++updateCnt[id] > 1)
@@ -150,7 +146,7 @@ void * shmNRealTimeLoop(void *thread_data)
             daoShmSetDataPartFinalize(&shmOut[0]);
             daoToolsLoopStatusEnd(&loopStatus, ", %d inputs", nbShm);
         }
-        pthread_mutex_unlock(&concatMutex);
+        daoMutexUnlock(&concatMutex);
     }
     daoInfo("EXITING MAIN LOOP (thread %d)\n", id);
     return NULL;
@@ -213,7 +209,7 @@ static int prepRealTime()
     {
         daoInfo("Starting Thread %d\n", threadCounter);
         args[threadCounter].shmId = threadCounter;
-        threadVal[threadCounter] = pthread_create(&controllerThread[threadCounter],
+        threadVal[threadCounter] = daoThreadCreate(&controllerThread[threadCounter],
                                                      NULL,
                                                      shmNRealTimeLoop,
                                                      (void *)&args[threadCounter]);
@@ -225,7 +221,7 @@ static int prepRealTime()
     }
     for (k = 0; k < nbShm; k++)
     {
-        pthread_join(controllerThread[k], NULL);
+        daoThreadJoin(controllerThread[k], NULL);
     }
 
     printf("\n");
@@ -318,7 +314,7 @@ int main(int argc, char **argv)
      */
 {
     // r = seteuid(euid_called); //This goes up to maximum privileges
-    daoToolsSetRtPriority(93); //any number from 0-99; falls back + warns if not permitted
+    daoThreadSetRtPriority(NULL, 93); //any number from 0-99; falls back + warns if not permitted
     // r = seteuid(euid_real);//Go back to normal privileges
 
     sArgv0 = *argv;

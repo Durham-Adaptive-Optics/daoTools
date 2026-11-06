@@ -10,16 +10,12 @@
 #include <string.h>
 #include <math.h>
 #include <errno.h>
-#include <sched.h>
 #include <string.h>
-#include <sys/mman.h>
-#include <sys/resource.h>
 #include <unistd.h>
 #include <stdarg.h>
 #include <fcntl.h>
 #include <time.h>
 #include <sys/stat.h>
-#include <pthread.h>
 #include <signal.h>
 #if defined(__x86_64__) || defined(__i386__)
 #include <xmmintrin.h>
@@ -359,58 +355,11 @@ void daoToolsLoopStatusWait(daoToolsLoopStatus* st)
     clock_gettime(CLOCK_MONOTONIC, &st->tPrint);
 }
 
-/* sched_setscheduler(SCHED_FIFO, priority) silently does nothing if this
- * user's rtprio ulimit is below `priority` (common on a dev machine without
- * whatever grants RT capabilities run): every RT tool used to call it
- * directly with no return-value check, so a real-time loop could end up
- * running at normal priority with zero indication. That matters: a
- * control loop with little stability margin is sensitive to timing jitter,
- * and without real SCHED_FIFO protection, anything else competing for the
- * CPU can introduce enough of it to matter. Falls back to the highest
- * priority this user's rtprio limit actually allows, and warns either way
- * (via daoInfo/daoWarning) so the operator knows which one it's running at.
- *
- * Linux only, like the rest of this codebase's real-time setup (mlockall,
- * SCHED_FIFO priority 90+, pthread CPU affinity elsewhere): RLIMIT_RTPRIO
- * is a Linux-specific rlimit (not defined on macOS/BSD), guarded out below
- * so this still compiles there; sched_setscheduler() itself has no
- * standard Windows equivalent and was already called unconditionally
- * throughout these tools before this function existed, so this doesn't
- * change that story either way. */
+/* Deprecated: daoThreadSetRtPriority (daoThread.h, daoBase) does it, the same on every platform
+ * (the fallback to this user's rtprio limit and the warnings included). */
 void daoToolsSetRtPriority(int priority)
 {
-    struct sched_param schedpar;
-    schedpar.sched_priority = priority;
-    if (sched_setscheduler(0, SCHED_FIFO, &schedpar) == 0)
-    {
-        daoInfo("SCHED_FIFO priority %d set\n", priority);
-        return;
-    }
-    int err = errno;
-#ifdef RLIMIT_RTPRIO
-    struct rlimit rtLimit;
-    int maxAllowed = (getrlimit(RLIMIT_RTPRIO, &rtLimit) == 0) ? (int)rtLimit.rlim_cur : 0;
-    if (maxAllowed > 0 && maxAllowed < priority)
-    {
-        schedpar.sched_priority = maxAllowed;
-        if (sched_setscheduler(0, SCHED_FIFO, &schedpar) == 0)
-        {
-            daoWarning("SCHED_FIFO priority %d not permitted (this user's rtprio "
-                      "limit is %d) -- running at %d instead. Raise this user's "
-                      "rtprio limit (/etc/security/limits.conf, 'rtprio') for "
-                      "full priority.\n", priority, maxAllowed, maxAllowed);
-            return;
-        }
-    }
-    daoWarning("sched_setscheduler(SCHED_FIFO) failed (%s) -- running at normal, "
-              "non-real-time priority. Raise this user's rtprio limit "
-              "(/etc/security/limits.conf, 'rtprio').\n", strerror(err));
-#else
-    daoWarning("sched_setscheduler(SCHED_FIFO) failed (%s) -- running at normal, "
-              "non-real-time priority. This platform has no RLIMIT_RTPRIO to "
-              "fall back within; real-time scheduling here needs whatever this "
-              "OS's equivalent privilege/capability is.\n", strerror(err));
-#endif
+    daoThreadSetRtPriority(NULL, priority);
 }
 
 #define DAO_LOG_TAG_LEN            32
@@ -427,7 +376,7 @@ typedef struct {
 
 static DaoLogThrottleEntry gDaoLogThrottleTable[DAO_LOG_MAX_TAGS];
 static int gDaoLogThrottleCount = 0;
-static pthread_mutex_t gDaoLogThrottleMutex = PTHREAD_MUTEX_INITIALIZER;
+static daoMutex gDaoLogThrottleMutex = DAO_MUTEX_INIT;
 
 /* djb2 hash, used only to distinguish which file a tag's throttle state
    belongs to (see daoLogToFile()) -- collisions just mean two different
@@ -509,7 +458,7 @@ int_fast8_t daoLogToFile(const char *fileName, const char *errorId, const char *
     int shouldWrite = 0;
     unsigned long suppressedCount = 0;
 
-    pthread_mutex_lock(&gDaoLogThrottleMutex);
+    daoMutexLock(&gDaoLogThrottleMutex);
     DaoLogThrottleEntry *entry = NULL;
     for (int i = 0; i < gDaoLogThrottleCount; i++) {
         if (gDaoLogThrottleTable[i].pathHash == pathHash &&
@@ -537,7 +486,7 @@ int_fast8_t daoLogToFile(const char *fileName, const char *errorId, const char *
     } else {
         entry->suppressed++;
     }
-    pthread_mutex_unlock(&gDaoLogThrottleMutex);
+    daoMutexUnlock(&gDaoLogThrottleMutex);
 
     va_list args;
     va_start(args, fmt);
@@ -4096,6 +4045,9 @@ int_fast8_t daoShmCopyToPosition(IMAGE *imageIn, IMAGE *imageOut,
 
 #ifdef __APPLE__
 
+/* Deprecated stand-ins (see daoTools.h), kept for the programs of other repositories still
+ * calling these directly; daoTools itself uses daoThread.h. */
+
 #include <errno.h>
 #include <stdio.h>
 #include <mach/mach_time.h>
@@ -4188,24 +4140,13 @@ int clock_nanosleep(clockid_t clock_id, int flags, const struct timespec *reques
 #endif // __APPLE__
 
 /**
- * @brief Attempt to enable real-time scheduling for the current process.
+ * @brief A real-time program's start: memory locked and the calling thread at rt_priority
+ * (daoProcessRtSetup, daoThread.h), then denormals flushed to zero (no FP stalls in the loop).
  *
- * The function first locks current and future mappings into memory, then
- * requests `SCHED_FIFO` at the given priority via daoToolsSetRtPriority()
- * (falls back to the highest priority this user's rtprio ulimit allows,
- * and logs via daoInfo/daoWarning either way -- see that function).
- *
- * @param rt_priority Requested real-time FIFO priority.
+ * @param rt_priority Requested real-time priority.
  */
 void daoRtSetup(int rt_priority)
 {
-    /* Lock memory to avoid major page-fault jitter */
-    if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0) {
-        daoTrace("mlockall failed: %s\n", strerror(errno));
-    }
-
-    /* Flush subnormals to zero: no denormal FP stalls in the RT loop */
+    daoProcessRtSetup(rt_priority);
     daoToolsEnableFTZ();
-
-    daoToolsSetRtPriority(rt_priority);
 }

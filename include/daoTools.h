@@ -13,6 +13,7 @@
 #ifndef _DAOTOOLS_H
 #define _DAOTOOLS_H
 #include "dao.h"
+#include "daoThread.h"   /* threads, CPU pinning, real-time priority, mutexes, waits (daoBase) */
 
 #define RES_MAX_VAL 8192
 #define FILTER_ORDER 3
@@ -141,15 +142,9 @@ void daoToolsLoopStatusEnd(daoToolsLoopStatus *st, const char *fmt, ...);
 void daoToolsLoopStatusWait(daoToolsLoopStatus *st);
 
 /**
- * @brief Request SCHED_FIFO real-time priority for the calling thread,
- * falling back gracefully (and logging via daoWarning) if this user's
- * rtprio ulimit is below the requested priority -- rather than the
- * unchecked sched_setscheduler() every RT tool used to call directly, which
- * fails silently (EPERM) in that case and leaves the loop running at normal
- * priority with no indication at all. Transparent when priority is granted
- * (identical behaviour to the old direct call); only changes anything in
- * the failure case, where it now gets the highest priority this user's
- * rtprio limit actually allows instead of none.
+ * @brief Deprecated: daoThreadSetRtPriority(NULL, priority) (daoThread.h, daoBase), which this
+ * calls. Real-time priority for the calling thread; the highest allowed, with a warning, when
+ * this user's rtprio limit is below priority. Kept for the programs still calling it.
  */
 void daoToolsSetRtPriority(int priority);
 
@@ -534,6 +529,10 @@ int_fast8_t daoShmCopyToPosition(IMAGE *imageIn, IMAGE *imageOut, int nbVal, int
 
 #ifdef __APPLE__
 
+/* Deprecated stand-ins for Linux calls macOS lacks, kept for the programs (other repositories)
+ * still calling clock_nanosleep / sched_setscheduler directly. New code: daoThread.h
+ * (daoSleepUntilNs, daoThreadSetRtPriority), which needs none of them. */
+
 #include <semaphore.h>
 #include <time.h>
 #include <unistd.h>
@@ -553,6 +552,8 @@ int sched_setscheduler(pid_t pid, int policy, const struct sched_param* param);
 
 #endif // __APPLE__
 
+/** A real-time program's start: daoProcessRtSetup(rt_priority) (daoThread.h: memory locked,
+ *  the calling thread at rt_priority) and denormals flushed to zero (daoToolsEnableFTZ). */
 void daoRtSetup(int rt_priority);
 
 #ifdef __cplusplus

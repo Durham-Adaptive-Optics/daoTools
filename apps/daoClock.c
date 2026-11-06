@@ -11,7 +11,6 @@
 #include <string.h>
 #include <math.h>
 #include <semaphore.h>
-#include <sched.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -22,13 +21,10 @@
 #include <limits.h>
 #include <sys/file.h>
 #include <errno.h>
-#include <sys/mman.h>
-#include <sched.h>
 #include <semaphore.h>
 #include <sys/time.h>
 #include <termios.h>
 
-#include <pthread.h>
 
 // DAO header
 #include "dao.h" 
@@ -101,8 +97,7 @@ void * clockRealTimeLoop(void *thread_data)
     unsigned int clock[1] = {0};
     daoInfo("clock @ %.3f Hz\n", shmFreq[0].array.F[0]);
     // the next tick, on an absolute schedule (no drift from the time spent in between)
-    struct timespec tc;
-    clock_gettime(CLOCK_MONOTONIC, &tc);
+    int64_t tc = daoTimeNs();                  // the next tick, monotonic ns
     float freq = frequency;
     daoToolsLoopStatus status;
     daoToolsLoopStatusInit(&status);
@@ -113,14 +108,9 @@ void * clockRealTimeLoop(void *thread_data)
             freq = shmFreq[0].array.F[0];
         }
         float pauseTime = 1e9 / freq;          // as before: in float
-        tc.tv_nsec += pauseTime;
-        if (tc.tv_nsec >= 1000000000L) 
-        {
-            tc.tv_sec += tc.tv_nsec / 1000000000L;
-            tc.tv_nsec = tc.tv_nsec % 1000000000L;
-        }
-        // Delay until the next timestamp
-        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &tc, NULL);
+        tc += (int64_t) pauseTime;
+        // Delay until the next tick: absolute, so the period does not drift
+        daoSleepUntilNs(tc);
         daoToolsLoopStatusStart(&status);
         clock[0]++;
         shm[0].md[0].cnt2++; 
@@ -155,16 +145,16 @@ static int realTimeLoop()
     fflush(stdout);
 
     // Thread
-    pthread_t controllerThread;
+    daoThread *controllerThread;
     int threadIdCtrl = 0;
     int camThreadVal=0;
-    camThreadVal = pthread_create(&controllerThread, NULL, clockRealTimeLoop, (void *)&threadIdCtrl);
+    camThreadVal = daoThreadCreate(&controllerThread, NULL, clockRealTimeLoop, (void *)&threadIdCtrl);
     if (camThreadVal != 0)
     {
         daoError("Cannot create thread, err\n");
         return DAO_ERROR;
     }
-    pthread_join(controllerThread, NULL);
+    daoThreadJoin(controllerThread, NULL);
     return DAO_SUCCESS;
 }
 
@@ -237,7 +227,7 @@ int main(int argc, char **argv)
      */
 {
     // r = seteuid(euid_called); //This goes up to maximum privileges
-    daoToolsSetRtPriority(93); //any number from 0-99; falls back + warns if not permitted
+    daoThreadSetRtPriority(NULL, 93); //any number from 0-99; falls back + warns if not permitted
     // r = seteuid(euid_real);//Go back to normal privileges
 
     sArgv0 = *argv;

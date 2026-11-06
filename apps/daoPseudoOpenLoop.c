@@ -201,7 +201,7 @@ int main(int argc, char **argv)
      **	Fetch the arguments and do what is requested
      */
 {
-    daoToolsSetRtPriority(93); //any number from 0-99; falls back + warns if not permitted
+    daoThreadSetRtPriority(NULL, 93); //any number from 0-99; falls back + warns if not permitted
 
     sArgv0 = *argv;
     if (argc < 2)
