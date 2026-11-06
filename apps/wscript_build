@@ -11,7 +11,7 @@ if platform.system() == "Darwin":
 	if os.path.exists('/usr/local/lib'):
 		my_link_flags.append('-L/usr/local/lib')
 else:
-	my_ld_flags = ['-lrt']
+	my_ld_flags = []    # no -lrt / -lpthread: clock_gettime (glibc 2.17+) and pthread (2.34+) are in libc, and libdao links its own
 	my_cxx_flags = ['']
 	# built and run on the same host -> -march=native (AVX2 + FMA on the EPYC).
 	# -fno-finite-math-only: -Ofast / -ffast-math, but NaN and infinity kept -- without
@@ -29,7 +29,7 @@ daoRandWriterSync = bld.program(
 	target = 'daoRandWriterSync',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao', '-lpthread', '-lm'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -39,7 +39,7 @@ daoRandImageU16Write = bld.program(
 	target = 'daoRandImageU16Write',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao', '-lpthread', '-lm'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -49,7 +49,7 @@ daoClock = bld.program(
 	target = 'daoClock',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -59,7 +59,7 @@ daoTimeDiff = bld.program(
 	target = 'daoTimeDiff',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao'  , '-lpthread', '-lm'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -69,7 +69,7 @@ daoTimeDiffNCurse = bld.program(
 	target = 'daoTimeDiffNCurse',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao'  , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -79,7 +79,7 @@ daoReadWrite = bld.program(
 	target = 'daoReadWrite',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao'  , '-lpthread', '-lm'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -89,7 +89,7 @@ daoTimeDiffStat = bld.program(
 	target = 'daoTimeDiffStat',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao'  , '-lpthread', '-lm'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -99,7 +99,7 @@ daoCommandFilter = bld.program(
 	target = 'daoCommandFilter',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm'] + my_ld_flags,
 	use = 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -109,7 +109,7 @@ daoLeakyIntegrator = bld.program(
 	target = 'daoLeakyIntegrator',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm'] + my_ld_flags,
 	use = 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -119,7 +119,7 @@ daoLeakyIntegratorMap = bld.program(
 	target = 'daoLeakyIntegratorMap',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm'] + my_ld_flags,
 	use = 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -129,7 +129,7 @@ daoDMSend = bld.program(
 	target = 'daoDMSend',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm'] + my_ld_flags,
 	use = 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -139,7 +139,7 @@ daoShmMonitoring = bld.program(
 	target = 'daoShmMonitoring',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 	use = 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -149,7 +149,7 @@ daoShmMonitoring1Value = bld.program(
 	target = 'daoShmMonitoring1Value',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao'  , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -159,7 +159,7 @@ daoPixelCalibrate = bld.program(
 	target = 'daoPixelCalibrate',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -169,7 +169,7 @@ daoPixelCalibratePws = bld.program(
 	target = 'daoPixelCalibratePws',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -179,7 +179,7 @@ daoCalIntensity = bld.program(
 	target = 'daoCalIntensity',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -189,7 +189,7 @@ daoCalIntensityNorm = bld.program(
 	target = 'daoCalIntensityNorm',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + bld.env.MARCH_NATIVE + ['-funroll-loops', '-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -199,7 +199,7 @@ daoShmCombiner = bld.program(
 	target = 'daoShmCombiner',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -209,7 +209,7 @@ daoShm2Fits = bld.program(
 	target = 'daoShm2Fits',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -219,7 +219,7 @@ daoComputeCentroid = bld.program(
 	target = 'daoComputeCentroid',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -229,7 +229,7 @@ daoComputeCentroidRelative = bld.program(
 	target = 'daoComputeCentroidRelative',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto', '-g'],
 	)
@@ -239,7 +239,7 @@ daoComputeCentroidRelativeRef = bld.program(
 	target = 'daoComputeCentroidRelativeRef',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto', '-g'],
 	)
@@ -249,7 +249,7 @@ daoComputeCentroidPws = bld.program(
 	target = 'daoComputeCentroidPws',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -259,7 +259,7 @@ daoComputeCentroidWindows = bld.program(
 	target = 'daoComputeCentroidWindows',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto', '-g'],
 	)
@@ -269,7 +269,7 @@ daoComputeCentroidCorrelation = bld.program(
 	target = 'daoComputeCentroidCorrelation',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto', '-g'],
 	)
@@ -284,7 +284,7 @@ if bld.env.FFTW_AVAILABLE:
 		target = 'daoComputeCentroidCorrelationFFT',
 		includes = '../include '+os.getenv('DAOROOT')+'/include/',
 		linkflags = my_link_flags,
-		ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+		ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 		use= 'daoTools',
 		cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto', '-g'],
 		)
@@ -306,7 +306,7 @@ daoAvgShm = bld.program(
 	target = 'daoAvgShm',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -316,7 +316,7 @@ daoAvgDoubleShm = bld.program(
 	target = 'daoAvgDoubleShm',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -326,7 +326,7 @@ daoDescrambleOcam2 = bld.program(
 	target = 'daoDescrambleOcam2',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -336,7 +336,7 @@ daoComputeIntensityPws = bld.program(
 	target = 'daoComputeIntensityPws',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -346,7 +346,7 @@ daoStatShm = bld.program(
 	target = 'daoStatShm',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -356,7 +356,7 @@ daoStatDoubleShm = bld.program(
 	target = 'daoStatDoubleShm',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -366,7 +366,7 @@ daoPixelExtract = bld.program(
 	target = 'daoPixelExtract',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -376,7 +376,7 @@ daoPixelSubstractExtract = bld.program(
 	target = 'daoPixelSubstractExtract',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -386,7 +386,7 @@ daoPixelSubstractExtractNorm = bld.program(
 	target = 'daoPixelSubstractExtractNorm',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -396,7 +396,7 @@ daoPixelSubstractExtractNormImage = bld.program(
 	target = 'daoPixelSubstractExtractNormImage',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -406,7 +406,7 @@ daoHighPassFilter = bld.program(
 	target = 'daoHighPassFilter',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -416,7 +416,7 @@ daoModesCutoff = bld.program(
 	target = 'daoModesCutoff',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -426,7 +426,7 @@ daoPseudoOpenLoop = bld.program(
 	target = 'daoPseudoOpenLoop',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao', '-lpthread', '-lm'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -436,7 +436,7 @@ daoModalGainOptimizer = bld.program(
 	target = 'daoModalGainOptimizer',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao', '-lpthread', '-lm'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -446,7 +446,7 @@ daoDmCombiner = bld.program(
 	target = 'daoDmCombiner',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm'] + my_ld_flags,
 	use = 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -456,7 +456,7 @@ daoApplyGain = bld.program(
 	target = 'daoApplyGain',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -466,7 +466,7 @@ daoShmSlice = bld.program(
 	target = 'daoShmSlice',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao', '-lpthread', '-lm'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -486,7 +486,7 @@ else:
 		target = 'daoDownsample',
 		includes = '../include '+os.getenv('DAOROOT')+'/include/',
 		linkflags = my_link_flags,
-		ldflags = ['-ldao' , '-lpthread', '-ldaoNuma', '-ldaoProto'] + my_ld_flags,
+		ldflags = ['-ldao', '-ldaoNuma', '-ldaoProto'] + my_ld_flags,
 		use= 'daoTools CLI11 PROTOBUF ZMQ',
 		cxxflags = ['-O3', '-fno-tree-vectorize', '-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto', '-std=c++17']
 	)
@@ -497,7 +497,7 @@ if bld.env.BLAS_AVAILABLE:
 		target = 'daoMvM',
 		includes = '../include '+os.getenv('DAOROOT')+'/include/',
 		linkflags = my_link_flags,
-		ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+		ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 		use= 'daoTools BLAS',
 		cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 		)
@@ -511,7 +511,7 @@ if bld.env.CUDA_AVAILABLE:
 		target = 'daoMvMGPU',
 		includes = ['../include', os.getenv('DAOROOT')+'/include/'] + bld.env.INCLUDES_CUDA,
 		linkflags = my_link_flags + ['-L' + p for p in bld.env.LIBPATH_CUDA],
-		ldflags = ['-ldao', '-lpthread', '-lm', '-lcublas', '-lcudart'] + my_ld_flags,
+		ldflags = ['-ldao', '-lm', '-lcublas', '-lcudart'] + my_ld_flags,
 		use= 'daoTools',
 		cflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 		)
@@ -525,7 +525,7 @@ if bld.env.CUDA_AVAILABLE and bld.env.YAMLCPP_AVAILABLE and platform.system() !=
 		target = 'daoGpuPipeline',
 		includes = ['../include', os.getenv('DAOROOT')+'/include/'] + bld.env.INCLUDES_CUDA,
 		linkflags = my_link_flags + ['-L' + p for p in bld.env.LIBPATH_CUDA],
-		ldflags = ['-ldao', '-lcudart', '-lpthread', '-ldl'] + my_ld_flags,
+		ldflags = ['-ldao', '-lcudart', '-ldl'] + my_ld_flags,
 		use = ['daoTools', 'daoToolsGpu', 'YAMLCPP'],
 		cxxflags = ['-O2', '-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
 		)
@@ -540,7 +540,7 @@ if bld.env.BLAS_AVAILABLE and bld.env.YAMLCPP_AVAILABLE:
 		target = 'daoCpuPipeline',
 		includes = ['../include', os.getenv('DAOROOT')+'/include/'],
 		linkflags = my_link_flags,
-		ldflags = ['-ldao', '-lpthread', '-lm'] + my_ld_flags,
+		ldflags = ['-ldao', '-lm'] + my_ld_flags,
 		use = ['daoTools', 'BLAS', 'YAMLCPP'],
 		defines = ['DAO_CPU_PIPELINE_FFT'] if bld.env.FFTW_AVAILABLE else [],
 		cxxflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
@@ -553,7 +553,7 @@ daoShmConcatenate = bld.program(
 	target = 'daoShmConcatenate',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -563,7 +563,7 @@ daoShmConcatenateFine = bld.program(
 	target = 'daoShmConcatenateFine',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
@@ -573,7 +573,7 @@ daoShmAdd = bld.program(
 	target = 'daoShmAdd',
 	includes = '../include '+os.getenv('DAOROOT')+'/include/',
 	linkflags = my_link_flags,
-	ldflags = ['-ldao' , '-lpthread', '-lm', '-lncurses'] + my_ld_flags,
+	ldflags = ['-ldao', '-lm', '-lncurses'] + my_ld_flags,
 	use= 'daoTools',
 	cflags = my_cflags + ['-Wall', '-Wextra', '-Werror', '-pipe', '-fdiagnostics-color=auto'],
 	)
