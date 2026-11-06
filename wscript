@@ -144,25 +144,21 @@ int main() {
 
 	# Rust tools (gui/<name>/Cargo.toml: daoShmTui), built by cargo when it is found and recent
 	# enough; never required.
-	conf.env.RUST_AVAILABLE = False
-	if not conf.options.without_rust:
-		cargo = conf.find_program('cargo', var='CARGO', mandatory=False)
-		rustc = conf.find_program('rustc', var='RUSTC', mandatory=False)
-		if cargo and rustc:
-			try:
-				out = conf.cmd_and_log(conf.env.RUSTC + ['--version'], quiet=Context.BOTH)   # "rustc 1.75.0 (...)"
-				ver = tuple(int(x) for x in out.split()[1].split('-')[0].split('.')[:2])
-				ok = ver >= RUST_MIN
-				conf.msg('Checking for rustc >= %d.%d' % RUST_MIN, '.'.join(map(str, ver)), color='GREEN' if ok else 'YELLOW')
-				conf.env.RUST_AVAILABLE = ok
-			except Exception as e:
-				conf.msg('Checking the rustc version', str(e), color='YELLOW')
-		if conf.env.RUST_AVAILABLE:
-			print("Rust found: building daoShmTui (gui/daoShmTui).")
-		else:
-			print("Rust (cargo, rustc >= %d.%d) not found: skipping daoShmTui." % RUST_MIN)
-	else:
+	conf.env.RUST_AVAILABLE = False  # Default to False
+	if getattr(conf.options, 'without_rust', False):
 		print("--without-rust: skipping daoShmTui.")
+	else:
+		try:
+			conf.find_program('cargo', var='CARGO')
+			conf.find_program('rustc', var='RUSTC')
+			out = conf.cmd_and_log(conf.env.RUSTC + ['--version'], quiet=Context.BOTH)   # "rustc 1.75.0 (...)"
+			ver = tuple(int(x) for x in out.split()[1].split('-')[0].split('.')[:2])
+			if ver < RUST_MIN:
+				raise ValueError('rustc %s < %d.%d' % (('.'.join(map(str, ver)),) + RUST_MIN))
+			conf.env.RUST_AVAILABLE = True
+			print("Rust %s detected: building daoShmTui (gui/daoShmTui)." % '.'.join(map(str, ver)))
+		except Exception as e:
+			print("Rust (cargo, rustc >= 1.75) not found: skipping daoShmTui.", e)
 
 def build(bld):
 	bld.env.DEFINES=['WAF=1']
