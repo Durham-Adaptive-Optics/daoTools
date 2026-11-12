@@ -1,0 +1,20 @@
+[package]
+name = "daoShmTui"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "DAO shared memory viewer in the terminal (ratatui)"
+license = "MIT"
+
+[[bin]]
+name = "daoShmTui"
+path = "src/main.rs"
+
+[dependencies]
+ratatui = { version = "=0.28.1", default-features = false, features = ["crossterm"] }
+memmap2 = "0.9"
+libc = "0.2"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
