@@ -52,6 +52,16 @@ def orientInverse(k):
 # PUPIL, MATRIX FOURIER TRANSFORM
 # ========================================================================================== #
 
+def removeBaseline(image, border=8):
+    '''The image less the median of its border (border pixels wide, at most an eighth of
+    the image): the camera's offset and a background left by the subtraction (none given,
+    stale), which the normalisation by the flux would take for the PSF's halo.'''
+    p = np.asarray(image, dtype=np.float64)
+    b = max(1, min(border, min(p.shape) // 8))
+    ring = np.concatenate([p[:b].ravel(), p[-b:].ravel(), p[b:-b, :b].ravel(), p[b:-b, -b:].ravel()])
+    return p - np.median(ring)
+
+
 def circularPupil(res, obstruction=0.0):
     '''A res x res pupil, the diameter res pixels, centred at (res - 1) / 2.'''
     x = (np.arange(res) - (res - 1) / 2) / (res / 2)
@@ -132,8 +142,9 @@ class FastAndFurious:
         self.prevPe = None
 
     def normalize(self, image):
-        '''Korkiakoski eqs. 12-13: the image scaled to a's flux, the peak's loss added back.'''
-        p = np.asarray(image, dtype=np.float64)
+        '''Korkiakoski eqs. 12-13: the image (its baseline removed) scaled to a's flux, the
+        peak's loss added back.'''
+        p = removeBaseline(image)
         p = p * (self.a2.sum() / max(p.sum(), 1e-30))
         strehl = p.max() / self.a2.max()
         return p + (1 - strehl) * self.a2, strehl
@@ -268,9 +279,9 @@ def calibrate(ff, acquire, modes, amp, nIm=None):
     for i in modes:
         theta[:] = 0
         theta[i] = amp
-        pp = acquire(theta)
+        pp = removeBaseline(acquire(theta))
         theta[i] = -amp
-        pm = acquire(theta)
+        pm = removeBaseline(acquire(theta))
         pp = pp * ff.a2.sum() / pp.sum()
         pm = pm * ff.a2.sum() / pm.sum()
         meas.append(0.5 * (pp - pm))
