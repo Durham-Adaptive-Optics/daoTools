@@ -5,7 +5,9 @@ Fast & Furious Control - runs daoFastAndFurious.py's steps and shows the loop
 Drives the Fast & Furious focal-plane wavefront sensing (daoFastAndFurious.py): builds
 the modal basis, calibrates (PSF centre, camera orientation, basis sign and scale),
 runs and stops the loop, with the gain, the leak and the hold applied live through
-control SHMs. A test aberration can be put on a spare DM channel through M2A. Shows the
+control SHMs. A session (the output: the correction found, the settings, the basis and
+the calibration) can be saved to a file and loaded back to restart quickly. A test
+aberration can be put on a spare DM channel through M2A. Shows the
 PSF around the calibrated centre, the Strehl proxy of each iteration and the pupil phase
 of the correction.
 
@@ -33,15 +35,17 @@ Examples:
 import os
 import re
 import sys
+import json
 import getopt
 import shutil
 import signal
+import time
 import numpy as np
 from PyQt5.QtCore import QProcess, QSettings, QTimer, Qt
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QGroupBox, QFormLayout,
                              QHBoxLayout, QVBoxLayout, QGridLayout, QLineEdit, QPushButton,
                              QDoubleSpinBox, QSpinBox, QCheckBox, QLabel, QPlainTextEdit,
-                             QMessageBox, QScrollArea, QSplitter)
+                             QMessageBox, QScrollArea, QSplitter, QFileDialog)
 import pyqtgraph as pg
 import dao
 import daoFastAndFuriousLib as ff
@@ -124,6 +128,9 @@ FIELDS = {
     'abAmp':        (0.02, float),
     'abSeed':       (0, int),
 }
+
+# the work directory's files kept in a session: npz key -> file
+SESSION_FILES = {'basisFile': 'ffBasis.npz', 'calibFile': 'ffCalib.npz'}
 
 
 class Main(QMainWindow):
@@ -261,6 +268,18 @@ class Main(QMainWindow):
         self.btnZero.clicked.connect(self.zeroOutput)
         for b in (self.btnStart, self.btnStop, self.btnHold, self.btnZero):
             row.addWidget(b)
+        f.addRow(row)
+        row = QHBoxLayout()
+        self.btnSaveCmd = QPushButton('Save session')
+        self.btnSaveCmd.setToolTip('Save the output SHM (the correction applied), the settings, '
+                                   'the basis and the calibration to a file')
+        self.btnSaveCmd.clicked.connect(self.saveSession)
+        self.btnLoadCmd = QPushButton('Load session')
+        self.btnLoadCmd.setToolTip('Restore a saved session: the settings, the basis and the '
+                                   'calibration, the command written to the output SHM')
+        self.btnLoadCmd.clicked.connect(self.loadSession)
+        row.addWidget(self.btnSaveCmd)
+        row.addWidget(self.btnLoadCmd)
         f.addRow(row)
         lv.addWidget(g)
 
@@ -469,6 +488,8 @@ class Main(QMainWindow):
 
     def setBusy(self, kind):
         idle = kind is None
+        # the loop and a calibration write the output: no load meanwhile
+        self.btnLoadCmd.setEnabled(idle)
         for b in (self.btnBasis, self.btnCalib, self.btnStart, self.btnZero):
             b.setEnabled(idle)
         self.btnStop.setEnabled(not idle)
@@ -553,6 +574,82 @@ class Main(QMainWindow):
             self.append(f'{name} zeroed')
         except Exception as e:
             self.append(f'{name}: {e}')
+
+    def saveSession(self):
+        '''An npz with all a restart needs: the output SHM's content (out0 + T theta: the
+        correction applied), the settings (JSON) and the basis and calibration files (bytes).'''
+        name = self.value('output')
+        if self.missingShms(('output',)):
+            return
+        os.makedirs(self.value('workDir'), exist_ok=True)
+        default = self.path(time.strftime('ffSession_%Y%m%d_%H%M%S.npz'))
+        path, _ = QFileDialog.getSaveFileName(self, 'Save the session', default, 'npz (*.npz)')
+        if not path:
+            return
+        try:
+            d = np.asarray(dao.shm(name).get_data())
+            data = dict(command=d, settings=json.dumps({k: self.value(k) for k in FIELDS}),
+                        time=time.strftime('%Y-%m-%dT%H:%M:%S'))
+            for key, file in SESSION_FILES.items():
+                if os.path.exists(self.path(file)):
+                    with open(self.path(file), 'rb') as fd:
+                        data[key] = np.frombuffer(fd.read(), dtype=np.uint8)
+            np.savez(path, **data)
+            self.saveSettings()
+            kept = ', '.join(SESSION_FILES[k] for k in SESSION_FILES if k in data) or 'no basis/calibration'
+            self.append(f'session saved to {path}: {name} (rms {np.std(d):.4g}, max |.| '
+                        f'{np.abs(d).max():.4g}), the settings, {kept}')
+        except Exception as e:
+            self.append(f'save session: {e}')
+
+    def loadSession(self):
+        '''A saved session: the settings, the basis and calibration files (in the session's
+        work directory) and the command written to its output SHM; the loop, started next,
+        starts from that command.'''
+        path, _ = QFileDialog.getOpenFileName(self, 'Load a session', self.value('workDir'),
+                                              'npz (*.npz)')
+        if not path:
+            return
+        try:
+            with np.load(path) as f:
+                cmd = f['command']
+                settings = json.loads(str(f['settings']))
+                files = {SESSION_FILES[k]: f[k].tobytes() for k in SESSION_FILES if k in f}
+                saved = str(f['time']) if 'time' in f else '?'
+            name = settings.get('output', self.value('output'))
+            workDir = settings.get('workDir', self.value('workDir'))
+            if not os.path.exists(name):
+                QMessageBox.warning(self, 'F&F', f'{path}: the output SHM {name} does not exist')
+                return
+            shm = dao.shm(name)
+            d = np.asarray(shm.get_data())
+            if cmd.size != d.size:
+                QMessageBox.warning(self, 'F&F', f'{path}: {cmd.size} values, {name} has {d.size}')
+                return
+            overwritten = [n for n in files if os.path.exists(os.path.join(workDir, n))]
+            if QMessageBox.question(
+                    self, 'F&F', f'Load the session saved {saved}?\n\n'
+                    f'- the settings restored (output {name})\n'
+                    f'- {", ".join(files) or "no files"} written to {workDir}'
+                    + (f' (replacing {", ".join(overwritten)})' if overwritten else '') + '\n'
+                    f'- the command written to {name}: rms {np.std(cmd):.4g}, '
+                    f'max |.| {np.abs(cmd).max():.4g}') != QMessageBox.Yes:
+                return
+            for key, v in settings.items():
+                if key in FIELDS:
+                    self.setValue(key, v)
+            os.makedirs(workDir, exist_ok=True)
+            for n, b in files.items():
+                with open(os.path.join(workDir, n), 'wb') as fd:
+                    fd.write(b)
+            shm.set_data(cmd.reshape(d.shape).astype(d.dtype))
+            self.saveSettings()
+            self.createControlShms()
+            self.refreshFiles()
+            self.append(f'session {path} loaded: settings, {", ".join(files) or "no files"}, '
+                        f'command written to {name}')
+        except Exception as e:
+            self.append(f'load session: {e}')
 
     def applyAberration(self):
         if self.missingShms(('m2a', 'abChannel')):
