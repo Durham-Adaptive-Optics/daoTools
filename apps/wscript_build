@@ -540,7 +540,8 @@ if bld.env.BLAS_AVAILABLE and bld.env.YAMLCPP_AVAILABLE:
 		target = 'daoCpuPipeline',
 		includes = ['../include', os.getenv('DAOROOT')+'/include/'],
 		linkflags = my_link_flags,
-		ldflags = ['-ldao', '-lm'] + my_ld_flags,
+		# -ldl: dlopen/dlsym for the stage plugins (in libdl before glibc 2.34)
+		ldflags = ['-ldao', '-lm', '-ldl'] + my_ld_flags,
 		use = ['daoTools', 'BLAS', 'YAMLCPP'],
 		defines = ['DAO_CPU_PIPELINE_FFT'] if bld.env.FFTW_AVAILABLE else [],
 		cxxflags = my_cflags + ['-Wall', '-Wextra', '-pipe', '-fdiagnostics-color=auto'],
