@@ -61,7 +61,11 @@ class Camera:
         self.shm = dao.shm(name)
         self.bg = readShm(bgName) if bgName else 0.0
 
-    def frame(self, nFrames=1, skip=0):
+    def frame(self, nFrames=1, skip=0, settle=0.0):
+        # settle: seconds for the last command to reach the DM (e.g. through a closed AO
+        # loop: the offset's propagation and the loop's settling), then `skip` frames
+        if settle > 0:
+            time.sleep(settle)
         for _ in range(skip):
             self.shm.get_data(check=True)
         acc = 0.0
@@ -142,7 +146,7 @@ def cmdCalibrate(args):
 
     def acquire(theta, center=None):
         out.write(theta)
-        frame = cam.frame(args.frames, args.delay)
+        frame = cam.frame(args.frames, args.delay, args.settle)
         return frame if center is None else ff.crop(frame, center, args.size)
 
     try:
@@ -192,7 +196,7 @@ def cmdRun(args):
     it = 0
     out.write(loop.theta)
     while not end and (args.iterations == 0 or it < args.iterations):
-        image = ff.crop(cam.frame(args.frames, args.delay), center, args.size, k)
+        image = ff.crop(cam.frame(args.frames, args.delay, args.settle), center, args.size, k)
         loop.gain = readScalar(gainShm, args.gain)
         loop.leak = readScalar(leakShm, args.leak)
         if readScalar(enableShm, 1) == 0:
@@ -260,6 +264,10 @@ def addFF(p, output=True):
     p.add_argument('-N', '--size', type=int, default=63, help='crop size, pixels (odd: centred on a pixel)')
     p.add_argument('-n', '--frames', type=int, default=1, help='frames averaged per image')
     p.add_argument('-d', '--delay', type=int, default=2, help='frames skipped after a command')
+    p.add_argument('--settle', type=float, default=0.0,
+                   help='seconds waited after a command, before the skipped frames: the time '
+                        'it takes to act (through a closed AO loop: its offset propagation and '
+                        'settling); the even modes\' sign needs images that include it')
     p.add_argument('--eps', type=float, default=1e-3, help='odd-part regularisation, relative to the PSF peak')
     p.add_argument('--window', type=float, default=None, help='focal-plane window radius, lambda/D')
     p.add_argument('--reg', type=float, default=1e-3, help='reconstructor regularisation')

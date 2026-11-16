@@ -187,6 +187,10 @@ Runs the Fast & Furious focal-plane wavefront sensing (``daoFastAndFurious.py``)
 - Gain, leak and hold applied live through control SHMs (``<prefix>Gain``,
   ``<prefix>Leak``, ``<prefix>Enable``, default prefix ``/tmp/ff``)
 - A test aberration put on a spare DM channel through M2A (Apply / Clear)
+- Settling time (``--settle``, seconds): waited after each command, before the skipped
+  frames, so that the images include it. Needed when the output acts through a closed AO
+  loop (an NCPA / reference offset): the even modes' sign comes from the difference of
+  two images, and goes wrong if the command has not acted yet
 - PSF around the calibrated centre, the Strehl proxy of each iteration, the correction's
   pupil phase
 - Files (basis, calibration, final theta) in the work directory (``-w``, default
