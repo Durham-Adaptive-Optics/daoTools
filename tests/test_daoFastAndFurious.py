@@ -100,6 +100,25 @@ def test_calibrate_finds_orientation_and_scale(system):
     assert abs(abs(cal['scale']) - 1.3) < 0.15
 
 
+def test_camera_offset_removed(system):
+    '''A camera offset (no background given) 10 x the PSF's flux over the crop: the Strehl
+    and the calibration are as without it.'''
+    pupil, basis, ab = system
+    f = ff.FastAndFurious(pupil, basis, SAMP, N_IM)
+    offset = 10 * f.a2.sum() / N_IM ** 2
+    _, strehl = f.estimate(f.model(np.zeros(f.nModes)) + offset)
+    assert strehl > 0.95
+    sim = ff.Simulator(pupil, basis, SAMP, ab, shape=(96, 96), center=(50, 44),
+                       orientation=6, scale=1.3, flux=1e8, nIm=N_IM)
+    offset = 10 * 1e8 / N_IM ** 2
+    center = ff.findCenter(sim.frame(np.zeros(f.nModes)) + offset)
+    cal = ff.calibrate(f, lambda th: ff.crop(sim.frame(th) + offset, center, N_IM),
+                       range(f.nModes), 0.2)
+    assert (cal['orientation'], np.sign(cal['scale'])) in [(6, 1), (6 ^ 3, -1)]
+    assert abs(abs(cal['scale']) - 1.3) < 0.15
+    assert cal['correlation'] > 0.5
+
+
 @pytest.mark.parametrize('orientation', [0, 5])
 def test_loop_converges(system, orientation):
     pupil, basis, ab = system
