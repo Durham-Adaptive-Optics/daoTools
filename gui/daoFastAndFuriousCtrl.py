@@ -109,6 +109,7 @@ FIELDS = {
     'size':         (63, int),
     'frames':       (1, int),
     'delay':        (2, int),
+    'settle':       (0.0, float),
     'modes':        (50, int),
     'res':          (128, int),
     'diameter':     (0.0, float),
@@ -215,6 +216,7 @@ class Main(QMainWindow):
         f.addRow('Crop (odd), px', self.field('size', 9, 1001))
         f.addRow('Frames averaged', self.field('frames', 1, 1000))
         f.addRow('Frames skipped', self.field('delay', 0, 1000))
+        f.addRow('Settling time, s', self.field('settle', 0, 10, 2, 0.05))
         f.addRow('Modes', self.field('modes', 1, 10000))
         lv.addWidget(g)
 
@@ -389,6 +391,8 @@ class Main(QMainWindow):
                 '-M', str(self.value('modes')), '-q', str(self.value('samp')),
                 '-N', str(self.value('size')), '-n', str(self.value('frames')),
                 '-d', str(self.value('delay')), '-o', self.value('output')]
+        if self.value('settle') > 0:
+            args += ['--settle', str(self.value('settle'))]
         for opt, key in (('-b', 'background'), ('-z', 'm2a'), ('-I', 'im')):
             if self.value(key):
                 args += [opt, self.value(key)]
