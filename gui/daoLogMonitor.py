@@ -1,7 +1,9 @@
+import os
 import sys
 from PyQt5.QtWidgets import QApplication, QTableWidget, QTableWidgetItem, QTextEdit, QHBoxLayout, QVBoxLayout, QWidget, QPushButton, QLineEdit, QFormLayout, QLabel, QHeaderView
 from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtGui import QColor
+from PyQt5.QtGui import QIcon
 from collections import deque
 from daoRecvLogs import network_log
 
@@ -177,6 +179,10 @@ class TableWidget(QWidget):
 
 if __name__=="__main__":
     app = QApplication(sys.argv)
+    # dao logo in the window's title bar
+    logo = os.path.join(os.getenv('DAOROOT', ''), 'data', 'daoLogo.png')
+    if os.path.exists(logo):
+        app.setWindowIcon(QIcon(logo))
     table_widget = TableWidget()
     table_widget.show()
     sys.exit(app.exec_())

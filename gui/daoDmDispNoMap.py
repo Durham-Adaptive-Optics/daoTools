@@ -5,6 +5,7 @@ import sys, getopt
 from PyQt5 import QtGui
 from PyQt5 import QtCore
 from PyQt5.QtWidgets import QApplication
+from PyQt5.QtGui import QIcon
 
 import numpy as np
 import pyqtgraph as pg
@@ -149,6 +150,10 @@ if __name__ == '__main__':
             mapName = arg
 
     app = QApplication([])
+    # dao logo in the window's title bar
+    logo = os.path.join(os.getenv('DAOROOT', ''), 'data', 'daoLogo.png')
+    if os.path.exists(logo):
+        app.setWindowIcon(QIcon(logo))
     main = Main(name, mapName)
     main.setWindowTitle(''+name+'')
     main.show()

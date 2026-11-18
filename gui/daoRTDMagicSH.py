@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 import daoShm
 import magicplot
 import time
@@ -12,6 +13,7 @@ import argparse
 from PyQt5 import QtCore
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore, QtGui
+from PyQt5.QtGui import QIcon
 
 
 class UpdateThread_Image(QtCore.QThread):
@@ -166,6 +168,10 @@ if __name__=="__main__":
             exit()
 
     app = magicplot.pyqtgraph.mkQApp()
+    # dao logo in the window's title bar
+    logo = os.path.join(os.getenv('DAOROOT', ''), 'data', 'daoLogo.png')
+    if os.path.exists(logo):
+        app.setWindowIcon(QIcon(logo))
     plt = magicplot.MagicPlot()
     im = plt.getImageItem()
     plt.show()

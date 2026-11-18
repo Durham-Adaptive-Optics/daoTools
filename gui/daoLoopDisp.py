@@ -38,6 +38,7 @@ import pyqtgraph as pg
 from PyQt5.uic import loadUiType
 from PyQt5.QtWidgets import QApplication
 from pyqtgraph.Qt import QtCore
+from PyQt5.QtGui import QIcon
 import dao
 
 path = os.getenv('DAOROOT') + '/data/'
@@ -241,6 +242,10 @@ if __name__ == '__main__':
         pg.setConfigOption('foreground', '#cccccc')
 
     app = QApplication([])
+    # dao logo in the window's title bar
+    logo = os.path.join(os.getenv('DAOROOT', ''), 'data', 'daoLogo.png')
+    if os.path.exists(logo):
+        app.setWindowIcon(QIcon(logo))
     app.setStyleSheet(make_stylesheet(light))
 
     main = Main(shmCmdName, shmGainName, shmLeakName, shmEnableName)

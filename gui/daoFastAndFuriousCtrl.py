@@ -8,8 +8,8 @@ runs and stops the loop, with the gain, the leak and the hold applied live throu
 control SHMs. A session (the output: the correction found, the settings, the basis and
 the calibration) can be saved to a file and loaded back to restart quickly. A test
 aberration can be put on a spare DM channel through M2A. Shows the
-PSF around the calibrated centre, the Strehl proxy of each iteration and the pupil phase
-of the correction.
+PSF around the calibrated centre, the Strehl proxy of each iteration, the pupil phase
+of the correction and its modes.
 
 Each step runs daoFastAndFurious.py as a subprocess, its output in the log. The files
 (basis, calibration, final theta) are kept in the work directory. The settings are
@@ -46,6 +46,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QGroupBox, QFor
                              QHBoxLayout, QVBoxLayout, QGridLayout, QLineEdit, QPushButton,
                              QDoubleSpinBox, QSpinBox, QCheckBox, QLabel, QPlainTextEdit,
                              QMessageBox, QScrollArea, QSplitter, QFileDialog)
+from PyQt5.QtGui import QIcon
 import pyqtgraph as pg
 import dao
 import daoFastAndFuriousLib as ff
@@ -125,6 +126,8 @@ FIELDS = {
     'leak':         (0.97, float),
     'iterations':   (0, int),
     'restore':      (False, bool),
+    'modesAuto':    (True, bool),
+    'modesRange':   (0.1, float),
     'abChannel':    ('/tmp/dmCmd05.im.shm', str),
     'abAmp':        (0.02, float),
     'abSeed':       (0, int),
@@ -149,8 +152,11 @@ class Main(QMainWindow):
         self.strehl = []
         self.camShm = None
         self.camName = None
+        self.camIno = None
         self.phaseShm = None
         self.phaseName = None
+        self.thetaShm = None
+        self.thetaName = None
         self.center = None
         self.ctrl = {}
 
@@ -314,6 +320,7 @@ class Main(QMainWindow):
         grid = QGridLayout()
         self.psfView = pg.GraphicsLayoutWidget()
         p = self.psfView.addPlot(title='PSF (log)')
+        self.psfPlot = p
         p.setAspectLocked(True)
         p.hideAxis('left'); p.hideAxis('bottom')
         self.psfImg = pg.ImageItem()
@@ -333,7 +340,32 @@ class Main(QMainWindow):
         self.strehlPlot.showGrid(x=True, y=True, alpha=0.3)
         self.strehlCurve = self.strehlPlot.plot(pen=pg.mkPen('#4a9eff', width=2), symbol='o',
                                                 symbolSize=4)
-        grid.addWidget(self.strehlPlot, 1, 0, 1, 2)
+        grid.addWidget(self.strehlPlot, 1, 0)
+        # the correction's modes, below its phase (0-1: tip and tilt, not applied)
+        self.modesPlot = pg.PlotWidget(title='Correction modes (0-1: tip/tilt, not applied)')
+        self.modesPlot.setLabel('bottom', 'mode')
+        self.modesPlot.showGrid(x=False, y=True, alpha=0.3)
+        self.modesBars = pg.BarGraphItem(x=[], height=[], width=0.8, brush='#4a9eff')
+        self.modesPlot.addItem(self.modesBars)
+        self.modesPlot.setMouseEnabled(x=False, y=False)
+        self.modesPlot.disableAutoRange()
+        # vertical scale symmetric about 0: the largest |mode| (autoscale) or +- a fixed range
+        modes = QWidget()
+        mv = QVBoxLayout(modes)
+        mv.setContentsMargins(0, 0, 0, 0)
+        mv.addWidget(self.modesPlot)
+        row = QHBoxLayout()
+        row.addWidget(QLabel('Autoscale'))
+        row.addWidget(self.field('modesAuto'))
+        row.addWidget(QLabel('Range +-'))
+        row.addWidget(self.field('modesRange', 1e-6, 1e6, 4, 0.01))
+        row.addStretch(1)
+        mv.addLayout(row)
+        self.w['modesAuto'].toggled.connect(lambda on: self.w['modesRange'].setEnabled(not on))
+        self.w['modesAuto'].toggled.connect(lambda _: self.scaleModes())
+        self.w['modesRange'].valueChanged.connect(lambda _: self.scaleModes())
+        self.theta = np.zeros(0)
+        grid.addWidget(modes, 1, 1)
         rv.addLayout(grid, 3)
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
@@ -543,6 +575,12 @@ class Main(QMainWindow):
                                 f'per lambda/D, the field says {self.value("samp"):.4g}: the loop '
                                 f'uses the calibration\'s. Calibrate again, or set it back')
             return
+        shape = self.cameraShape()
+        if 'frame' in c and shape is not None and tuple(int(n) for n in c['frame']) != shape:
+            QMessageBox.warning(self, 'F&F', f'The camera frame is {shape[0]} x {shape[1]}, the '
+                                f'calibration was done on {int(c["frame"][0])} x '
+                                f'{int(c["frame"][1])} (ROI changed?): calibrate again')
+            return
         if c['correlation'] < 0.3 and QMessageBox.question(
                 self, 'F&F', f'The calibration\'s correlation is {c["correlation"]:.3f} (good: '
                 f'> 0.5): the sampling, the crop or the pokes are likely wrong, the loop will '
@@ -550,17 +588,21 @@ class Main(QMainWindow):
             return
         self.createControlShms()
         phaseName = f'{self.value("ctrlPrefix")}Phase.im.shm'
+        thetaName = f'{self.value("ctrlPrefix")}Theta.im.shm'
         args = ['run'] + self.common() + [
             '-C', self.path('ffCalib.npz'), '-g', str(self.value('gain')),
             '-l', str(self.value('leak')), '-k', str(self.value('iterations')),
             '-G', self.ctrl['gain'][0], '-K', self.ctrl['leak'][0], '-e', self.ctrl['enable'][0],
-            '-p', phaseName, '-s', self.path('ffTheta.npy')]
+            '-p', phaseName, '-t', thetaName, '-s', self.path('ffTheta.npy')]
         if self.value('restore'):
             args.append('-R')
         self.strehl = []
         self.strehlCurve.setData([], [])
+        self.modesBars.setOpts(x=[], height=[])
         self.phaseShm = None
         self.phaseName = phaseName
+        self.thetaShm = None
+        self.thetaName = thetaName
         self.launch('run', args)
 
     def zeroOutput(self):
@@ -674,13 +716,37 @@ class Main(QMainWindow):
         self.writeZeros(self.value('abChannel'))
 
     # ------------------------------------------------------------ displays
+    def cameraFrame(self):
+        '''The camera's frame; the SHM reopened when it is another file (a new ROI re-creates it).'''
+        name = self.value('camera')
+        ino = os.stat(name).st_ino
+        if self.camShm is None or self.camName != name or self.camIno != ino:
+            self.camName, self.camIno = name, ino
+            self.camShm = dao.shm(name)
+        return np.asarray(self.camShm.get_data(), dtype=np.float64)
+
+    def cameraShape(self):
+        try:
+            return self.cameraFrame().shape
+        except Exception:
+            self.camShm = None
+            return None
+
     def updateDisplays(self):
         try:
-            if self.camShm is None or self.camName != self.value('camera'):
-                self.camName = self.value('camera')
-                self.camShm = dao.shm(self.camName)
-            frame = np.asarray(self.camShm.get_data(), dtype=np.float64)
-            center = self.center or ff.findCenter(frame)
+            frame = self.cameraFrame()
+            # the calibrated centre is in the calibration's frame: another ROI, the PSF found
+            calFrame = tuple(int(n) for n in self.calib['frame']) \
+                if self.calib and 'frame' in self.calib else None
+            outside = self.center is not None and not (0 <= self.center[0] < frame.shape[0]
+                                                       and 0 <= self.center[1] < frame.shape[1])
+            if self.center is None or outside or (calFrame and calFrame != frame.shape):
+                center = ff.findCenter(frame)
+                title = 'PSF (log)' if self.center is None else \
+                    'PSF (log): ROI changed since the calibration, calibrate again'
+            else:
+                center, title = self.center, 'PSF (log)'
+            self.psfPlot.setTitle(title)
             img = ff.crop(frame, center, self.value('size'))
             self.psfImg.setImage(np.log10(np.clip(img, 0, None) + 1).T, autoLevels=True)
         except Exception:
@@ -692,6 +758,25 @@ class Main(QMainWindow):
                 self.phaseImg.setImage(np.asarray(self.phaseShm.get_data()).T, autoLevels=True)
             except Exception:
                 self.phaseShm = None
+            try:
+                if self.thetaShm is None:
+                    self.thetaShm = dao.shm(self.thetaName)
+                theta = np.asarray(self.thetaShm.get_data(), dtype=np.float64).ravel()
+                self.modesBars.setOpts(x=np.arange(theta.size), height=theta)
+                self.theta = theta
+                self.scaleModes()
+            except Exception:
+                self.thetaShm = None
+
+    def scaleModes(self):
+        '''The modes' vertical scale, symmetric about 0.'''
+        if self.value('modesAuto'):
+            r = 1.1 * np.abs(self.theta).max() if self.theta.size else 0.0
+            r = r if r > 0 else 1e-3
+        else:
+            r = self.value('modesRange')
+        self.modesPlot.setYRange(-r, r, padding=0)
+        self.modesPlot.setXRange(-0.5, max(self.theta.size, 1) - 0.5, padding=0)
 
     def append(self, text):
         self.log.appendPlainText(text)
@@ -722,6 +807,10 @@ def main():
         else:
             overrides[keys[opt]] = arg
     app = QApplication(sys.argv)
+    # dao logo in the window's title bar
+    logo = os.path.join(os.getenv('DAOROOT', ''), 'data', 'daoLogo.png')
+    if os.path.exists(logo):
+        app.setWindowIcon(QIcon(logo))
     app.setStyleSheet(make_stylesheet(light))
     pg.setConfigOption('background', '#f0f0f0' if light else '#1e1e1e')
     pg.setConfigOption('foreground', '#000000' if light else '#cccccc')

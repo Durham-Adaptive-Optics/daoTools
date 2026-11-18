@@ -4,6 +4,7 @@
 Run in the terminal by default, add --qt for a GUI table, or --once for a single
 terminal snapshot.
 """
+import os
 import argparse
 import shutil
 import sys
@@ -133,6 +134,7 @@ def run_terminal(monitor, interval, once):
 
 def run_qt(monitor, interval):
     from PyQt5.QtCore import Qt, QTimer
+    from PyQt5.QtGui import QIcon
     from PyQt5.QtWidgets import (
         QApplication,
         QHeaderView,
@@ -203,6 +205,10 @@ def run_qt(monitor, interval):
             event.accept()
 
     app = QApplication.instance() or QApplication(sys.argv[:1])
+    # dao logo in the window's title bar
+    logo = os.path.join(os.getenv('DAOROOT', ''), 'data', 'daoLogo.png')
+    if os.path.exists(logo):
+        app.setWindowIcon(QIcon(logo))
     window = ProcessWindow()
     window.show()
     return app.exec_()

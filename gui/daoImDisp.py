@@ -14,6 +14,7 @@ Examples:
   daoImDisp.py /tmp/ws00image.im.shm --fps 20 --light
 """
 
+import os
 import sys
 import argparse
 import numpy as np
@@ -21,6 +22,7 @@ import time
 import dao
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore, QtWidgets
+from PyQt5.QtGui import QIcon
 
 
 def make_stylesheet(light):
@@ -81,6 +83,10 @@ def main():
     print(f"Image: {nx}x{ny}  shm: {args.shmName}")
 
     app = QtWidgets.QApplication(sys.argv)
+    # dao logo in the window's title bar
+    logo = os.path.join(os.getenv('DAOROOT', ''), 'data', 'daoLogo.png')
+    if os.path.exists(logo):
+        app.setWindowIcon(QIcon(logo))
 
     win = QtWidgets.QMainWindow()
     win.setWindowTitle(f"{args.shmName}  [{nx}x{ny}]")

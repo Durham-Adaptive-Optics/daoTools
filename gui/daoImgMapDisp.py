@@ -19,12 +19,14 @@ Examples:
   daoImgMapDisp.py /tmp/cblue1.im.shm --light
 """
 
+import os
 import sys
 import argparse
 import numpy as np
 import dao
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore, QtWidgets
+from PyQt5.QtGui import QIcon
 
 COLORMAPS = {
     'viridis': [(68,1,84),(59,82,139),(33,145,140),(94,201,98),(253,231,37)],
@@ -148,6 +150,10 @@ def main():
             pass
 
     app = QtWidgets.QApplication(sys.argv)
+    # dao logo in the window's title bar
+    logo = os.path.join(os.getenv('DAOROOT', ''), 'data', 'daoLogo.png')
+    if os.path.exists(logo):
+        app.setWindowIcon(QIcon(logo))
 
     win = QtWidgets.QMainWindow()
     win.setWindowTitle(f"ImgDisp  {args.shmName}  [{nx}x{ny}]")

@@ -30,6 +30,7 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from PyQt5.QtGui import QIcon
 
 
 SHM_DIR = "." if os.name == "nt" else "/tmp"
@@ -643,6 +644,10 @@ class PipelineWindow(QMainWindow):
 def show_shm_pipeline(directory=SHM_DIR):
     """Show discovered dao SHMs and connected process handles in a Qt window."""
     app = QApplication.instance() or QApplication(sys.argv[:1])
+    # dao logo in the window's title bar
+    logo = os.path.join(os.getenv('DAOROOT', ''), 'data', 'daoLogo.png')
+    if os.path.exists(logo):
+        app.setWindowIcon(QIcon(logo))
     window = PipelineWindow(directory)
     window.show()
     return app.exec_()
