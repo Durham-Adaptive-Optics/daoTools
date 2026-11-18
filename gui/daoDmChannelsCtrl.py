@@ -35,6 +35,7 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt5.QtWidgets import QApplication
 from PyQt5 import QtCore
+from PyQt5.QtGui import QIcon
 import dao
 
 path = os.getenv('DAOROOT') + '/data/'
@@ -212,6 +213,10 @@ if __name__ == '__main__':
         pg.setConfigOption('foreground', '#cccccc')
 
     app = QApplication([])
+    # dao logo in the window's title bar
+    logo = os.path.join(os.getenv('DAOROOT', ''), 'data', 'daoLogo.png')
+    if os.path.exists(logo):
+        app.setWindowIcon(QIcon(logo))
     app.setStyleSheet(make_stylesheet(light))
 
     main = Main(name, mapName, m2aName, labels)

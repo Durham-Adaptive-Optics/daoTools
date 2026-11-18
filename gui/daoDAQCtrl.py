@@ -50,6 +50,7 @@ from PyQt5.QtCore import QDateTime, QThread, Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QPalette, QTextCursor
 from PyQt5.QtWidgets import (QApplication, QFileDialog, QHeaderView, QListWidgetItem,
                              QMessageBox, QStyleFactory, QTableWidgetItem, QTreeWidgetItem)
+from PyQt5.QtGui import QIcon
 
 import daoDAQExtractor as X
 from daoDAQClient import DAQClient, DAQState
@@ -1295,6 +1296,10 @@ def parse_args():
 def main():
     args = parse_args()
     app = QApplication(sys.argv)
+    # dao logo in the window's title bar
+    logo = os.path.join(os.getenv('DAOROOT', ''), 'data', 'daoLogo.png')
+    if os.path.exists(logo):
+        app.setWindowIcon(QIcon(logo))
     try:
         gui = Main(args.host, args.port, config_file=args.config,
                    config_dir=args.config_dir, light=args.light)

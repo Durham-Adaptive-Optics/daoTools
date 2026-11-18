@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 
+import os
 import sys
 from PyQt5 import QtCore
 from PyQt5.QtWidgets import (
     QApplication, QComboBox, QGridLayout, QHBoxLayout, QLabel, QMainWindow,
     QPushButton, QScrollArea, QVBoxLayout, QWidget,
 )
+from PyQt5.QtGui import QIcon
 import numpy as np
 import pyqtgraph as pg
 import time
@@ -236,6 +238,10 @@ if __name__ == '__main__':
         pg.setConfigOption('foreground', '#cccccc')
 
     app = QApplication([])
+    # dao logo in the window's title bar
+    logo = os.path.join(os.getenv('DAOROOT', ''), 'data', 'daoLogo.png')
+    if os.path.exists(logo):
+        app.setWindowIcon(QIcon(logo))
     app.setStyleSheet(make_stylesheet(light))
 
     main = Main(name, mapName, args.labels, args.channels)

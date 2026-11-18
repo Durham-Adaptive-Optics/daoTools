@@ -34,6 +34,7 @@ import numpy as np
 from PyQt5.uic import loadUiType
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QApplication, QMessageBox
+from PyQt5.QtGui import QIcon
 
 import dao
 
@@ -205,6 +206,10 @@ def parse_args():
 def main():
     args = parse_args()
     app = QApplication(sys.argv)
+    # dao logo in the window's title bar
+    logo = os.path.join(os.getenv('DAOROOT', ''), 'data', 'daoLogo.png')
+    if os.path.exists(logo):
+        app.setWindowIcon(QIcon(logo))
     try:
         gui = Main(args.cmd, args.gain, args.leak,
                    gain_max=args.gain_max, light=args.light)

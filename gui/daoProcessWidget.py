@@ -1,5 +1,7 @@
+import os
 import sys
 from PyQt5.QtWidgets import QApplication, QWidget, QHBoxLayout, QLabel, QComboBox, QVBoxLayout, QLineEdit, QPushButton
+from PyQt5.QtGui import QIcon
 import subprocess
 from daoCommandIfce import daoCommandIfce
 import daoLaunch
@@ -181,6 +183,10 @@ class SupervisorWidget(QWidget):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
+    # dao logo in the window's title bar
+    logo = os.path.join(os.getenv('DAOROOT', ''), 'data', 'daoLogo.png')
+    if os.path.exists(logo):
+        app.setWindowIcon(QIcon(logo))
     logger = daoLog(__name__)
 
     process1 = Process( "Process 1",

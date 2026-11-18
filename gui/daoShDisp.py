@@ -21,6 +21,7 @@ Examples:
   daoShDisp.py --light
 """
 
+import os
 import sys
 import argparse
 import time
@@ -28,6 +29,7 @@ import numpy as np
 import dao
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore, QtWidgets
+from PyQt5.QtGui import QIcon
 
 COLORMAPS = {
     'grey':    [(0,0,0),(255,255,255)],
@@ -141,6 +143,10 @@ def main():
             pass
 
     app = QtWidgets.QApplication(sys.argv)
+    # dao logo in the window's title bar
+    logo = os.path.join(os.getenv('DAOROOT', ''), 'data', 'daoLogo.png')
+    if os.path.exists(logo):
+        app.setWindowIcon(QIcon(logo))
 
     win = QtWidgets.QMainWindow()
     win.setWindowTitle(f"ShDisp  {args.shm}  [{nx}x{ny}]")

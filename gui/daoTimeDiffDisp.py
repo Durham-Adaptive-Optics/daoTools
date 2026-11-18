@@ -50,6 +50,7 @@ import sys
 from PyQt5.uic import loadUiType
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import QApplication, QFileDialog, QMessageBox
+from PyQt5.QtGui import QIcon
 
 import numpy as np
 import pyqtgraph as pg
@@ -369,6 +370,10 @@ def main():
         pg.setConfigOption("foreground", "#cccccc")
 
     app = QApplication(sys.argv)
+    # dao logo in the window's title bar
+    logo = os.path.join(os.getenv('DAOROOT', ''), 'data', 'daoLogo.png')
+    if os.path.exists(logo):
+        app.setWindowIcon(QIcon(logo))
     app.setStyleSheet(make_stylesheet(args.light))
 
     win = Main(args.shm1, args.shm2,

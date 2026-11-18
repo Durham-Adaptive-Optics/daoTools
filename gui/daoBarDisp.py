@@ -34,6 +34,7 @@ import time
 from PyQt5.uic import loadUiType
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QApplication, QMessageBox
+from PyQt5.QtGui import QIcon
 
 import numpy as np
 import pyqtgraph as pg
@@ -233,6 +234,10 @@ def main():
         pg.setConfigOption("foreground", "#cccccc")
 
     app = QApplication(sys.argv)
+    # dao logo in the window's title bar
+    logo = os.path.join(os.getenv('DAOROOT', ''), 'data', 'daoLogo.png')
+    if os.path.exists(logo):
+        app.setWindowIcon(QIcon(logo))
     try:
         gui = Main(args.shmName, i0=args.i0, i1=args.i1, fps=args.fps, light=args.light)
     except Exception as exc:                       # noqa: BLE001

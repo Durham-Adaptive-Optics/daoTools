@@ -44,6 +44,7 @@ import sys
 from pathlib import Path
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore, QtWidgets
+from PyQt5.QtGui import QIcon
 
 pg.setConfigOption('background', '#1e1e1e')
 pg.setConfigOption('foreground', '#cccccc')
@@ -416,6 +417,10 @@ class TtDisplay:
 def main():
     args = parse_args()
     app = QtWidgets.QApplication(sys.argv)
+    # dao logo in the window's title bar
+    logo = os.path.join(os.getenv('DAOROOT', ''), 'data', 'daoLogo.png')
+    if os.path.exists(logo):
+        app.setWindowIcon(QIcon(logo))
     display = TtDisplay(args)
 
     timer = QtCore.QTimer()

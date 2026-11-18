@@ -12,12 +12,14 @@ Examples:
   daoFFTDisp.py /tmp/imgRe.im.shm /tmp/imgIm.im.shm --fps 20 --cmap inferno
 """
 
+import os
 import sys
 import argparse
 import numpy as np
 import dao
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore, QtWidgets
+from PyQt5.QtGui import QIcon
 
 
 COLORMAPS = {
@@ -127,6 +129,10 @@ def main():
     print(f"  Im: {args.shmIm}")
 
     app = QtWidgets.QApplication(sys.argv)
+    # dao logo in the window's title bar
+    logo = os.path.join(os.getenv('DAOROOT', ''), 'data', 'daoLogo.png')
+    if os.path.exists(logo):
+        app.setWindowIcon(QIcon(logo))
 
     win = QtWidgets.QMainWindow()
     win.setWindowTitle(f"FFT Magnitude [{nx}x{ny}]")
