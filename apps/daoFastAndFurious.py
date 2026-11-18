@@ -10,6 +10,9 @@ chosen by the SHM's size:
   IM's rows (-I)     a WFS reference (T = the modal interaction matrix): F&F with the AO
                      loop closed, the loop putting the correction on the DM
 
+Tip and tilt (the basis' first 2 modes) are left to the AO loop: still estimated, so that a
+residual tilt is not read as coma, but neither poked by calibrate nor applied by run.
+
 Subcommands:
   basis      the pupil phase of the M2A modes (Gaussian influence functions on the DM map)
   calibrate  the PSF's centre, the camera's orientation, the basis' sign and scale (pokes)
@@ -34,6 +37,9 @@ import dao
 import daoFastAndFuriousLib as ff
 
 end = False
+
+# tip and tilt: the basis' first modes, estimated but not poked nor applied
+TT_MODES = 2
 
 
 def endme(_sig, _frame):
@@ -159,7 +165,10 @@ def cmdCalibrate(args):
                                        pupDiam=fnf.pupDiam), ff.crop(ref, center, args.size))
             print(f'sampling: {samp:.3f} px per lambda/D (given {args.samp})')
             fnf = makeFF(args, samp=samp)
-        modes = range(min(args.cal_modes, fnf.nModes))
+        modes = range(TT_MODES, min(args.cal_modes, fnf.nModes))
+        if len(modes) == 0:
+            raise SystemExit(f'no mode to poke beyond tip and tilt (-k {args.cal_modes}, '
+                             f'{fnf.nModes} modes)')
         cal = ff.calibrate(fnf, lambda th: acquire(th, center), modes, args.amp)
     finally:
         out.restore()
@@ -167,8 +176,10 @@ def cmdCalibrate(args):
           f'{cal["correlation"]:.3f}, Strehl ~ {cal["strehl"]:.3f}')
     if cal['correlation'] < 0.3:
         print('WARNING: low correlation, check the pokes (-a), the sampling (-q), the crop (-N)')
+    # frame: the camera's frame size, the centre is in its pixels (another ROI: calibrate again)
     np.savez(args.calib, center=np.array(center), orientation=cal['orientation'],
-             scale=cal['scale'], samp=samp, size=args.size, correlation=cal['correlation'])
+             scale=cal['scale'], samp=samp, size=args.size, correlation=cal['correlation'],
+             frame=np.array(ref.shape))
     print(f'calibration written to {args.calib}')
 
 
@@ -180,6 +191,10 @@ def cmdRun(args):
     fnf = makeFF(args, basis=basis * float(cal['scale']), samp=float(cal['samp']))
     center, k = tuple(int(c) for c in cal['center']), int(cal['orientation'])
     cam = Camera(args.input, args.background)
+    shape = np.asarray(cam.shm.get_data()).shape
+    if 'frame' in cal and tuple(int(n) for n in cal['frame']) != shape:
+        raise SystemExit(f'camera frame {shape[0]} x {shape[1]}, the calibration was done on '
+                         f'{int(cal["frame"][0])} x {int(cal["frame"][1])} (ROI changed?): calibrate again')
     out = Output(args.output, fnf.nModes, args.m2a, args.im)
     loop = ff.FastAndFuriousLoop(fnf, args.gain, args.leak)
     gainShm = dao.shm(args.gain_shm) if args.gain_shm else None
@@ -188,6 +203,9 @@ def cmdRun(args):
     phaseShm = None
     if args.phase:
         phaseShm = dao.shm(args.phase, np.zeros(fnf.pupil.shape, dtype=np.float32))
+    thetaShm = None
+    if args.theta:
+        thetaShm = dao.shm(args.theta, np.zeros((fnf.nModes, 1), dtype=np.float32))
     print(f'output {args.output}: {out.kind}; {fnf.nModes} modes, centre {center}, '
           f'orientation {k}')
 
@@ -206,9 +224,14 @@ def cmdRun(args):
             time.sleep(0.01)
             continue
         theta, strehl = loop.step(image)
+        # tip and tilt not applied: nor in the next image's diversity
+        loop.theta[:TT_MODES] = 0
+        loop.delta[:TT_MODES] = 0
         out.write(theta)
         if phaseShm is not None:
             phaseShm.set_data(np.tensordot(theta, fnf.basis, axes=1).astype(np.float32))
+        if thetaShm is not None:
+            thetaShm.set_data(theta.reshape(-1, 1).astype(np.float32))
         it += 1
         sys.stdout.write(f'\riteration {it}: Strehl ~ {strehl:.3f}, |theta| {np.linalg.norm(theta):.4g}  ')
         sys.stdout.flush()
@@ -299,7 +322,8 @@ def main():
     p.add_argument('calib', help='calibration file to write (npz)')
     addFF(p)
     p.add_argument('-a', '--amp', type=float, default=0.1, help='poke amplitude, command units')
-    p.add_argument('-k', '--cal-modes', type=int, default=20, help='first modes poked')
+    p.add_argument('-k', '--cal-modes', type=int, default=20,
+                   help='first modes poked, tip and tilt excepted (modes 2 to k-1)')
     p.add_argument('-f', '--fit-samp', action='store_true', help='fit the sampling on the PSF')
     p.set_defaults(func=cmdCalibrate)
 
@@ -312,6 +336,7 @@ def main():
     p.add_argument('-K', '--leak-shm', help='loop leak SHM (1x1), overrides -l')
     p.add_argument('-e', '--enable', help='enable SHM (1x1): 0 holds the correction')
     p.add_argument('-p', '--phase', help='SHM written with the correction\'s pupil phase')
+    p.add_argument('-t', '--theta', help='SHM written with the modal correction theta (nModes x 1)')
     p.add_argument('-k', '--iterations', type=int, default=0, help='iterations (0: until Ctrl-C)')
     p.add_argument('-R', '--restore', action='store_true', help='restore the output at exit')
     p.add_argument('-s', '--save', help='save the final theta (npy)')
