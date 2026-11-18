@@ -1,0 +1,612 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1250</width>
+    <height>720</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>ETF</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QHBoxLayout" name="mainLayout" stretch="0,1">
+    <item>
+     <layout class="QVBoxLayout" name="sideLayout">
+      <item>
+       <widget class="QGroupBox" name="shmGroup">
+        <property name="title">
+         <string>Shared memories</string>
+        </property>
+        <layout class="QFormLayout" name="shmForm">
+         <item row="0" column="0">
+          <widget class="QLabel" name="loopShmLabel">
+           <property name="text">
+            <string>Loop switch</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="QLineEdit" name="loopShmEdit">
+           <property name="toolTip">
+            <string>Loop on/off SHM (0 open, 1 closed): closed for the first acquisition, open for the second. Left OPEN.</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="0">
+          <widget class="QLabel" name="gainShmLabel">
+           <property name="text">
+            <string>Loop gain</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="1">
+          <widget class="QLineEdit" name="gainShmEdit">
+           <property name="toolTip">
+            <string>Integrator gain SHM, read only: saved with the data (the model's gain)</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="0">
+          <widget class="QLabel" name="modesShmLabel">
+           <property name="text">
+            <string>WFS modes</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="1">
+          <widget class="QLineEdit" name="modesShmEdit">
+           <property name="toolTip">
+            <string>The modes measured by the WFS, recorded frame by frame (the acquisition follows its frames)</string>
+           </property>
+          </widget>
+         </item>
+         <item row="3" column="0">
+          <widget class="QLabel" name="distShmLabel">
+           <property name="text">
+            <string>Disturbance</string>
+           </property>
+          </widget>
+         </item>
+         <item row="3" column="1">
+          <widget class="QLineEdit" name="distShmEdit">
+           <property name="toolTip">
+            <string>DM channel taking the disturbance (actuators); zeroed at the end and on Stop</string>
+           </property>
+          </widget>
+         </item>
+         <item row="4" column="0">
+          <widget class="QLabel" name="m2aShmLabel">
+           <property name="text">
+            <string>M2A</string>
+           </property>
+          </widget>
+         </item>
+         <item row="4" column="1">
+          <widget class="QLineEdit" name="m2aShmEdit">
+           <property name="toolTip">
+            <string>Modes-to-actuators matrix (n_act x n_modes): the disturbance is the mode's column</string>
+           </property>
+          </widget>
+         </item>
+         <item row="5" column="0">
+          <widget class="QLabel" name="fpsShmLabel">
+           <property name="text">
+            <string>Frame rate</string>
+           </property>
+          </widget>
+         </item>
+         <item row="5" column="1">
+          <widget class="QLineEdit" name="fpsShmEdit">
+           <property name="toolTip">
+            <string>SHM holding the frame rate [Hz]; empty: the model's frame rate is used for the acquisition</string>
+           </property>
+           <property name="placeholderText">
+            <string>empty: the model's frame rate</string>
+           </property>
+          </widget>
+         </item>
+         <item row="6" column="0">
+          <widget class="QLabel" name="telemetryLabel">
+           <property name="text">
+            <string>Telemetry</string>
+           </property>
+          </widget>
+         </item>
+         <item row="6" column="1">
+          <widget class="QLineEdit" name="telemetryEdit">
+           <property name="toolTip">
+            <string>Folder of the saved data (&lt;folder&gt;/&lt;date&gt;/&lt;tn&gt;/&lt;tn&gt;_data_rtf.npy) and of tmp/current_telemetry_folder.txt</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QGroupBox" name="dataGroup">
+        <property name="title">
+         <string>Data</string>
+        </property>
+        <layout class="QGridLayout" name="dataGrid">
+         <item row="0" column="0">
+          <widget class="QPushButton" name="loadButton">
+           <property name="text">
+            <string>Load file...</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="QPushButton" name="loadLastButton">
+           <property name="toolTip">
+            <string>Newest ETF file in the folder named in &lt;telemetry&gt;/tmp/current_telemetry_folder.txt</string>
+           </property>
+           <property name="text">
+            <string>Load last</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="0" colspan="2">
+          <widget class="QLabel" name="dataLabel">
+           <property name="text">
+            <string>No data loaded</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QGroupBox" name="acquisitionGroup">
+        <property name="title">
+         <string>Acquisition</string>
+        </property>
+        <layout class="QGridLayout" name="acquisitionGrid">
+         <item row="0" column="0">
+          <widget class="QLabel" name="modeLabel">
+           <property name="text">
+            <string>Mode (0-based)</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="QSpinBox" name="modeSpin">
+           <property name="maximum">
+            <number>10000</number>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="0">
+          <widget class="QLabel" name="ampLabel">
+           <property name="text">
+            <string>Amplitude</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="1">
+          <widget class="QDoubleSpinBox" name="ampSpin">
+           <property name="decimals">
+            <number>4</number>
+           </property>
+           <property name="maximum">
+            <double>1.000000000000000</double>
+           </property>
+           <property name="singleStep">
+            <double>0.001000000000000</double>
+           </property>
+           <property name="value">
+            <double>0.010000000000000</double>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="0">
+          <widget class="QLabel" name="durationLabel">
+           <property name="text">
+            <string>Duration</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="1">
+          <widget class="QSpinBox" name="durationSpin">
+           <property name="suffix">
+            <string> s</string>
+           </property>
+           <property name="minimum">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <number>600</number>
+           </property>
+           <property name="value">
+            <number>30</number>
+           </property>
+          </widget>
+         </item>
+         <item row="3" column="0">
+          <widget class="QPushButton" name="acquireButton">
+           <property name="toolTip">
+            <string>Runs daoEtfMeasure.py: closed loop then open loop with a random disturbance on the mode. The loop is left OPEN at the end.</string>
+           </property>
+           <property name="text">
+            <string>Acquire</string>
+           </property>
+          </widget>
+         </item>
+         <item row="3" column="1">
+          <widget class="QPushButton" name="stopButton">
+           <property name="enabled">
+            <bool>false</bool>
+           </property>
+           <property name="text">
+            <string>Stop</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QGroupBox" name="experimentalGroup">
+        <property name="title">
+         <string>Experimental ETF</string>
+        </property>
+        <layout class="QGridLayout" name="experimentalGrid">
+         <item row="0" column="0">
+          <widget class="QLabel" name="startLabel">
+           <property name="text">
+            <string>Start sample</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="QSpinBox" name="startSpin">
+           <property name="maximum">
+            <number>10000000</number>
+           </property>
+           <property name="value">
+            <number>50</number>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="0">
+          <widget class="QLabel" name="endLabel">
+           <property name="text">
+            <string>End sample</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="1">
+          <widget class="QSpinBox" name="endSpin">
+           <property name="minimum">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <number>10000000</number>
+           </property>
+           <property name="value">
+            <number>15000</number>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="0">
+          <widget class="QLabel" name="nLabel">
+           <property name="text">
+            <string>N (nperseg = N x 64)</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="1">
+          <widget class="QSpinBox" name="nSpin">
+           <property name="toolTip">
+            <string>Welch segment length: nperseg = N x 64</string>
+           </property>
+           <property name="minimum">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <number>256</number>
+           </property>
+           <property name="value">
+            <number>6</number>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QGroupBox" name="modelGroup">
+        <property name="title">
+         <string>Model</string>
+        </property>
+        <layout class="QGridLayout" name="modelGrid" columnstretch="0,1,0">
+         <item row="0" column="0">
+          <widget class="QLabel" name="gainLabel">
+           <property name="text">
+            <string>Loop gain</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="QSlider" name="gainSlider">
+           <property name="minimumSize">
+            <size>
+             <width>140</width>
+             <height>0</height>
+            </size>
+           </property>
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="2">
+          <widget class="QDoubleSpinBox" name="gainBox">
+           <property name="minimumSize">
+            <size>
+             <width>110</width>
+             <height>0</height>
+            </size>
+           </property>
+           <property name="decimals">
+            <number>3</number>
+           </property>
+           <property name="maximum">
+            <double>1.500000000000000</double>
+           </property>
+           <property name="singleStep">
+            <double>0.010000000000000</double>
+           </property>
+           <property name="value">
+            <double>0.500000000000000</double>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="0">
+          <widget class="QLabel" name="fsLabel">
+           <property name="toolTip">
+            <string>Sets Ti = 1 / frame rate</string>
+           </property>
+           <property name="text">
+            <string>Frame rate</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="1">
+          <widget class="QSlider" name="fsSlider">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="2">
+          <widget class="QDoubleSpinBox" name="fsBox">
+           <property name="toolTip">
+            <string>Sets Ti = 1 / frame rate</string>
+           </property>
+           <property name="suffix">
+            <string> Hz</string>
+           </property>
+           <property name="decimals">
+            <number>1</number>
+           </property>
+           <property name="minimum">
+            <double>50.000000000000000</double>
+           </property>
+           <property name="maximum">
+            <double>5000.000000000000000</double>
+           </property>
+           <property name="singleStep">
+            <double>10.000000000000000</double>
+           </property>
+           <property name="value">
+            <double>1000.000000000000000</double>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="0">
+          <widget class="QLabel" name="tauLabel">
+           <property name="toolTip">
+            <string>RTC computation + transfer of the command to the DM</string>
+           </property>
+           <property name="text">
+            <string>Tau (RTC)</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="1">
+          <widget class="QSlider" name="tauSlider">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="2">
+          <widget class="QDoubleSpinBox" name="tauBox">
+           <property name="toolTip">
+            <string>RTC computation + transfer of the command to the DM</string>
+           </property>
+           <property name="suffix">
+            <string> us</string>
+           </property>
+           <property name="decimals">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <double>2000.000000000000000</double>
+           </property>
+           <property name="value">
+            <double>36.000000000000000</double>
+           </property>
+          </widget>
+         </item>
+         <item row="3" column="0">
+          <widget class="QLabel" name="tdmLabel">
+           <property name="toolTip">
+            <string>DM response (e.g. half of its settling time)</string>
+           </property>
+           <property name="text">
+            <string>Tdm (DM)</string>
+           </property>
+          </widget>
+         </item>
+         <item row="3" column="1">
+          <widget class="QSlider" name="tdmSlider">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+          </widget>
+         </item>
+         <item row="3" column="2">
+          <widget class="QDoubleSpinBox" name="tdmBox">
+           <property name="toolTip">
+            <string>DM response (e.g. half of its settling time)</string>
+           </property>
+           <property name="suffix">
+            <string> us</string>
+           </property>
+           <property name="decimals">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <double>2000.000000000000000</double>
+           </property>
+           <property name="value">
+            <double>375.000000000000000</double>
+           </property>
+          </widget>
+         </item>
+         <item row="4" column="0">
+          <widget class="QLabel" name="tcamLabel">
+           <property name="toolTip">
+            <string>Camera readout + transfer of the frame to the RTC</string>
+           </property>
+           <property name="text">
+            <string>Tcam (readout)</string>
+           </property>
+          </widget>
+         </item>
+         <item row="4" column="1">
+          <widget class="QSlider" name="tcamSlider">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+          </widget>
+         </item>
+         <item row="4" column="2">
+          <widget class="QDoubleSpinBox" name="tcamBox">
+           <property name="toolTip">
+            <string>Camera readout + transfer of the frame to the RTC</string>
+           </property>
+           <property name="suffix">
+            <string> us</string>
+           </property>
+           <property name="decimals">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <double>2000.000000000000000</double>
+           </property>
+           <property name="value">
+            <double>572.000000000000000</double>
+           </property>
+          </widget>
+         </item>
+         <item row="5" column="0">
+          <widget class="QPushButton" name="resetDelaysButton">
+           <property name="toolTip">
+            <string>Back to the delays given at start (--tau, --tdm, --tcam, or daoEtfDisp.ui)</string>
+           </property>
+           <property name="text">
+            <string>Reset delays</string>
+           </property>
+          </widget>
+         </item>
+         <item row="5" column="1" colspan="2">
+          <widget class="QPushButton" name="fromDataButton">
+           <property name="text">
+            <string>Gain + rate from data</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QGroupBox" name="readoutsGroup">
+        <property name="title">
+         <string>Readouts</string>
+        </property>
+        <layout class="QVBoxLayout" name="readoutsLayout">
+         <item>
+          <widget class="QLabel" name="latencyLabel">
+           <property name="text">
+            <string/>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="bandwidthLabel">
+           <property name="text">
+            <string/>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="errorLabel">
+           <property name="text">
+            <string/>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="statusLabel">
+        <property name="text">
+         <string/>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <spacer name="sideSpacer">
+        <property name="orientation">
+         <enum>Qt::Vertical</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>20</width>
+          <height>40</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+     </layout>
+    </item>
+    <item>
+     <widget class="QWidget" name="plotView" native="true">
+      <property name="minimumSize">
+       <size>
+        <width>700</width>
+        <height>500</height>
+       </size>
+      </property>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

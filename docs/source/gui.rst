@@ -173,6 +173,33 @@ Features:
 UI defined in ``daoDmCtrl.ui`` (Qt Designer).
 
 
+daoEtfDisp
+----------
+
+Error transfer function (ETF) of an AO loop: the measured one against the integrator model.
+
+.. code-block:: bash
+
+    python daoEtfDisp.py --loop <lpCmd> --gain <lpGain> --modes <WFS modes> \
+                         --dist <DM channel> --m2a <M2A> [--fps <frame rate SHM>] [file]
+
+- Load a saved measurement (*Load file...*, or *Load last*: the newest file of the folder
+  named in ``<telemetry>/tmp/current_telemetry_folder.txt``)
+- Model: loop gain, frame rate (``Ti = 1/fs``) and the delays Tau (RTC), Tdm (DM) and Tcam
+  (camera readout), each a slider and a spin box, the curve redrawn as they move; only the
+  sum of the delays changes the ETF. *Gain + rate from data* takes the measured ones
+- Readouts: the latency, the 0 dB crossings (rejection bandwidth) of the model and the
+  measurement, the model - measured rms
+- Experimental ETF: start and end samples, Welch segment ``nperseg = N x 64``
+- *Acquire* runs ``daoEtfMeasure.py`` on the *Shared memories* fields (loop switch, gain,
+  WFS modes, disturbance channel, M2A, frame rate SHM; empty frame rate SHM: the model's
+  frame rate), its progress in the status line, and loads the result. The loop is left
+  **open**. *Stop* zeroes the disturbance channel
+- The SHM names and the telemetry folder (``-d``, default ``$DAODATA/telemetry``) are
+  remembered between sessions; the options override them. ``--tau``, ``--tdm``, ``--tcam``
+  (us) set the delays *Reset delays* goes back to
+
+
 daoFastAndFuriousCtrl
 ---------------------
 
