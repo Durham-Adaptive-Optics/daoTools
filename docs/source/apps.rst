@@ -294,6 +294,27 @@ FWHM >= 2 pixels (``-q`` >= 2), narrow band, phase below ~1 rad rms, a centrosym
 pupil (its symmetric part is used). ``tests/test_daoFastAndFurious.py`` checks the
 calibration and the loop's convergence on the simulator.
 
+daoEtfMeasure.py
+~~~~~~~~~~~~~~~~
+
+The error transfer function (ETF) of the loop on one mode. A random disturbance, the mode's
+M2A column times ``amplitude x U(-1, 1)`` each frame, is written to a DM channel in step with
+the WFS modes, first with the loop closed, then open; ``ETF = CSD(closed, open) / PSD(open)``.
+The loop is left **open**; the disturbance channel is zeroed at the end, on Ctrl-C / SIGTERM
+and on an error.
+
+.. code-block:: bash
+
+    daoEtfMeasure.py <mode> <amplitude> --fs <Hz> | --fs-shm <frame rate SHM> [-t 30] \
+        --loop <lpCmd> --gain <lpGain> --modes <WFS modes> --dist <DM channel> --m2a <M2A> \
+        [--start 50 --end 15000 -N 6] [--telemetry <folder>] [--no-plot] [--no-save]
+
+The data (``data_rtf``: the modes closed and open, the disturbance, ``fs``, ``mode``, the
+gain, the SHMs) is saved as ``<telemetry>/<YYYY_MM_DD>/<tn>/<tn>_data_rtf.npy`` and
+``<telemetry>/tmp/current_telemetry_folder.txt`` points at it, for ``daoEtfDisp``. The model,
+the ETF computation and the files are in ``daoEtfLib.py``.
+
+
 daoClock
 ~~~~~~~~
 
