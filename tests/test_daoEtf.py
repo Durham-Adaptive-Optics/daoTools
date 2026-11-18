@@ -40,6 +40,16 @@ def test_only_the_sum_of_the_delays_matters():
     assert np.allclose(a, b)
 
 
+@pytest.mark.parametrize("n, nperseg", [(15000, 384), (1001, 64), (5000, 385), (300, 1000)])
+def test_csd_is_scipy_csd(n, nperseg):
+    signal = pytest.importorskip("scipy.signal")
+    rng = np.random.default_rng(n)
+    x, y = rng.standard_normal(n), rng.standard_normal(n) + 0.3
+    f, p = etf.csd(x, y, 1000.0, nperseg)
+    f_ref, p_ref = signal.csd(x, y, 1000.0, nperseg=min(nperseg, n))
+    assert np.allclose(f, f_ref) and np.allclose(p, p_ref, rtol=1e-10, atol=1e-14)
+
+
 def test_measured_etf_of_a_simulated_integrator_loop():
     """A discrete integrator loop with a 2-frame delay: the measured ETF follows the discrete
     rejection 1 / (1 + g z^-2 / (1 - z^-1))."""

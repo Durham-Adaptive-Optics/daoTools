@@ -21,7 +21,6 @@ import pickle
 import time
 
 import numpy as np
-from scipy import signal as sp_signal
 
 FILE_FILTER = "ETF data (*.npy *.npz *.pkl *.pickle);;All Files (*)"
 REQUIRED_KEYS = ("out", "inp", "fs", "mode")
@@ -64,13 +63,31 @@ def model_db(fp, loop_gain, Ti, Tau, Tdm, Tcam):
     return 20.0 * np.log10(np.abs(etf_model(fp, loop_gain, Ti, Tau, Tdm, Tcam)[0]))
 
 
+def csd(x, y, fs, nperseg):
+    """Welch cross spectral density of x and y, as scipy.signal.csd with its defaults (periodic
+    Hann window, half overlap, mean removed per segment, one-sided, density), without scipy."""
+    x, y = np.asarray(x, dtype=float), np.asarray(y, dtype=float)
+    nperseg = min(int(nperseg), x.size)
+    step = nperseg - nperseg // 2
+    window = 0.5 - 0.5 * np.cos(2.0 * np.pi * np.arange(nperseg) / nperseg)
+    starts = np.arange(0, x.size - nperseg + 1, step)
+    idx = starts[:, None] + np.arange(nperseg)[None, :]
+    xs, ys = x[idx], y[idx]
+    xs = (xs - xs.mean(axis=1, keepdims=True)) * window
+    ys = (ys - ys.mean(axis=1, keepdims=True)) * window
+    p = np.conj(np.fft.rfft(xs, axis=1)) * np.fft.rfft(ys, axis=1)
+    p = p.mean(axis=0) / (fs * np.sum(window ** 2))
+    p[1:-1 if nperseg % 2 == 0 else None] *= 2.0       # one-sided: all but DC (and Nyquist)
+    return np.fft.rfftfreq(nperseg, 1.0 / fs), p
+
+
 def measured_etf(out, inp, fs, nperseg):
     """Experimental ETF from the closed-loop (``out``) and open-loop (``inp``) series of a mode.
 
     Returns (f, ETF [dB], open-loop PSD [dB]).
     """
-    f, Poi = sp_signal.csd(out, inp, fs, nperseg=nperseg)
-    _, Pii = sp_signal.csd(inp, inp, fs, nperseg=nperseg)
+    f, Poi = csd(out, inp, fs, nperseg)
+    _, Pii = csd(inp, inp, fs, nperseg)
     return f, 20.0 * np.log10(np.abs(Poi / Pii)), 20.0 * np.log10(np.abs(Pii))
 
 
