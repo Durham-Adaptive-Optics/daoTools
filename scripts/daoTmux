@@ -14,6 +14,10 @@ tmuxname="$1"
 shift
 cmd="$*"
 timeout="${DAO_TMUX_TIMEOUT:-10}"
+# Exact-match targets: a bare name also matches by prefix (PCPB_DM would be
+# PCPB_DM_COMBINER when PCPB_DM does not exist)
+session="=$tmuxname"
+pane="=$tmuxname:"
 
 # Wait until no process is left in the job process groups, up to $1 seconds
 waitExit() {
@@ -35,14 +39,14 @@ signalJobs() {
 }
 
 # Stop existing process in tmux session if it exists
-if tmux has-session -t "$tmuxname" 2>/dev/null; then
-    shell=$(tmux display-message -p -t "$tmuxname" '#{pane_pid}')
+if tmux has-session -t "$session" 2>/dev/null; then
+    shell=$(tmux display-message -p -t "$pane" '#{pane_pid}')
     # Process groups of the jobs started by the pane shell (not its own group)
     own=$(ps -o pgid= -p "$shell" | tr -d ' ')
     pgids=$(ps -o pgid= --ppid "$shell" | tr -d ' ' | sort -u | grep -vx "$own" | paste -sd,)
     if [ -n "$pgids" ]; then
         echo "Stopping process in tmux session \"$tmuxname\""
-        tmux send-keys -t "$tmuxname" C-c
+        tmux send-keys -t "$pane" C-c
         if ! waitExit "$timeout"; then
             echo "\"$tmuxname\" still running after ${timeout}s, sending SIGTERM" >&2
             signalJobs TERM
@@ -58,9 +62,9 @@ fi
 echo "Executing \"$cmd\" in tmux session \"$tmuxname\""
 
 # Create session if it doesn't exist
-if ! tmux has-session -t "$tmuxname" 2>/dev/null; then
+if ! tmux has-session -t "$session" 2>/dev/null; then
     tmux new -d -s "$tmuxname"
 fi
 
 # Send command
-tmux send-keys -t "$tmuxname" "$cmd" C-M
+tmux send-keys -t "$pane" "$cmd" C-M
