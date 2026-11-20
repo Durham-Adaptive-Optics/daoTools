@@ -119,7 +119,7 @@ class TurbulenceCtrl(QMainWindow):
         form.addRow("r0 at 500 nm [m]", self.r0)
         self.L0 = self._dspin(0.1, 1000, 25, 1, "outer scale")
         form.addRow("L0 [m]", self.L0)
-        self.wind = self._dspin(0, 200, 5, 2, "wind speed")
+        self.wind = self._dspin(0, 200, 1, 2, "wind speed: the pupil is crossed in D / wind seconds")
         form.addRow("wind [m/s]", self.wind)
         self.direction = self._dspin(-360, 360, 0, 1, "wind direction, 0 = +x")
         form.addRow("direction [deg]", self.direction)

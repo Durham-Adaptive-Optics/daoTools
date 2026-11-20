@@ -7,10 +7,13 @@ DM command channel SHM (one value per actuator of the map, row-major over the ma
 summed with the other channels by daoShmCombiner, the wavefront sensor sees it as
 turbulence and the loop corrects it on its own channel.
 
-The screen is periodic, NPIX x NPIX samples at a quarter of the actuator pitch
-(NPIX/4 pitches across: about 6 D for an 11 x 11 DM), moving with the wind at
-wall-clock speed: the rate (--rate) only sets how often the channel is written, not
-how fast the turbulence evolves. Outer scale L0, piston removed.
+The screen is periodic, NPIX x NPIX samples at half the actuator pitch (1024
+pitches across: about 100 D for an 11 x 11 DM), moving with the wind at wall-clock
+speed: the rate (--rate) only sets how often the channel is written, not how fast
+the turbulence evolves (the pupil is crossed in D / wind seconds). The pupil crosses
+the screen along a tilted path (atan(1/7) to its axes, the DM's geometry and the
+wind direction kept): the periodic screen comes back only after about 7 screen
+lengths, minutes at a few m/s. Outer scale L0, piston removed.
 
 Amplitude: physical by default. The phase at 500 nm (r0) becomes a DM surface of
 half the optical path (reflection), divided by --stroke, the metres of surface of a
@@ -36,8 +39,9 @@ import time
 import dao
 import numpy as np
 
-NPIX = 256              # screen samples across (periodic)
-OVERSAMPLE = 4          # screen samples per actuator pitch
+NPIX = 2048             # screen samples across (periodic)
+OVERSAMPLE = 2          # screen samples per actuator pitch
+TILT = np.arctan2(1.0, 7.0)   # the path across the periodic screen: back after sqrt(50) screen lengths
 LAMBDA = 500e-9         # r0's wavelength [m]
 
 
@@ -48,7 +52,7 @@ def parse_args():
     p.add_argument('--diameter', type=float, required=True, help='pupil diameter across the DM [m]')
     p.add_argument('--r0', type=float, default=0.1, help='Fried parameter at 500 nm [m] (default 0.1)')
     p.add_argument('--L0', type=float, default=25.0, help='outer scale [m] (default 25)')
-    p.add_argument('--wind', type=float, default=5.0, help='wind speed [m/s] (default 5)')
+    p.add_argument('--wind', type=float, default=1.0, help='wind speed [m/s] (default 1)')
     p.add_argument('--direction', type=float, default=0.0, help='wind direction [deg], 0 = +x (default 0)')
     p.add_argument('--rate', type=float, default=100.0, help='channel updates per second (default 100)')
     p.add_argument('--stroke', type=float, default=1e-5,
@@ -69,8 +73,9 @@ def von_karman_screen(n, dx, r0, L0, rng):
     psd = 0.023 * r0 ** (-5.0 / 3.0) * f2 ** (-11.0 / 6.0)     # phase PSD [rad^2 m^2]
     psd[0, 0] = 0.0                                              # no piston
     df = 1.0 / (n * dx)
-    noise = rng.standard_normal((n, n)) + 1j * rng.standard_normal((n, n))
-    return np.real(np.fft.ifft2(noise * np.sqrt(psd) * df)) * n * n
+    noise = (rng.standard_normal((n, n), np.float32) + 1j * rng.standard_normal((n, n), np.float32))
+    noise *= (np.sqrt(psd) * df).astype(np.float32)
+    return (np.real(np.fft.ifft2(noise)) * n * n).astype(np.float32)
 
 
 def sample(screen, x, y):
@@ -97,20 +102,27 @@ def main():
     pitch = a.diameter / (n_across - 1)
     dx = pitch / OVERSAMPLE
     iy, ix = np.nonzero(dm_map)
-    ax, ay = ix * OVERSAMPLE + 0.0, iy * OVERSAMPLE + 0.0
+    # the DM geometry rotated by TILT on the screen (and the wind with it, below)
+    ox, oy = (ix - ix.mean()) * OVERSAMPLE, (iy - iy.mean()) * OVERSAMPLE
+    ax = NPIX / 2 + ox * np.cos(TILT) - oy * np.sin(TILT)
+    ay = NPIX / 2 + ox * np.sin(TILT) + oy * np.cos(TILT)
 
     rng = np.random.default_rng(a.seed)
     screen = von_karman_screen(NPIX, dx, a.r0, a.L0, rng)
     to_cmd = LAMBDA / (2 * np.pi) / 2.0 / a.stroke             # rad -> OPD -> surface -> command
-    theta = np.deg2rad(a.direction)
+    theta = np.deg2rad(a.direction) + TILT
     vx, vy = a.wind * np.cos(theta) / dx, a.wind * np.sin(theta) / dx   # samples per second
+    length = NPIX * dx
+    repeat = np.hypot(7.0, 1.0) * length / a.wind if a.wind > 0 else float('inf')
 
     zero = np.zeros((n_act, 1), np.float32)
     stop = []
     signal.signal(signal.SIGINT, lambda *_: stop.append(1))
     signal.signal(signal.SIGTERM, lambda *_: stop.append(1))
     print(f"turbulence on {a.shm}: D {a.diameter} m, r0 {a.r0} m, L0 {a.L0} m, wind {a.wind} m/s "
-          f"at {a.direction} deg, {a.rate} Hz, screen {NPIX * dx:.1f} m across, "
+          f"at {a.direction} deg, {a.rate} Hz, screen {length:.0f} m across "
+          f"(pupil crossed in {a.diameter / a.wind if a.wind > 0 else float('inf'):.1f} s, "
+          f"the screen back after {repeat / 60:.1f} min), "
           + (f"RMS command {a.rms}" if a.rms > 0 else f"stroke {a.stroke} m per command")
           + f", gain {a.gain}, cap {a.cap}")
 
