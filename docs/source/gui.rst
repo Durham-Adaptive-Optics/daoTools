@@ -266,7 +266,8 @@ Shack-Hartmann slope display panels:
 - ``daoShDisp`` — the SH image with overlays: references, centroids, arrows, the
   sub-aperture grid (the cells of the valid sub-apertures, from the pupil mask and the
   image size) and the search areas (``-w``: each window of a window table, solid, and
-  its search area, dashed; ``--search N``: a ±N px box around each reference). The
+  its search area, dashed; otherwise a ±N px box around each reference, N set in the
+  box beside Search, ``--search N`` to start with it on). The
   overlays take colours that stand out on the colormap; the checkboxes, in their
   colours, are the key. Int Map: the flux per sub-aperture.
 

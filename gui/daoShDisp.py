@@ -13,7 +13,7 @@ Options:
   -w  Window table shm     (window centroider, rows of 9: centre x, y, width, height,
                             search x, y, ...; default: none)
   --search N  search range of the correlation centroider: a +-N px box around each
-              reference (default: 0, none)
+              reference, Search on at start (default: 0, off; N is also set in the window)
   --fps    Update rate in Hz (default: 10)
   --cmap   Colormap: grey (default), viridis, inferno, plasma, jet; the overlays take
            colours that stand out on it (the checkboxes in their colours are the key)
@@ -22,8 +22,8 @@ Options:
 
 Overlays: Ref, Centroids, Arrows; Sub-ap grid (the cells of the valid sub-apertures,
 from the pupil mask and the image size: the search area of a centre-of-gravity
-centroider); Search (with -w: each window, solid, and its search area, dashed; with
---search N: a +-N px box around each reference).
+centroider); Search (with -w: each window, solid, and its search area, dashed;
+otherwise a +-N px box around each reference, N in the box beside it, from --search N).
 
 Examples:
   daoShDisp.py
@@ -89,7 +89,7 @@ def make_stylesheet(light):
             QPushButton:pressed { background-color: #bbb; }
             QPushButton:checked { background-color: #4a90d9; color: #fff; border-color: #2a70b9; }
             QCheckBox, QLabel   { color: #000000; }
-            QDoubleSpinBox, QComboBox {
+            QDoubleSpinBox, QSpinBox, QComboBox {
                 background-color: #ffffff; color: #000000; border: 1px solid #aaa;
             }
         """
@@ -106,7 +106,7 @@ def make_stylesheet(light):
             QCheckBox, QLabel   { color: #cccccc; }
             QCheckBox::indicator { width: 14px; height: 14px; }
             QCheckBox::indicator:unchecked { background-color: #aaaaaa; border: 1px solid #ccc; }
-            QDoubleSpinBox, QComboBox {
+            QDoubleSpinBox, QSpinBox, QComboBox {
                 background-color: #3a3a3a; color: #cccccc; border: 1px solid #555;
             }
         """
@@ -268,10 +268,21 @@ def main():
 
     search_cb = QtWidgets.QCheckBox("Search")
     search_cb.setChecked(shm_win is not None or args.search > 0)
-    search_cb.setEnabled(shm_win is not None or (args.search > 0 and shm_ref is not None and nCent > 0))
+    search_cb.setEnabled(shm_win is not None or (shm_ref is not None and nCent > 0))
     search_cb.setToolTip("-w: each window (solid) and its search area (dashed)\n"
-                         "--search N: a +-N px box around each reference")
+                         "otherwise: a +-N px box around each reference (correlation centroider's "
+                         "search range, N in the box beside)")
     line3.addWidget(search_cb)
+    # the correlation centroider's search range (--search N); not with -w (the table has it)
+    search_spin = QtWidgets.QSpinBox()
+    search_spin.setRange(1, 99)
+    search_spin.setValue(args.search if args.search > 0 else 5)
+    search_spin.setPrefix("±")
+    search_spin.setSuffix(" px")
+    search_spin.setToolTip("search range of the correlation centroider: a +-N px box around each reference")
+    search_spin.setVisible(shm_win is None)
+    search_spin.setEnabled(search_cb.isEnabled())
+    line3.addWidget(search_spin)
 
     log_cb = QtWidgets.QCheckBox("Log")
     log_cb.setChecked(False)
@@ -528,8 +539,8 @@ def main():
                     rx, ry = c_round(t[:, 4]), c_round(t[:, 5])
                     win_item.setData(*rect_path(x0 - 0.5, y0 - 0.5, w, h))
                     search_item.setData(*rect_path(x0 - rx - 0.5, y0 - ry - 0.5, w + 2 * rx, h + 2 * ry))
-                elif args.search > 0 and xref is not None:
-                    n = args.search
+                elif xref is not None:
+                    n = search_spin.value()
                     size = [2 * n + 1] * len(xref)
                     search_item.setData(*rect_path(c_round(xref) - n - 0.5, c_round(yref) - n - 0.5, size, size))
             except Exception:
