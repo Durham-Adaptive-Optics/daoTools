@@ -10,13 +10,25 @@ Options:
   -c  Centroids shm        (default: /tmp/shCentroids.im.shm)
   -r  References shm       (default: /tmp/shReferences.im.shm)
   -p  Pupil mask shm       (default: /tmp/shPupMask.im.shm)
+  -w  Window table shm     (window centroider, rows of 9: centre x, y, width, height,
+                            search x, y, ...; default: none)
+  --search N  search range of the correlation centroider: a +-N px box around each
+              reference (default: 0, none)
   --fps    Update rate in Hz (default: 10)
-  --cmap   Colormap (default: grey)
+  --cmap   Colormap: grey (default), viridis, inferno, plasma, jet; the overlays take
+           colours that stand out on it (the checkboxes in their colours are the key)
   --size   Display size in pixels (default: 600)
   --light  Light mode (default: dark)
 
+Overlays: Ref, Centroids, Arrows; Sub-ap grid (the cells of the valid sub-apertures,
+from the pupil mask and the image size: the search area of a centre-of-gravity
+centroider); Search (with -w: each window, solid, and its search area, dashed; with
+--search N: a +-N px box around each reference).
+
 Examples:
   daoShDisp.py
+  daoShDisp.py --search 5                    # correlation centroider, search +-5 px
+  daoShDisp.py -w /tmp/shWinTable.im.shm     # window centroider
   daoShDisp.py -i /tmp/wfs1.im.shm -c /tmp/cent1.im.shm -r /tmp/ref1.im.shm -p /tmp/pup1.im.shm
   daoShDisp.py --light
 """
@@ -36,7 +48,30 @@ COLORMAPS = {
     'viridis': [(68,1,84),(59,82,139),(33,145,140),(94,201,98),(253,231,37)],
     'inferno': [(0,0,4),(120,28,109),(238,71,41),(252,177,57),(252,255,164)],
     'plasma':  [(13,8,135),(126,3,168),(204,71,120),(248,149,64),(240,249,33)],
+    'jet':     [(0,0,143),(0,0,255),(0,127,255),(0,255,255),(127,255,127),
+                (255,255,0),(255,127,0),(255,0,0),(127,0,0)],
 }
+
+# the overlays' colours, per colormap: hues the colormap does not hold, bright enough on
+# its low end (most of an SH image). One per overlay, in this order:
+# centroids, sub-aperture grid, search (windows), references, arrows
+PALETTES = {
+    'grey':    ['#ff0000', '#00c8ff', '#ffcc00', '#00ff00', '#ffa500'],   # the original r / g / orange
+    'viridis': ['#ffcc00', '#44ddff', '#ff6666', '#77ee77', '#ffffff'],
+    'inferno': ['#00ffff', '#7fff00', '#ffffff', '#3399ff', '#c0c0ff'],
+    'plasma':  ['#00ffff', '#7fff00', '#ffffff', '#3399ff', '#c0c0ff'],
+    'jet':     ['#ffffff', '#ff00ff', '#ff8c00', '#ffa0d8', '#bbbbbb'],
+}
+CENT, GRID, SEARCH, REF, ARROW = range(5)
+
+
+def overlay_colour(cmap, role):
+    return PALETTES.get(cmap, PALETTES['grey'])[role]
+
+
+def label_style(col):
+    """a checkbox label in its overlay's colour (a light patch behind a dark one)"""
+    return f'color: {col}; background-color: #cccccc;' if pg.mkColor(col).lightness() < 80 else f'color: {col};'
 
 def make_colormap(name):
     colors = COLORMAPS.get(name, COLORMAPS['grey'])
@@ -83,6 +118,10 @@ def parse_args():
     p.add_argument('-c', '--cent', default='/tmp/shCentroids.im.shm',   help='Centroids shm')
     p.add_argument('-r', '--ref',  default='/tmp/shReferences.im.shm',  help='References shm')
     p.add_argument('-p', '--pup',  default='/tmp/shPupMask.im.shm',     help='Pupil mask shm')
+    p.add_argument('-w', '--win',  default=None,
+                   help='window table shm (window centroider: centre x, y, width, height, search x, y, ...)')
+    p.add_argument('--search', type=int, default=0,
+                   help='search range [px] around each reference (correlation centroider; default 0: none)')
     p.add_argument('--fps',   type=float, default=10.0, help='Update rate in Hz (default: 10)')
     p.add_argument('--cmap',  default='grey', choices=COLORMAPS.keys())
     p.add_argument('--size',  type=int, default=600,    help='Display size in pixels (default: 600)')
@@ -100,6 +139,21 @@ def try_shm(path, label):
         return None
 
 
+def c_round(v):
+    """roundf() of the C centroiders (half away from zero), on an array"""
+    v = np.asarray(v, float)
+    return np.where(v >= 0, np.floor(v + 0.5), -np.floor(-v + 0.5)).astype(int)
+
+
+def rect_path(x0, y0, w, h):
+    """one path through all the rectangles (NaN between them), for a PlotDataItem"""
+    xs, ys = [], []
+    for a, b, c, e in zip(x0, y0, w, h):
+        xs += [a, a + c, a + c, a, a, np.nan]
+        ys += [b, b, b + e, b + e, b, np.nan]
+    return np.array(xs, float), np.array(ys, float)
+
+
 def main():
     args = parse_args()
 
@@ -114,6 +168,7 @@ def main():
     shm_cent = try_shm(args.cent, "Centroids")
     shm_ref  = try_shm(args.ref,  "Reference")
     shm_pup  = try_shm(args.pup,  "Pupil    ")
+    shm_win  = try_shm(args.win,  "Windows  ") if args.win else None
 
     if shm_im is None:
         print("ERROR: image shm required"); sys.exit(1)
@@ -206,6 +261,18 @@ def main():
     arrow_cb.setEnabled(shm_cent is not None and shm_ref is not None and nCent > 0)
     line3.addWidget(arrow_cb)
 
+    grid_cb = QtWidgets.QCheckBox("Sub-ap grid")
+    grid_cb.setChecked(False)
+    grid_cb.setToolTip("the cells of the valid sub-apertures (pupil mask and image size)")
+    line3.addWidget(grid_cb)
+
+    search_cb = QtWidgets.QCheckBox("Search")
+    search_cb.setChecked(shm_win is not None or args.search > 0)
+    search_cb.setEnabled(shm_win is not None or (args.search > 0 and shm_ref is not None and nCent > 0))
+    search_cb.setToolTip("-w: each window (solid) and its search area (dashed)\n"
+                         "--search N: a +-N px box around each reference")
+    line3.addWidget(search_cb)
+
     log_cb = QtWidgets.QCheckBox("Log")
     log_cb.setChecked(False)
     line3.addWidget(log_cb)
@@ -257,10 +324,41 @@ def main():
     )
     colorbar.setImageItem(img_item, insert_in=plot)
 
-    ref_item  = pg.ScatterPlotItem(pen=pg.mkPen('g'), brush=pg.mkBrush(None), symbol='+', size=10)
-    cent_item = pg.ScatterPlotItem(pen=pg.mkPen('r'), brush=pg.mkBrush(None), symbol='o', size=6)
+    ref_item  = pg.ScatterPlotItem(pen=pg.mkPen(overlay_colour(args.cmap, REF), width=1),
+                                   brush=pg.mkBrush(None), symbol='+', size=10)
+    cent_item = pg.ScatterPlotItem(pen=pg.mkPen(overlay_colour(args.cmap, CENT), width=1),
+                                   brush=pg.mkBrush(None), symbol='o', size=6)
     plot.addItem(ref_item)
     plot.addItem(cent_item)
+
+    # sub-aperture grid: fixed, from the pupil mask and the image size
+    grid_item = pg.PlotDataItem(pen=pg.mkPen(overlay_colour(args.cmap, GRID), width=1), connect='finite')
+    grid_item.setVisible(False)
+    plot.addItem(grid_item)
+    if pup is not None and pup.ndim == 2:
+        rows, cols = data0.shape
+        my_, mx_ = pup.shape
+        if rows % my_ == 0 and cols % mx_ == 0:
+            csx, csy = cols // mx_, rows // my_
+            r, c = np.nonzero(pup)
+            grid_item.setData(*rect_path(c * csx - 0.5, r * csy - 0.5, [csx] * len(c), [csy] * len(r)))
+            print(f"Sub-aperture grid: {len(r)} cells of {csx}x{csy} px")
+        else:
+            grid_cb.setEnabled(False)
+            grid_cb.setToolTip(f"image {cols}x{rows} not a multiple of the pupil mask {mx_}x{my_}")
+    else:
+        grid_cb.setEnabled(False)
+    grid_cb.stateChanged.connect(lambda v: grid_item.setVisible(bool(v)))
+
+    # search areas: windows (solid) and their search (dashed), or +-N around the references
+    win_item = pg.PlotDataItem(pen=pg.mkPen(overlay_colour(args.cmap, SEARCH), width=2), connect='finite')
+    search_item = pg.PlotDataItem(pen=pg.mkPen(overlay_colour(args.cmap, SEARCH), width=1,
+                                               style=QtCore.Qt.PenStyle.DashLine), connect='finite')
+    plot.addItem(win_item)
+    plot.addItem(search_item)
+    for it in (win_item, search_item):
+        it.setVisible(search_cb.isChecked())
+    search_cb.stateChanged.connect(lambda v: [it.setVisible(bool(v)) for it in (win_item, search_item)])
 
     arrow_items = []
 
@@ -332,11 +430,25 @@ def main():
         cm = make_colormap(name)
         img_item.setColorMap(cm)
         colorbar.setColorMap(cm)
+        set_overlay_colours(name)
+
+    def set_overlay_colours(name):
+        """the overlays in the colormap's palette; the checkboxes in their colours (the key)"""
+        ref_item.setPen(pg.mkPen(overlay_colour(name, REF), width=1))
+        cent_item.setPen(pg.mkPen(overlay_colour(name, CENT), width=1))
+        grid_item.setPen(pg.mkPen(overlay_colour(name, GRID), width=1))
+        win_item.setPen(pg.mkPen(overlay_colour(name, SEARCH), width=2))
+        search_item.setPen(pg.mkPen(overlay_colour(name, SEARCH), width=1, style=QtCore.Qt.PenStyle.DashLine))
+        for a in arrow_items:
+            a.setPen(pg.mkPen(overlay_colour(name, ARROW), width=1))
+        for cb, role in ((ref_cb, REF), (cent_cb, CENT), (arrow_cb, ARROW), (grid_cb, GRID), (search_cb, SEARCH)):
+            cb.setStyleSheet(label_style(overlay_colour(name, role)))
 
     def toggle_intmap(checked):
         gw_int.setVisible(checked)
         win.adjustSize()
 
+    set_overlay_colours(args.cmap)
     autoscale_cb.stateChanged.connect(toggle_autoscale)
     freeze_btn.toggled.connect(toggle_freeze)
     cmap_combo.currentTextChanged.connect(change_cmap)
@@ -402,10 +514,26 @@ def main():
                 for i in range(len(xref)):
                     line = pg.PlotDataItem(
                         x=[xref[i], xcur[i]], y=[yref[i], ycur[i]],
-                        pen=pg.mkPen((255, 165, 0), width=1)
+                        pen=pg.mkPen(overlay_colour(cmap_combo.currentText(), ARROW), width=1)
                     )
                     plot.addItem(line)
                     arrow_items.append(line)
+
+        if search_cb.isChecked():
+            try:
+                if shm_win is not None:
+                    t = np.asarray(shm_win.get_data(), float).reshape(-1, 9)
+                    w, h = c_round(t[:, 2]), c_round(t[:, 3])
+                    x0, y0 = c_round(t[:, 0]) - w // 2, c_round(t[:, 1]) - h // 2
+                    rx, ry = c_round(t[:, 4]), c_round(t[:, 5])
+                    win_item.setData(*rect_path(x0 - 0.5, y0 - 0.5, w, h))
+                    search_item.setData(*rect_path(x0 - rx - 0.5, y0 - ry - 0.5, w + 2 * rx, h + 2 * ry))
+                elif args.search > 0 and xref is not None:
+                    n = args.search
+                    size = [2 * n + 1] * len(xref)
+                    search_item.setData(*rect_path(c_round(xref) - n - 0.5, c_round(yref) - n - 0.5, size, size))
+            except Exception:
+                pass
 
         if intmap_btn.isChecked() and shm_cent is not None and pup is not None and nCent > 0:
             try:
