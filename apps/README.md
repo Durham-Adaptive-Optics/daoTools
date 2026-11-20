@@ -138,6 +138,7 @@ correlation centroiders).
 | Tool | Inputs | Outputs | Notes |
 |---|---|---|---|
 | `daoTurbulenceSimulator.py` | — | phase-screen SHM | Kolmogorov turbulence, streamed continuously. `-f <fileShm> -d <diameter> -r <r0> -s <speed> -o <orientation> -t <dt> -p <period>` |
+| `daoTurbulenceVonKarmanSimulator.py` | DM actuator map | DM command channel SHM | Frozen-flow von Kármán screen (outer scale, ≈ 6 D long, a quarter-pitch sampling, wall-clock evolution) sampled at the actuators, in normalised commands (`--stroke` m per command, or `--rms`), clipped to `±--cap`; zero on exit. `--shm <channel> --map <map> --diameter <m> [--r0 --L0 --wind --direction --rate --gain --cap --seed]` |
 | `daoPwfsSimulator.py` | DM command | simulated pyramid-WFS image | Hardcoded DM map; simulates the PWFS signal produced by a given DM shape. |
 | `daoNoisyPsfGenerator.py` | — | `/tmp/psf.im.shm` | Fixed 512×512 Gaussian PSF, randomly jittered each frame. No CLI args. |
 
