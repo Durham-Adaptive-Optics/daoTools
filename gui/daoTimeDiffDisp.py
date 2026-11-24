@@ -49,7 +49,7 @@ import sys
 
 from PyQt5.uic import loadUiType
 from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtWidgets import QApplication, QFileDialog, QMessageBox
+from PyQt5.QtWidgets import QApplication, QFileDialog, QMessageBox, QSizePolicy
 from PyQt5.QtGui import QIcon
 
 import numpy as np
@@ -91,6 +91,17 @@ def make_stylesheet(light):
     """
 
 
+def cpu_ranges(cpus):
+    """CPU numbers as a taskset list of ranges: {0, 1, 2, 3, 8} -> '0-3,8'."""
+    parts, cpus = [], sorted(cpus)
+    for i, c in enumerate(cpus):
+        if i and c == cpus[i - 1] + 1:
+            parts[-1][1] = c
+        else:
+            parts.append([c, c])
+    return ",".join(f"{lo}-{hi}" if hi > lo else f"{lo}" for lo, hi in parts)
+
+
 def _shm_base(path):
     """Basename with the shm suffix stripped and anything non-alphanumeric
     folded to '_', so it is safe in a tmux session / SHM name."""
@@ -124,6 +135,8 @@ class Main(QMainWindow, Ui_MainWindow):
     def __init__(self, shm1, shm2, window, moreInfo, measName, keepOnExit):
         super(Main, self).__init__()
         self.setupUi(self)
+        # a long command wraps in the window instead of widening it
+        self.sessionLabel.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
 
         self.shm1Edit.setText(shm1 or "")
         self.shm2Edit.setText(shm2 or "")
@@ -216,8 +229,9 @@ class Main(QMainWindow, Ui_MainWindow):
                f"{' -m' if self.moreInfoCheck.isChecked() else ''} -L")
         # tmux starts it from its server, with the server's CPUs: keep it on
         # this GUI's CPUs instead, so whoever starts the GUI chooses them
+        cpus = None
         if shutil.which('taskset'):
-            cpus = ','.join(str(c) for c in sorted(os.sched_getaffinity(0)))
+            cpus = cpu_ranges(os.sched_getaffinity(0))
             cmd = f"taskset -c {cpus} {cmd}"
         try:
             # Replace any stale session with the same (deterministic) name first.
@@ -245,7 +259,9 @@ class Main(QMainWindow, Ui_MainWindow):
         for ln in (self.avgLine, self.avgPlusLine, self.avgMinusLine):
             ln.hide()
         self.statsLabel.setText("AVG: --   RMS: --   n: 0")
-        self.sessionLabel.setText(f"tmux session: {session}  (cmd: {cmd})")
+        self.sessionLabel.setText(f"tmux session: {session}\n"
+                                  + (f"CPUs: {cpus}\n" if cpus else "")
+                                  + f"cmd: {cmd.split(' ', 3)[3] if cpus else cmd}")
         self.startButton.setEnabled(False)
         self.stopButton.setEnabled(True)
         self._set_args_enabled(False)
